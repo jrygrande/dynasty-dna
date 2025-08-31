@@ -96,30 +96,31 @@
 - [ ] Performance optimization
 - [ ] Add basic error boundaries
 
-## Phase 2: Stats Integration & Performance Tracking (Future)
+## Phase 2: Player Scoring & Performance Tracking (Future)
 
-### 📈 nflverse Integration
-- [ ] Set up nfl_data_py integration or Node.js equivalent
-- [ ] Create player ID mapping between Sleeper and nflverse
-- [ ] Implement weekly stats import
-- [ ] Build fantasy points calculation engine
+### 📈 Sleeper Matchups Integration
+- [ ] Implement matchups endpoint integration
+- [ ] Sync historical player weekly scoring data from Sleeper matchups
+- [ ] Store individual player fantasy points by week/season in database
+- [ ] Build comprehensive player performance tracking
 
-### 📊 Player Performance Tracking
-- [ ] Calculate historical fantasy points for all players
-- [ ] Track starter vs bench performance
+### 📊 Player Performance Tracking  
+- [ ] Use Sleeper's pre-calculated fantasy points (no external calculation needed)
+- [ ] Track starter vs bench performance from matchups data
 - [ ] Add performance metrics to visualizations
+- [ ] Build trade effectiveness analysis using actual fantasy points
 
 ## Phase 3: Advanced Analytics (Future)
 
-### 🎯 Trade Effectiveness
-- [ ] Calculate actual points gained/lost in trades
+### 🎯 Trade Effectiveness (Moved to Phase 2)
+- [ ] Calculate actual points gained/lost in trades using Sleeper scoring data
 - [ ] Win contribution analysis
 - [ ] Future value assessment for draft picks
 
-### 📋 Draft Success Analytics
-- [ ] Career value of drafted players
+### 📋 Draft Success Analytics (Moved to Phase 2)
+- [ ] Career value of drafted players using Sleeper scoring data
 - [ ] Hit rate by round analysis
-- [ ] Comparison to positional ADP
+- [ ] Comparison to league averages using actual fantasy points
 
 ## Current Sprint Focus
 **Goal:** Implement Sleeper API integration and transaction chain algorithm
@@ -137,6 +138,7 @@
 - **Rate Limiting:** Implement 100ms delays between API calls (600 req/min buffer)
 - **Caching Strategy:** Cache everything except current week transactions during season
 - **Test Data:** Using Dynasty Domination league for development and testing
+- **CRITICAL DISCOVERY:** Sleeper matchups endpoint provides individual player fantasy points - no external data sources needed!
 
 ## Blockers & Risks
 - None identified at this time

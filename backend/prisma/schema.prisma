@@ -11,17 +11,24 @@ model League {
   id                String   @id @default(cuid())
   sleeperLeagueId   String   @unique
   name              String
-  year              Int
+  season            String   // Store as string like API (e.g. "2025")
+  seasonType        String   @default("regular")
+  status            String?  // "pre_draft", "drafting", "in_season", "complete"
+  sport             String   @default("nfl")
   totalRosters      Int
-  rosterPositions   String
-  scoringSettings   String
-  previousLeagueId  String?
+  rosterPositions   String   // JSON string of roster position requirements
+  scoringSettings   String   // JSON string of scoring configuration
+  previousLeagueId  String?  // Links to previous season for dynasty continuity
+  sleeperPreviousLeagueId String? // Previous league's Sleeper ID
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
   transactions      Transaction[]
   rosters          Roster[]
   draftPicks       DraftPick[]
+  drafts           Draft[]
+  playerWeeklyScores PlayerWeeklyScore[]
+  matchupResults   MatchupResult[]
 
   @@map("leagues")
 }
@@ -36,13 +43,17 @@ model Player {
   team              String?
   age               Int?
   yearsExp          Int?
-  status            String?
+  status            String?  // "Active", "Inactive", "Injured Reserve", etc.
+  injuryStatus      String?  // Current injury status
+  number            String?  // Jersey number
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
   transactionItems  TransactionItem[]
   rosterSlots      RosterSlot[]
   draftPicks       DraftPick[]
+  draftSelections  DraftSelection[]
+  weeklyScores     PlayerWeeklyScore[]
 
   @@map("players")
 }
@@ -53,30 +64,39 @@ model Manager {
   username      String
   displayName   String?
   avatar        String?
+  teamName      String?  // Custom team name from metadata
+  isOwner       Boolean  @default(false) // League owner flag
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
   rosters           Roster[]
   transactionItems  TransactionItem[]
   originalDraftPicks DraftPick[] @relation("OriginalOwner")
-  currentDraftPicks  DraftPick[] @relation("CurrentOwner")
+  currentDraftPicks  DraftPick[] @relation("CurrentOwner")  
+  previousDraftPicks DraftPick[] @relation("PreviousOwner")
 
   @@map("managers")
 }
 
 model Transaction {
-  id          String   @id @default(cuid())
-  leagueId    String
-  type        String   // "trade", "waiver", "free_agent", "commissioner"
-  status      String   // "complete", "failed"
-  week        Int?
-  timestamp   DateTime
-  metadata    String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id            String   @id @default(cuid())
+  leagueId      String
+  sleeperTransactionId String @unique // Store original Sleeper transaction ID
+  type          String   // "trade", "waiver", "free_agent", "commissioner"
+  status        String   // "complete", "failed"
+  week          Int?
+  leg           Int?     // Week within transaction leg
+  timestamp     BigInt   // Store millisecond timestamps from Sleeper
+  creator       String?  // Sleeper user ID who initiated
+  consenterIds  String?  // JSON array of roster IDs who consented
+  rosterIds     String?  // JSON array of roster IDs involved
+  metadata      String?  // JSON metadata from Sleeper
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
-  league      League @relation(fields: [leagueId], references: [id])
-  items       TransactionItem[]
+  league        League @relation(fields: [leagueId], references: [id])
+  items         TransactionItem[]
+  draftPicks    TransactionDraftPick[]
 
   @@map("transactions")
 }
@@ -100,23 +120,30 @@ model TransactionItem {
 }
 
 model Roster {
-  id          String   @id @default(cuid())
-  leagueId    String
-  managerId   String
-  week        Int?
-  wins        Int      @default(0)
-  losses      Int      @default(0)
-  ties        Int      @default(0)
-  fpts        Float    @default(0)
-  fptsAgainst Float    @default(0)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id              String   @id @default(cuid())
+  leagueId        String
+  managerId       String
+  sleeperRosterId Int      // Roster ID from Sleeper API
+  week            Int?     // Null for season-long data
+  wins            Int      @default(0)
+  losses          Int      @default(0)
+  ties            Int      @default(0)
+  fpts            Float    @default(0)
+  fptsAgainst     Float    @default(0)
+  fptsDecimal     Float?   @default(0) // Decimal portion
+  fptsAgainstDecimal Float? @default(0) // Decimal portion
+  waiveBudgetUsed Int      @default(0) // FAAB used
+  waiverPosition  Int?     // Current waiver position
+  totalMoves      Int      @default(0) // Total transactions
+  division        Int?     // Division assignment
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   league      League       @relation(fields: [leagueId], references: [id])
   manager     Manager      @relation(fields: [managerId], references: [id])
   slots       RosterSlot[]
 
-  @@unique([leagueId, managerId, week])
+  @@unique([leagueId, sleeperRosterId, week])
   @@map("rosters")
 }
 
@@ -136,12 +163,13 @@ model RosterSlot {
 model DraftPick {
   id              String   @id @default(cuid())
   leagueId        String
-  originalOwnerId String
-  currentOwnerId  String
-  year            Int
+  originalOwnerId String   // roster_id in Sleeper API - original owner
+  currentOwnerId  String   // owner_id in Sleeper API - current owner
+  previousOwnerId String?  // previous_owner_id in Sleeper API - who traded it most recently
+  season          String   // Store as string like API (e.g. "2025")
   round           Int
-  pickNumber      Int?
-  playerSelectedId String?
+  pickNumber      Int?     // Actual pick number when used
+  playerSelectedId String? // Player selected with this pick
   traded          Boolean  @default(false)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
@@ -149,9 +177,128 @@ model DraftPick {
   league          League             @relation(fields: [leagueId], references: [id])
   originalOwner   Manager            @relation("OriginalOwner", fields: [originalOwnerId], references: [id])
   currentOwner    Manager            @relation("CurrentOwner", fields: [currentOwnerId], references: [id])
+  previousOwner   Manager?           @relation("PreviousOwner", fields: [previousOwnerId], references: [id])
   playerSelected  Player?            @relation(fields: [playerSelectedId], references: [id])
   transactionItems TransactionItem[]
+  transactionDraftPicks TransactionDraftPick[]
 
-  @@unique([leagueId, year, round, originalOwnerId])
+  @@unique([leagueId, season, round, originalOwnerId])
   @@map("draft_picks")
+}
+
+model Draft {
+  id            String   @id @default(cuid())
+  leagueId      String
+  sleeperDraftId String  @unique // Store original Sleeper draft ID
+  season        String
+  seasonType    String   @default("regular")
+  status        String   // "pre_draft", "drafting", "complete"
+  sport         String   @default("nfl")
+  rounds        Int
+  draftType     String   @default("linear") // "linear", "auction"
+  startTime     BigInt?  // Draft start timestamp
+  lastPicked    BigInt?  // Last pick timestamp
+  created       BigInt?  // Draft creation timestamp
+  draftOrder    String?  // JSON of draft order by user_id
+  settings      String?  // JSON of draft settings
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  league        League   @relation(fields: [leagueId], references: [id])
+  picks         DraftSelection[]
+
+  @@map("drafts")
+}
+
+model DraftSelection {
+  id            String   @id @default(cuid())
+  draftId       String
+  pickNumber    Int
+  round         Int
+  draftSlot     Int      // Position within round
+  playerId      String
+  rosterId      Int      // Which roster made the pick
+  pickedBy      String   // User ID who made the pick
+  isKeeper      Boolean? // Whether this was a keeper pick
+  metadata      String?  // JSON metadata about player
+  createdAt     DateTime @default(now())
+
+  draft         Draft    @relation(fields: [draftId], references: [id])
+  player        Player   @relation(fields: [playerId], references: [id])
+
+  @@unique([draftId, pickNumber])
+  @@map("draft_selections")
+}
+
+model TransactionDraftPick {
+  id            String   @id @default(cuid())
+  transactionId String
+  draftPickId   String?  // Link to our DraftPick if available
+  season        String   // Season of the pick
+  round         Int      // Round number
+  rosterId      Int      // Original owner roster ID
+  ownerId       Int      // Current owner roster ID
+  previousOwnerId Int?   // Previous owner roster ID
+  createdAt     DateTime @default(now())
+
+  transaction   Transaction @relation(fields: [transactionId], references: [id])
+  draftPick     DraftPick?  @relation(fields: [draftPickId], references: [id])
+
+  @@map("transaction_draft_picks")
+}
+
+model NFLState {
+  id              String   @id @default(cuid())
+  season          String   @unique
+  seasonType      String   // "pre", "regular", "post"
+  week            Int
+  leg             Int
+  previousSeason  String
+  seasonStartDate String   // Date string from API
+  displayWeek     Int
+  leagueSeason    String
+  leagueCreateSeason String
+  seasonHasScores Boolean  @default(false)
+  lastUpdated     DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("nfl_states")
+}
+
+model PlayerWeeklyScore {
+  id            String   @id @default(cuid())
+  leagueId      String
+  playerId      String
+  rosterId      Int      // Sleeper roster ID that owned player this week
+  week          Int
+  season        String
+  points        Float    // Fantasy points scored this week
+  isStarter     Boolean  // Was player in starting lineup
+  position      String?  // Position player was started in (QB, RB, WR, etc.)
+  matchupId     Int?     // Matchup ID from Sleeper
+  createdAt     DateTime @default(now())
+
+  league        League   @relation(fields: [leagueId], references: [id])
+  player        Player   @relation(fields: [playerId], references: [id])
+
+  @@unique([leagueId, playerId, week, season])
+  @@map("player_weekly_scores")
+}
+
+model MatchupResult {
+  id            String   @id @default(cuid())
+  leagueId      String
+  rosterId      Int      // Sleeper roster ID
+  week          Int
+  season        String
+  matchupId     Int      // Matchup ID from Sleeper
+  totalPoints   Float    // Team total points for the week
+  opponentId    Int?     // Opposing roster ID (if available)
+  won           Boolean? // Did this roster win the matchup
+  createdAt     DateTime @default(now())
+
+  league        League   @relation(fields: [leagueId], references: [id])
+
+  @@unique([leagueId, rosterId, week, season])
+  @@map("matchup_results")
 }

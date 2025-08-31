@@ -1,0 +1,692 @@
+import { PrismaClient } from '@prisma/client';
+import { sleeperClient, PlayerWeeklyScore } from './sleeperClient';
+// Define necessary types locally to avoid import issues
+interface SleeperLeague {
+  name: string;
+  season: string;
+  season_type?: string;
+  status?: string;
+  sport?: string;
+  total_rosters: number;
+  roster_positions?: string[];
+  scoring_settings?: Record<string, any>;
+  previous_league_id?: string;
+}
+
+interface SleeperUser {
+  user_id: string;
+  username?: string;
+  display_name?: string;
+  avatar?: string;
+}
+
+interface SleeperRoster {
+  roster_id: number;
+  owner_id: string;
+  players?: string[];
+  starters?: string[];
+  settings?: {
+    wins?: number;
+    losses?: number;
+    ties?: number;
+    fpts?: number;
+    fpts_against?: number;
+    fpts_decimal?: number;
+    fpts_against_decimal?: number;
+    waiver_budget_used?: number;
+    waiver_position?: number;
+    total_moves?: number;
+    division?: number;
+  };
+}
+
+interface SleeperTransaction {
+  transaction_id: string;
+  type: string;
+  status: string;
+  leg: number;
+  status_updated: number;
+  creator?: string;
+  consenter_ids?: number[];
+  roster_ids?: number[];
+  metadata?: Record<string, any>;
+  adds?: Record<string, number>;
+  drops?: Record<string, number>;
+  waiver_budget?: Record<string, number>;
+}
+
+interface SleeperPlayer {
+  first_name?: string;
+  last_name?: string;
+  full_name?: string;
+  position?: string;
+  team?: string;
+  age?: number;
+  years_exp?: number;
+  status?: string;
+  injury_status?: string;
+  number?: number;
+}
+
+const prisma = new PrismaClient();
+
+export class DataSyncError extends Error {
+  constructor(
+    message: string,
+    public operation?: string,
+    public leagueId?: string
+  ) {
+    super(message);
+    this.name = 'DataSyncError';
+  }
+}
+
+export class DataSyncService {
+  /**
+   * Sync all league data including player scoring
+   */
+  async syncLeague(leagueId: string): Promise<{ 
+    success: boolean; 
+    synced: string[]; 
+    errors: string[] 
+  }> {
+    const synced: string[] = [];
+    const errors: string[] = [];
+
+    try {
+      // 1. Sync league basic information
+      try {
+        await this.syncLeagueInfo(leagueId);
+        synced.push('League information');
+      } catch (error) {
+        errors.push(`League info: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+
+      // 2. Sync users/managers
+      try {
+        await this.syncLeagueUsers(leagueId);
+        synced.push('League users');
+      } catch (error) {
+        errors.push(`Users: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+
+      // 3. Sync players
+      try {
+        await this.syncPlayers();
+        synced.push('Player data');
+      } catch (error) {
+        errors.push(`Players: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+
+      // 4. Sync rosters
+      try {
+        await this.syncLeagueRosters(leagueId);
+        synced.push('League rosters');
+      } catch (error) {
+        errors.push(`Rosters: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+
+      // 5. Sync transactions
+      try {
+        await this.syncLeagueTransactions(leagueId);
+        synced.push('League transactions');
+      } catch (error) {
+        errors.push(`Transactions: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+
+      // 6. Sync draft picks
+      try {
+        await this.syncLeagueDraftPicks(leagueId);
+        synced.push('Draft picks');
+      } catch (error) {
+        errors.push(`Draft picks: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+
+      // 7. Sync player weekly scoring data
+      try {
+        await this.syncPlayerWeeklyScores(leagueId);
+        synced.push('Player weekly scores');
+      } catch (error) {
+        errors.push(`Player scores: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+
+      // 8. Sync matchup results
+      try {
+        await this.syncMatchupResults(leagueId);
+        synced.push('Matchup results');
+      } catch (error) {
+        errors.push(`Matchup results: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+
+      return {
+        success: errors.length === 0,
+        synced,
+        errors
+      };
+
+    } catch (error) {
+      throw new DataSyncError(
+        `Failed to sync league: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        'syncLeague',
+        leagueId
+      );
+    }
+  }
+
+  /**
+   * Sync league basic information
+   */
+  private async syncLeagueInfo(leagueId: string): Promise<void> {
+    const leagueData = await sleeperClient.getLeague(leagueId);
+    
+    await prisma.league.upsert({
+      where: { sleeperLeagueId: leagueId },
+      update: {
+        name: leagueData.name,
+        season: leagueData.season,
+        seasonType: leagueData.season_type || 'regular',
+        status: leagueData.status,
+        sport: leagueData.sport || 'nfl',
+        totalRosters: leagueData.total_rosters,
+        rosterPositions: JSON.stringify(leagueData.roster_positions || []),
+        scoringSettings: JSON.stringify(leagueData.scoring_settings || {}),
+        previousLeagueId: leagueData.previous_league_id,
+        sleeperPreviousLeagueId: leagueData.previous_league_id,
+        updatedAt: new Date()
+      },
+      create: {
+        sleeperLeagueId: leagueId,
+        name: leagueData.name,
+        season: leagueData.season,
+        seasonType: leagueData.season_type || 'regular',
+        status: leagueData.status,
+        sport: leagueData.sport || 'nfl',
+        totalRosters: leagueData.total_rosters,
+        rosterPositions: JSON.stringify(leagueData.roster_positions || []),
+        scoringSettings: JSON.stringify(leagueData.scoring_settings || {}),
+        previousLeagueId: leagueData.previous_league_id,
+        sleeperPreviousLeagueId: leagueData.previous_league_id
+      }
+    });
+  }
+
+  /**
+   * Sync league users/managers
+   */
+  private async syncLeagueUsers(leagueId: string): Promise<void> {
+    const users = await sleeperClient.getLeagueUsers(leagueId);
+    
+    for (const user of users) {
+      await prisma.manager.upsert({
+        where: { sleeperUserId: user.user_id },
+        update: {
+          username: user.username || user.display_name || 'Unknown',
+          displayName: user.display_name,
+          avatar: user.avatar,
+          updatedAt: new Date()
+        },
+        create: {
+          sleeperUserId: user.user_id,
+          username: user.username || user.display_name || 'Unknown',
+          displayName: user.display_name,
+          avatar: user.avatar,
+          isOwner: false // Will be updated when syncing rosters
+        }
+      });
+    }
+  }
+
+  /**
+   * Sync players data
+   */
+  private async syncPlayers(): Promise<void> {
+    const playersData = await sleeperClient.getAllPlayers();
+    
+    // Process players in batches to avoid overwhelming the database
+    const playerEntries = Object.entries(playersData);
+    const batchSize = 100;
+    
+    for (let i = 0; i < playerEntries.length; i += batchSize) {
+      const batch = playerEntries.slice(i, i + batchSize);
+      
+      const upsertPromises = batch.map(([playerId, player]) => 
+        prisma.player.upsert({
+          where: { sleeperId: playerId },
+          update: {
+            firstName: player.first_name,
+            lastName: player.last_name,
+            fullName: player.full_name,
+            position: player.position,
+            team: player.team,
+            age: player.age,
+            yearsExp: player.years_exp,
+            status: player.status,
+            injuryStatus: player.injury_status,
+            number: player.number?.toString(),
+            updatedAt: new Date()
+          },
+          create: {
+            sleeperId: playerId,
+            firstName: player.first_name,
+            lastName: player.last_name,
+            fullName: player.full_name,
+            position: player.position,
+            team: player.team,
+            age: player.age,
+            yearsExp: player.years_exp,
+            status: player.status,
+            injuryStatus: player.injury_status,
+            number: player.number?.toString()
+          }
+        })
+      );
+      
+      await Promise.all(upsertPromises);
+    }
+  }
+
+  /**
+   * Sync league rosters
+   */
+  private async syncLeagueRosters(leagueId: string): Promise<void> {
+    const rosters = await sleeperClient.getLeagueRosters(leagueId);
+    
+    for (const roster of rosters) {
+      // Find the manager for this roster
+      const manager = await prisma.manager.findFirst({
+        where: { sleeperUserId: roster.owner_id }
+      });
+
+      if (!manager) {
+        console.warn(`Manager not found for roster ${roster.roster_id}, owner_id: ${roster.owner_id}`);
+        continue;
+      }
+
+      const internalLeagueId = await this.getInternalLeagueId(leagueId);
+      
+      await prisma.roster.upsert({
+        where: { 
+          leagueId_sleeperRosterId_week: {
+            leagueId: internalLeagueId,
+            sleeperRosterId: roster.roster_id,
+            week: null
+          }
+        },
+        update: {
+          wins: roster.settings?.wins || 0,
+          losses: roster.settings?.losses || 0,
+          ties: roster.settings?.ties || 0,
+          fpts: roster.settings?.fpts || 0,
+          fptsAgainst: roster.settings?.fpts_against || 0,
+          fptsDecimal: roster.settings?.fpts_decimal || 0,
+          fptsAgainstDecimal: roster.settings?.fpts_against_decimal || 0,
+          waiveBudgetUsed: roster.settings?.waiver_budget_used || 0,
+          waiverPosition: roster.settings?.waiver_position,
+          totalMoves: roster.settings?.total_moves || 0,
+          division: roster.settings?.division,
+          updatedAt: new Date()
+        },
+        create: {
+          leagueId: await this.getInternalLeagueId(leagueId),
+          managerId: manager.id,
+          sleeperRosterId: roster.roster_id,
+          week: null,
+          wins: roster.settings?.wins || 0,
+          losses: roster.settings?.losses || 0,
+          ties: roster.settings?.ties || 0,
+          fpts: roster.settings?.fpts || 0,
+          fptsAgainst: roster.settings?.fpts_against || 0,
+          fptsDecimal: roster.settings?.fpts_decimal || 0,
+          fptsAgainstDecimal: roster.settings?.fpts_against_decimal || 0,
+          waiveBudgetUsed: roster.settings?.waiver_budget_used || 0,
+          waiverPosition: roster.settings?.waiver_position,
+          totalMoves: roster.settings?.total_moves || 0,
+          division: roster.settings?.division
+        }
+      });
+
+      // Sync roster slots (current player assignments)
+      if (roster.players && roster.players.length > 0) {
+        // First, remove existing slots for this roster
+        await prisma.rosterSlot.deleteMany({
+          where: { rosterId: await this.getRosterInternalId(leagueId, roster.roster_id) }
+        });
+
+        // Add current slots
+        for (let i = 0; i < roster.players.length; i++) {
+          const playerId = roster.players[i];
+          const position = roster.starters?.includes(playerId) 
+            ? (roster.starters.indexOf(playerId) < (roster.starters.length - 1) ? 'STARTER' : 'BN')
+            : 'BN';
+
+          const player = await prisma.player.findFirst({
+            where: { sleeperId: playerId }
+          });
+
+          if (player) {
+            await prisma.rosterSlot.create({
+              data: {
+                rosterId: await this.getRosterInternalId(leagueId, roster.roster_id),
+                playerId: player.id,
+                position
+              }
+            });
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Sync all league transactions
+   */
+  private async syncLeagueTransactions(leagueId: string): Promise<void> {
+    const transactions = await sleeperClient.getAllLeagueTransactions(leagueId);
+    
+    for (const transaction of transactions) {
+      await this.syncTransaction(leagueId, transaction);
+    }
+  }
+
+  /**
+   * Sync a single transaction
+   */
+  private async syncTransaction(leagueId: string, transaction: SleeperTransaction): Promise<void> {
+    const internalLeagueId = await this.getInternalLeagueId(leagueId);
+    
+    const dbTransaction = await prisma.transaction.upsert({
+      where: { sleeperTransactionId: transaction.transaction_id },
+      update: {
+        type: transaction.type,
+        status: transaction.status,
+        week: transaction.leg,
+        leg: transaction.leg,
+        timestamp: BigInt(transaction.status_updated),
+        creator: transaction.creator,
+        consenterIds: JSON.stringify(transaction.consenter_ids || []),
+        rosterIds: JSON.stringify(transaction.roster_ids || []),
+        metadata: JSON.stringify(transaction.metadata || {}),
+        updatedAt: new Date()
+      },
+      create: {
+        leagueId: internalLeagueId,
+        sleeperTransactionId: transaction.transaction_id,
+        type: transaction.type,
+        status: transaction.status,
+        week: transaction.leg,
+        leg: transaction.leg,
+        timestamp: BigInt(transaction.status_updated),
+        creator: transaction.creator,
+        consenterIds: JSON.stringify(transaction.consenter_ids || []),
+        rosterIds: JSON.stringify(transaction.roster_ids || []),
+        metadata: JSON.stringify(transaction.metadata || {})
+      }
+    });
+
+    // Sync transaction items (adds, drops, trades)
+    if (transaction.adds) {
+      for (const [playerId, rosterId] of Object.entries(transaction.adds)) {
+        const manager = await this.getManagerByRosterId(leagueId, rosterId);
+        const player = await prisma.player.findFirst({ where: { sleeperId: playerId } });
+
+        if (player && manager) {
+          // Check if this transaction item already exists
+          const existingItem = await prisma.transactionItem.findFirst({
+            where: {
+              transactionId: dbTransaction.id,
+              playerId: player.id,
+              type: 'add'
+            }
+          });
+
+          if (!existingItem) {
+            await prisma.transactionItem.create({
+              data: {
+                transactionId: dbTransaction.id,
+                managerId: manager.id,
+                playerId: player.id,
+                type: 'add',
+                faabAmount: transaction.waiver_budget?.[rosterId] || null
+              }
+            });
+          }
+        }
+      }
+    }
+
+    if (transaction.drops) {
+      for (const [playerId, rosterId] of Object.entries(transaction.drops)) {
+        const manager = await this.getManagerByRosterId(leagueId, rosterId);
+        const player = await prisma.player.findFirst({ where: { sleeperId: playerId } });
+
+        if (player && manager) {
+          // Check if this transaction item already exists
+          const existingItem = await prisma.transactionItem.findFirst({
+            where: {
+              transactionId: dbTransaction.id,
+              playerId: player.id,
+              type: 'drop'
+            }
+          });
+
+          if (!existingItem) {
+            await prisma.transactionItem.create({
+              data: {
+                transactionId: dbTransaction.id,
+                managerId: manager.id,
+                playerId: player.id,
+                type: 'drop'
+              }
+            });
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Sync draft picks for the league
+   */
+  private async syncLeagueDraftPicks(leagueId: string): Promise<void> {
+    const tradedPicks = await sleeperClient.getLeagueTradedPicks(leagueId);
+    const internalLeagueId = await this.getInternalLeagueId(leagueId);
+
+    for (const pick of tradedPicks) {
+      const originalOwner = await this.getManagerByRosterId(leagueId, pick.roster_id);
+      const currentOwner = await this.getManagerByRosterId(leagueId, pick.owner_id);
+      const previousOwner = pick.previous_owner_id 
+        ? await this.getManagerByRosterId(leagueId, pick.previous_owner_id)
+        : null;
+
+      if (originalOwner && currentOwner) {
+        await prisma.draftPick.upsert({
+          where: {
+            leagueId_season_round_originalOwnerId: {
+              leagueId: internalLeagueId,
+              season: pick.season,
+              round: pick.round,
+              originalOwnerId: originalOwner.id
+            }
+          },
+          update: {
+            currentOwnerId: currentOwner.id,
+            previousOwnerId: previousOwner?.id,
+            traded: pick.roster_id !== pick.owner_id,
+            updatedAt: new Date()
+          },
+          create: {
+            leagueId: internalLeagueId,
+            originalOwnerId: originalOwner.id,
+            currentOwnerId: currentOwner.id,
+            previousOwnerId: previousOwner?.id,
+            season: pick.season,
+            round: pick.round,
+            traded: pick.roster_id !== pick.owner_id
+          }
+        });
+      }
+    }
+  }
+
+  /**
+   * Sync player weekly scoring data from matchups
+   */
+  async syncPlayerWeeklyScores(leagueId: string): Promise<void> {
+    const internalLeagueId = await this.getInternalLeagueId(leagueId);
+    const league = await prisma.league.findUnique({
+      where: { id: internalLeagueId }
+    });
+
+    if (!league) {
+      throw new DataSyncError('League not found', 'syncPlayerWeeklyScores', leagueId);
+    }
+
+    // Get all player weekly scores from Sleeper matchups
+    const allPlayerScores = await sleeperClient.getAllPlayerWeeklyScores(leagueId);
+
+    // Process in batches to avoid overwhelming the database
+    const batchSize = 100;
+    for (let i = 0; i < allPlayerScores.length; i += batchSize) {
+      const batch = allPlayerScores.slice(i, i + batchSize);
+      
+      const upsertPromises = batch.map(async (score) => {
+        const player = await prisma.player.findFirst({
+          where: { sleeperId: score.playerId }
+        });
+
+        if (!player) {
+          console.warn(`Player not found for ID: ${score.playerId}`);
+          return;
+        }
+
+        return prisma.playerWeeklyScore.upsert({
+          where: {
+            leagueId_playerId_week_season: {
+              leagueId: internalLeagueId,
+              playerId: player.id,
+              week: score.week,
+              season: league.season
+            }
+          },
+          update: {
+            points: score.points,
+            isStarter: score.isStarter,
+            matchupId: score.matchupId
+          },
+          create: {
+            leagueId: internalLeagueId,
+            playerId: player.id,
+            rosterId: score.rosterId,
+            week: score.week,
+            season: league.season,
+            points: score.points,
+            isStarter: score.isStarter,
+            matchupId: score.matchupId
+          }
+        });
+      });
+
+      await Promise.all(upsertPromises.filter(Boolean));
+    }
+  }
+
+  /**
+   * Sync matchup results
+   */
+  private async syncMatchupResults(leagueId: string): Promise<void> {
+    const internalLeagueId = await this.getInternalLeagueId(leagueId);
+    const league = await prisma.league.findUnique({
+      where: { id: internalLeagueId }
+    });
+
+    if (!league) {
+      throw new DataSyncError('League not found', 'syncMatchupResults', leagueId);
+    }
+
+    const allMatchups = await sleeperClient.getAllLeagueMatchups(leagueId);
+
+    for (const matchup of allMatchups) {
+      // Find opponent in the same matchup
+      const opponent = allMatchups.find(m => 
+        m.matchup_id === matchup.matchup_id && m.roster_id !== matchup.roster_id
+      );
+
+      await prisma.matchupResult.upsert({
+        where: {
+          leagueId_rosterId_week_season: {
+            leagueId: internalLeagueId,
+            rosterId: matchup.roster_id,
+            week: 1, // TODO: Get actual week from context
+            season: league.season
+          }
+        },
+        update: {
+          totalPoints: matchup.points,
+          opponentId: opponent?.roster_id,
+          won: opponent ? matchup.points > opponent.points : null
+        },
+        create: {
+          leagueId: internalLeagueId,
+          rosterId: matchup.roster_id,
+          week: 1, // TODO: Get actual week from context
+          season: league.season,
+          matchupId: matchup.matchup_id || 0,
+          totalPoints: matchup.points,
+          opponentId: opponent?.roster_id,
+          won: opponent ? matchup.points > opponent.points : null
+        }
+      });
+    }
+  }
+
+  /**
+   * Helper methods
+   */
+  private async getInternalLeagueId(sleeperLeagueId: string): Promise<string> {
+    const league = await prisma.league.findUnique({
+      where: { sleeperLeagueId }
+    });
+    if (!league) {
+      throw new DataSyncError(`League not found: ${sleeperLeagueId}`, 'getInternalLeagueId');
+    }
+    return league.id;
+  }
+
+  private async getRosterInternalId(leagueId: string, sleeperRosterId: number): Promise<string> {
+    const internalLeagueId = await this.getInternalLeagueId(leagueId);
+    const roster = await prisma.roster.findFirst({
+      where: {
+        leagueId: internalLeagueId,
+        sleeperRosterId,
+        week: null
+      }
+    });
+    if (!roster) {
+      throw new DataSyncError(`Roster not found: ${sleeperRosterId}`, 'getRosterInternalId');
+    }
+    return roster.id;
+  }
+
+  private async getManagerByRosterId(leagueId: string, rosterId: number) {
+    const rosters = await sleeperClient.getLeagueRosters(leagueId);
+    const roster = rosters.find(r => r.roster_id === rosterId);
+    
+    if (!roster) {
+      return null;
+    }
+
+    return prisma.manager.findFirst({
+      where: { sleeperUserId: roster.owner_id }
+    });
+  }
+
+  /**
+   * Clean up resources
+   */
+  async disconnect(): Promise<void> {
+    await prisma.$disconnect();
+  }
+}
+
+// Export singleton instance
+export const dataSyncService = new DataSyncService();

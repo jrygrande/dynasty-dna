@@ -30,24 +30,18 @@ Dynasty fantasy football managers using Sleeper lack tools to:
 
 ### Data Sources
 
-#### Primary Sources
+#### Primary Source
 1. **Sleeper API** - https://docs.sleeper.com/
    - League settings, rosters, transactions, drafts
-   - Team-level matchup scores
+   - Individual player weekly scoring data via matchups endpoint
+   - Complete fantasy points for all players by week
    - Rate limit: 1000 calls/minute
 
-2. **nflverse (nflfastR)** - FREE
-   - Complete player stats (rushing, receiving, passing, etc.)
-   - Weekly and seasonal data from 1999-present
-   - Updated nightly during season
-   - Python: `nfl_data_py` package
-   - Direct CSV access via GitHub
-
 #### Data Integration Strategy
-- Use Sleeper for league-specific data (transactions, rosters, settings)
-- Use nflverse for player statistics and performance metrics
-- Create player ID mapping between Sleeper and nflverse
-- Calculate fantasy points using league's custom scoring settings
+- Use Sleeper API as the sole data source for all functionality
+- Matchups endpoint provides individual player fantasy points for every week
+- No external data integration required - Sleeper has all necessary scoring data
+- Calculate trade effectiveness using actual fantasy points from Sleeper
 
 #### Test Environment
 - League Name: "Dynasty Domination"
@@ -98,22 +92,22 @@ Travis Kelce (Drafted 2021, Round 3, Pick 4 by jrygrande)
 - Player tenure on roster
 - Historical roster movements
 
-### 4. Trade Effectiveness Calculator (Phase 3)
+### 4. Trade Effectiveness Calculator (Phase 2)
 **User Story:** As a manager, I want to measure whether my trades were beneficial using actual performance data.
 
 **Calculations:**
-- **Actual fantasy points** scored by outgoing vs incoming players (requires nflverse data)
-- Points calculated using league's exact scoring settings
+- **Actual fantasy points** scored by outgoing vs incoming players (from Sleeper matchups data)
+- Points already calculated using league's exact scoring settings
 - Win contribution analysis based on real performance
 - Future value assessment for draft picks (using actual selected players)
 - Time-weighted performance metrics
 - "What-if" analysis showing potential points if players were started
 
-### 5. Draft Success Analytics (Phase 3)
+### 5. Draft Success Analytics (Phase 2)
 **User Story:** As a manager, I want to evaluate my drafting effectiveness with real data.
 
 **Metrics:**
-- **Actual fantasy points** scored vs positional ADP benchmarks (requires nflverse data)
+- **Actual fantasy points** scored vs positional benchmarks (from Sleeper matchups data)
 - Career value of drafted players (cumulative fantasy points)
 - Hit rate by round based on performance thresholds
 - Comparison to league average using actual scoring
@@ -140,31 +134,32 @@ POST /api/stats/calculate-fantasy-points
 1. **Sleeper Data**: 
    - Cache league structure (permanent)
    - Cache historical transactions (permanent)
+   - Cache historical matchup/scoring data (permanent)
    - Refresh current season data (1 hour)
+   - Sync player weekly scores from matchups endpoint
 
-2. **nflverse Data**:
-   - Download weekly stats CSVs on schedule
-   - Store in database for quick access
-   - Update within 48 hours of games
-   - Bulk import historical data on setup
-
-### Fantasy Points Calculation Engine
+### Player Scoring Data Access
 ```javascript
-// Example scoring calculation
-const calculateFantasyPoints = (playerStats, scoringSettings) => {
-  let points = 0;
+// Access player fantasy points directly from Sleeper matchups
+const getPlayerWeeklyScoring = async (leagueId, week) => {
+  const matchups = await sleeperApi.getMatchups(leagueId, week);
+  const playerScores = [];
   
-  // Standard scoring categories
-  points += playerStats.passing_yards * (scoringSettings.pass_yd || 0.04);
-  points += playerStats.passing_tds * (scoringSettings.pass_td || 4);
-  points += playerStats.rushing_yards * (scoringSettings.rush_yd || 0.1);
-  points += playerStats.rushing_tds * (scoringSettings.rush_td || 6);
-  points += playerStats.receptions * (scoringSettings.rec || 0);
-  points += playerStats.receiving_yards * (scoringSettings.rec_yd || 0.1);
-  points += playerStats.receiving_tds * (scoringSettings.rec_td || 6);
+  for (const matchup of matchups) {
+    const { roster_id, players_points, starters } = matchup;
+    
+    for (const [playerId, points] of Object.entries(players_points)) {
+      playerScores.push({
+        playerId,
+        rosterId: roster_id,
+        week,
+        points,
+        isStarter: starters.includes(playerId)
+      });
+    }
+  }
   
-  // Handle bonuses, negative points, etc.
-  return points;
+  return playerScores;
 };
 ```
 
@@ -179,11 +174,9 @@ leagues (id, sleeper_league_id, year, name, previous_league_id, scoring_settings
 transactions (id, league_id, type, week, timestamp, status)
 transaction_items (id, transaction_id, manager_id, player_id, draft_pick_id, faab_amount)
 
--- Players
-players (id, sleeper_id, nflverse_id, name, position, team)
-player_stats (id, player_id, week, season, passing_yards, passing_tds, rushing_yards, 
-              rushing_tds, receptions, receiving_yards, receiving_tds, fumbles_lost, etc.)
-player_fantasy_points (id, player_id, league_id, week, season, points, starter_status)
+-- Players  
+players (id, sleeper_id, name, position, team)
+player_weekly_scores (id, league_id, player_id, roster_id, week, season, points, is_starter, position, matchup_id)
 
 -- Managers
 managers (id, username, display_name)
@@ -192,8 +185,8 @@ roster_history (id, manager_id, player_id, acquired_date, released_date, acquisi
 -- Draft Picks
 draft_picks (id, original_owner_id, current_owner_id, year, round, pick_number, player_selected_id)
 
--- ID Mappings
-player_id_map (sleeper_id, nflverse_gsis_id, nflverse_name, espn_id, yahoo_id)
+-- Matchup Results
+matchup_results (id, league_id, roster_id, week, season, matchup_id, total_points, opponent_id, won)
 ```
 
 ## UI/UX Requirements
@@ -252,17 +245,15 @@ player_id_map (sleeper_id, nflverse_gsis_id, nflverse_name, espn_id, yahoo_id)
   - Display player tenure on each roster
 - Basic web UI with routing
 
-### Phase 2: Stats Integration & Performance Tracking (Weeks 3-4)
-- **Integrate nflverse data pipeline**
-  - Set up nfl_data_py for Python or nflreadr for Node.js
-  - Create automated weekly stats import
-  - Build player ID mapping table
-- **Build fantasy points calculation engine**
-  - Import league scoring settings from Sleeper
-  - Apply custom scoring to player stats
-- **Player performance tracking with actual fantasy points**
-  - Calculate historical fantasy points for all players
+### Phase 2: Player Scoring & Performance Tracking (Weeks 3-4)
+- **Integrate Sleeper matchups data**
+  - Sync historical player weekly scoring from matchups endpoint
+  - Store individual player fantasy points by week/season
   - Track starter vs bench performance
+- **Player performance tracking with actual fantasy points**
+  - Use Sleeper's pre-calculated fantasy points
+  - Track historical performance during roster tenure
+  - Build trade effectiveness analysis
 
 ### Phase 3: Advanced Analytics (Weeks 5-6)
 - Trade effectiveness calculator with real performance data
@@ -287,9 +278,9 @@ player_id_map (sleeper_id, nflverse_gsis_id, nflverse_name, espn_id, yahoo_id)
 - Intuitive UI that requires no documentation for basic use
 
 ### Phase 2+ Success Metrics
-- **Accurate calculation of player fantasy points matching Sleeper's calculations**
-- Reliable weekly stats updates during the season
-- Successful player ID mapping between platforms (>95% match rate)
+- **Accurate import of player fantasy points from Sleeper matchups data**
+- Reliable weekly scoring data updates during the season
+- Complete historical player performance tracking
 - Clear data lineage showing the "DNA" of roster construction
 
 ## Technical Constraints
@@ -297,8 +288,8 @@ player_id_map (sleeper_id, nflverse_gsis_id, nflverse_name, espn_id, yahoo_id)
 - Initial deployment using free-tier services only
 - No user authentication required for MVP
 - Support leagues with 10+ years of history
-- **Must handle player ID mismatches between platforms**
-- Must calculate points for any custom scoring system
+- Must sync complete historical player scoring data
+- Handle custom league scoring configurations
 
 ## Future Enhancements (Post-MVP)
 - Multi-league support
@@ -311,35 +302,37 @@ player_id_map (sleeper_id, nflverse_gsis_id, nflverse_name, espn_id, yahoo_id)
 
 ## Implementation Examples
 
-### Fetching Player Stats (Python)
-```python
-import nfl_data_py as nfl
-import pandas as pd
-
-def get_player_stats(season, week=None):
-    """Fetch player stats from nflverse"""
-    if week:
-        # Get specific week
-        stats = nfl.import_weekly_data([season])
-        return stats[stats['week'] == week]
-    else:
-        # Get full season
-        return nfl.import_seasonal_data([season])
-
-def calculate_fantasy_points(stats_df, scoring_settings):
-    """Apply league scoring to player stats"""
-    stats_df['fantasy_points'] = (
-        stats_df['passing_yards'].fillna(0) * scoring_settings.get('pass_yd', 0.04) +
-        stats_df['passing_tds'].fillna(0) * scoring_settings.get('pass_td', 4) +
-        stats_df['rushing_yards'].fillna(0) * scoring_settings.get('rush_yd', 0.1) +
-        stats_df['rushing_tds'].fillna(0) * scoring_settings.get('rush_td', 6) +
-        stats_df['receptions'].fillna(0) * scoring_settings.get('rec', 0) +
-        stats_df['receiving_yards'].fillna(0) * scoring_settings.get('rec_yd', 0.1) +
-        stats_df['receiving_tds'].fillna(0) * scoring_settings.get('rec_td', 6) +
-        stats_df['interceptions'].fillna(0) * scoring_settings.get('pass_int', -2) +
-        stats_df['fumbles_lost'].fillna(0) * scoring_settings.get('fum_lost', -2)
-    )
-    return stats_df
+### Syncing Player Weekly Scores
+```javascript
+// Sync all player weekly scoring data from Sleeper matchups
+async function syncPlayerWeeklyScores(leagueId, season) {
+  const allPlayerScores = [];
+  
+  for (let week = 1; week <= 18; week++) {
+    const matchups = await sleeperClient.getMatchups(leagueId, week);
+    
+    for (const matchup of matchups) {
+      const { roster_id, players_points, starters, matchup_id } = matchup;
+      
+      for (const [playerId, points] of Object.entries(players_points)) {
+        const isStarter = starters.includes(playerId);
+        
+        allPlayerScores.push({
+          leagueId,
+          playerId,
+          rosterId: roster_id,
+          week,
+          season,
+          points,
+          isStarter,
+          matchupId: matchup_id
+        });
+      }
+    }
+  }
+  
+  return allPlayerScores;
+}
 ```
 
 ### Transaction Chain Analysis
