@@ -119,7 +119,7 @@ dynasty-dna/
 ## Phase-Based Development
 
 **Phase 1 (Current):** Core transaction visualization using only Sleeper data
-**Phase 2:** Integrate nflverse for player statistics
+**Phase 2:** Integrate player statistics from Sleeper matchups endpoint
 **Phase 3:** Calculate fantasy points with custom scoring
 **Phase 4:** Trade effectiveness metrics
 **Phase 5:** Premium features and monetization

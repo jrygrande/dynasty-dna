@@ -380,7 +380,7 @@ export class DataSyncService {
   /**
    * Sync all league transactions
    */
-  private async syncLeagueTransactions(leagueId: string): Promise<void> {
+  async syncLeagueTransactions(leagueId: string): Promise<void> {
     const transactions = await sleeperClient.getAllLeagueTransactions(leagueId);
     
     for (const transaction of transactions) {

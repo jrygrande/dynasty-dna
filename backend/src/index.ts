@@ -6,6 +6,7 @@ import { config } from './config';
 import { healthRouter } from './api/health';
 import { leaguesRouter } from './api/leagues';
 import { playersRouter } from './api/players';
+import { testRouter } from './api/test';
 import { errorHandler, notFoundHandler } from './api/middleware/errorHandlers';
 
 const app = express();
@@ -24,6 +25,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use('/api/health', healthRouter);
 app.use('/api/leagues', leaguesRouter);
 app.use('/api/players', playersRouter);
+app.use('/api/test', testRouter);
 
 app.use(notFoundHandler);
 app.use(errorHandler);
