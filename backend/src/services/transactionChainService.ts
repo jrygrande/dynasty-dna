@@ -259,7 +259,8 @@ export class TransactionChainService {
         const transactionNode = await this.buildTransactionNode(
           transaction,
           internalLeague.name,
-          league.season
+          league.season,
+          focusAsset
         );
 
         // Add all assets involved to the graph
@@ -388,39 +389,108 @@ export class TransactionChainService {
   }
 
   /**
-   * Build a transaction node from database transaction
+   * Build a transaction node from database transaction (context-aware)
    */
   private async buildTransactionNode(
     transaction: any,
     leagueName: string,
-    season: string
+    season: string,
+    rootAsset?: AssetNode
   ): Promise<TransactionNode> {
     const assetsReceived: AssetNode[] = [];
     const assetsGiven: AssetNode[] = [];
     let managerFrom = null;
     let managerTo = null;
+    let perspectiveManager = null;
+    let assetWasGiven = false;
 
-    // Process transaction items
-    for (const item of transaction.items) {
-      const asset = await this.buildAssetNodeFromItem(item);
-      
-      if (item.type === 'add') {
-        assetsReceived.push(asset);
-        if (item.manager && !managerTo) {
-          managerTo = {
-            id: item.manager.id,
-            username: item.manager.username,
-            displayName: item.manager.displayName
-          };
+    // First pass: find the perspective if we have a root asset
+    if (rootAsset) {
+      for (const item of transaction.items) {
+        const asset = await this.buildAssetNodeFromItem(item);
+        if (asset.id === rootAsset.id) {
+          perspectiveManager = item.manager;
+          assetWasGiven = (item.type === 'drop');
+          break;
         }
-      } else if (item.type === 'drop') {
-        assetsGiven.push(asset);
-        if (item.manager && !managerFrom) {
-          managerFrom = {
-            id: item.manager.id,
-            username: item.manager.username,
-            displayName: item.manager.displayName
-          };
+      }
+    }
+
+    // Second pass: build assets from perspective
+    if (perspectiveManager && rootAsset) {
+      // Context-aware building - show from perspective of the root asset's owner
+      for (const item of transaction.items) {
+        const asset = await this.buildAssetNodeFromItem(item);
+        
+        if (item.manager.id === perspectiveManager.id) {
+          // This is the perspective manager's side
+          if (item.type === 'add') {
+            assetsReceived.push(asset);
+            if (!managerTo) {
+              managerTo = {
+                id: item.manager.id,
+                username: item.manager.username,
+                displayName: item.manager.displayName
+              };
+            }
+          } else if (item.type === 'drop') {
+            assetsGiven.push(asset);
+            if (!managerFrom) {
+              managerFrom = {
+                id: item.manager.id,
+                username: item.manager.username,
+                displayName: item.manager.displayName
+              };
+            }
+          }
+        } else {
+          // This is the other side of the trade
+          if (item.type === 'add') {
+            // Other manager received this, so perspective manager gave it
+            assetsGiven.push(asset);
+            if (!managerFrom) {
+              managerFrom = {
+                id: perspectiveManager.id,
+                username: perspectiveManager.username,
+                displayName: perspectiveManager.displayName
+              };
+            }
+          } else if (item.type === 'drop') {
+            // Other manager gave this, so perspective manager received it
+            assetsReceived.push(asset);
+            if (!managerTo) {
+              managerTo = {
+                id: perspectiveManager.id,
+                username: perspectiveManager.username,
+                displayName: perspectiveManager.displayName
+              };
+            }
+          }
+        }
+      }
+    } else {
+      // Fallback to old behavior if no context
+      for (const item of transaction.items) {
+        const asset = await this.buildAssetNodeFromItem(item);
+        
+        if (item.type === 'add') {
+          assetsReceived.push(asset);
+          if (item.manager && !managerTo) {
+            managerTo = {
+              id: item.manager.id,
+              username: item.manager.username,
+              displayName: item.manager.displayName
+            };
+          }
+        } else if (item.type === 'drop') {
+          assetsGiven.push(asset);
+          if (item.manager && !managerFrom) {
+            managerFrom = {
+              id: item.manager.id,
+              username: item.manager.username,
+              displayName: item.manager.displayName
+            };
+          }
         }
       }
     }

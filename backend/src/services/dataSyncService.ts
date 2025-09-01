@@ -142,7 +142,15 @@ export class DataSyncService {
         errors.push(`Draft picks: ${error instanceof Error ? error.message : 'Unknown error'}`);
       }
 
-      // 7. Sync player weekly scoring data
+      // 7. Sync drafts and create draft transactions
+      try {
+        await this.syncLeagueDrafts(leagueId);
+        synced.push('Drafts and draft transactions');
+      } catch (error) {
+        errors.push(`Drafts: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+
+      // 8. Sync player weekly scoring data
       try {
         await this.syncPlayerWeeklyScores(leagueId);
         synced.push('Player weekly scores');
@@ -615,6 +623,183 @@ export class DataSyncService {
         });
       }
     }
+  }
+
+  /**
+   * Sync drafts and create draft transactions
+   */
+  private async syncLeagueDrafts(leagueId: string): Promise<void> {
+    console.log(`🎯 Syncing drafts for league: ${leagueId}`);
+    const internalLeagueId = await this.getInternalLeagueId(leagueId);
+    
+    // Get all drafts for this league
+    const drafts = await sleeperClient.getLeagueDrafts(leagueId);
+    
+    for (const draftInfo of drafts) {
+      console.log(`  📅 Processing draft: ${draftInfo.draft_id} (${draftInfo.season})`);
+      
+      // Sync draft metadata
+      const dbDraft = await prisma.draft.upsert({
+        where: { sleeperDraftId: draftInfo.draft_id },
+        update: {
+          season: draftInfo.season,
+          status: draftInfo.status,
+          draftType: draftInfo.type,
+          rounds: draftInfo.settings?.rounds || 4,
+          startTime: draftInfo.start_time ? BigInt(draftInfo.start_time) : null,
+          created: draftInfo.created ? BigInt(draftInfo.created) : null,
+          draftOrder: JSON.stringify(draftInfo.draft_order || {}),
+          settings: JSON.stringify(draftInfo.settings || {}),
+          updatedAt: new Date()
+        },
+        create: {
+          leagueId: internalLeagueId,
+          sleeperDraftId: draftInfo.draft_id,
+          season: draftInfo.season,
+          status: draftInfo.status,
+          draftType: draftInfo.type,
+          rounds: draftInfo.settings?.rounds || 4,
+          startTime: draftInfo.start_time ? BigInt(draftInfo.start_time) : null,
+          created: draftInfo.created ? BigInt(draftInfo.created) : null,
+          draftOrder: JSON.stringify(draftInfo.draft_order || {}),
+          settings: JSON.stringify(draftInfo.settings || {})
+        }
+      });
+      
+      // Get draft picks
+      const picks = await sleeperClient.getDraftPicks(draftInfo.draft_id);
+      console.log(`    📊 Processing ${picks.length} draft picks`);
+      
+      for (const pick of picks) {
+        if (!pick.player_id) continue; // Skip empty picks
+        
+        // Find manager who made the pick
+        const manager = await this.getManagerByRosterId(leagueId, pick.roster_id);
+        if (!manager) {
+          console.warn(`Could not find manager for roster ${pick.roster_id} in draft pick`);
+          continue;
+        }
+        
+        // Find player
+        const player = await prisma.player.findFirst({
+          where: { sleeperId: pick.player_id }
+        });
+        if (!player) {
+          console.warn(`Could not find player ${pick.player_id} for draft pick`);
+          continue;
+        }
+        
+        // Create DraftSelection record
+        const draftSelection = await prisma.draftSelection.upsert({
+          where: {
+            draftId_pickNumber: {
+              draftId: dbDraft.id,
+              pickNumber: pick.pick_no
+            }
+          },
+          update: {
+            round: pick.round,
+            draftSlot: pick.draft_slot,
+            rosterId: pick.roster_id,
+            pickedBy: pick.picked_by,
+            player: { connect: { id: player.id } }
+          },
+          create: {
+            pickNumber: pick.pick_no,
+            round: pick.round,
+            draftSlot: pick.draft_slot,
+            rosterId: pick.roster_id,
+            pickedBy: pick.picked_by,
+            draft: { connect: { id: dbDraft.id } },
+            player: { connect: { id: player.id } }
+          }
+        });
+        
+        // Create draft transaction
+        await this.createDraftTransaction(draftSelection, dbDraft, player, manager, leagueId);
+      }
+    }
+  }
+
+  /**
+   * Create a draft transaction for a draft pick
+   */
+  private async createDraftTransaction(
+    selection: any,
+    draft: any,
+    player: any,
+    manager: any,
+    leagueId: string
+  ): Promise<void> {
+    const internalLeagueId = await this.getInternalLeagueId(leagueId);
+    
+    // Create unique transaction ID for draft
+    const sleeperTransactionId = `draft_${selection.id}_${player.sleeperId}`;
+    
+    // Check if transaction already exists
+    const existingTransaction = await prisma.transaction.findFirst({
+      where: { sleeperTransactionId }
+    });
+    
+    if (existingTransaction) {
+      return; // Skip if already created
+    }
+    
+    // Create draft transaction
+    const transaction = await prisma.transaction.create({
+      data: {
+        leagueId: internalLeagueId,
+        sleeperTransactionId,
+        type: 'draft',
+        status: 'complete',
+        week: null,
+        leg: null,
+        timestamp: draft.startTime || draft.created || BigInt(Date.now()),
+        creator: null,
+        consenterIds: JSON.stringify([]),
+        rosterIds: JSON.stringify([selection.rosterId || 0]),
+        metadata: JSON.stringify({
+          draft_id: draft.sleeperDraftId,
+          pick_number: selection.pickNumber,
+          round: selection.round,
+          draft_slot: selection.draftSlot
+        })
+      }
+    });
+    
+    // Check if this pick was traded (i.e., if there's a DraftPick record)
+    const draftPick = await prisma.draftPick.findFirst({
+      where: {
+        leagueId: internalLeagueId,
+        season: draft.season,
+        round: selection.round,
+        currentOwnerId: manager.id
+      }
+    });
+    
+    // If pick was traded, add it as "currency spent"
+    if (draftPick && draftPick.originalOwnerId !== draftPick.currentOwnerId) {
+      await prisma.transactionItem.create({
+        data: {
+          transactionId: transaction.id,
+          managerId: manager.id,
+          draftPickId: draftPick.id,
+          type: 'drop' // "Spending" the traded pick
+        }
+      });
+    }
+    
+    // Add the player received
+    await prisma.transactionItem.create({
+      data: {
+        transactionId: transaction.id,
+        managerId: manager.id,
+        playerId: player.id,
+        type: 'add'
+      }
+    });
+    
+    console.log(`    ✅ Created draft transaction: ${player.fullName} (R${selection.round}P${selection.pickNumber})`);
   }
 
   /**
