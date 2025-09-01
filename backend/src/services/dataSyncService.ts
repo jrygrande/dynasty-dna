@@ -482,6 +482,95 @@ export class DataSyncService {
         }
       }
     }
+
+    // Sync draft picks in this transaction
+    if (transaction.draft_picks && transaction.draft_picks.length > 0) {
+      console.log(`🎯 Processing ${transaction.draft_picks.length} draft picks in transaction ${transaction.transaction_id}`);
+      for (const pick of transaction.draft_picks) {
+        console.log(`  📅 ${pick.season} Round ${pick.round}: Roster ${pick.roster_id} → Roster ${pick.owner_id}`);
+        // Map roster IDs to manager IDs
+        const originalOwnerManager = await this.getManagerByRosterId(leagueId, pick.roster_id);
+        const currentOwnerManager = await this.getManagerByRosterId(leagueId, pick.owner_id);
+
+        if (!originalOwnerManager || !currentOwnerManager) {
+          console.warn(`Could not find managers for draft pick trade: original=${pick.roster_id}, current=${pick.owner_id}`);
+          continue;
+        }
+
+        // Find or create the draft pick
+        const draftPick = await prisma.draftPick.upsert({
+          where: {
+            leagueId_season_round_originalOwnerId: {
+              leagueId: internalLeagueId,
+              season: pick.season,
+              round: pick.round,
+              originalOwnerId: originalOwnerManager.id
+            }
+          },
+          update: {
+            currentOwnerId: currentOwnerManager.id, // Update current owner after trade
+            updatedAt: new Date()
+          },
+          create: {
+            leagueId: internalLeagueId,
+            season: pick.season,
+            round: pick.round,
+            originalOwnerId: originalOwnerManager.id,
+            currentOwnerId: currentOwnerManager.id,
+            pickNumber: null // Will be set during actual draft
+          }
+        });
+
+        // Create transaction items for the pick trade
+        // Previous owner drops the pick
+        if (pick.previous_owner_id) {
+          const previousOwnerManager = await this.getManagerByRosterId(leagueId, pick.previous_owner_id);
+          if (previousOwnerManager) {
+            const existingDropItem = await prisma.transactionItem.findFirst({
+              where: {
+                transactionId: dbTransaction.id,
+                draftPickId: draftPick.id,
+                type: 'drop'
+              }
+            });
+
+            if (!existingDropItem) {
+              await prisma.transactionItem.create({
+                data: {
+                  transactionId: dbTransaction.id,
+                  managerId: previousOwnerManager.id,
+                  draftPickId: draftPick.id,
+                  type: 'drop'
+                }
+              });
+            }
+          }
+        }
+
+        // New owner receives the pick
+        const newOwnerManager = await this.getManagerByRosterId(leagueId, pick.owner_id);
+        if (newOwnerManager) {
+          const existingAddItem = await prisma.transactionItem.findFirst({
+            where: {
+              transactionId: dbTransaction.id,
+              draftPickId: draftPick.id,
+              type: 'add'
+            }
+          });
+
+          if (!existingAddItem) {
+            await prisma.transactionItem.create({
+              data: {
+                transactionId: dbTransaction.id,
+                managerId: newOwnerManager.id,
+                draftPickId: draftPick.id,
+                type: 'add'
+              }
+            });
+          }
+        }
+      }
+    }
   }
 
   /**

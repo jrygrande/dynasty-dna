@@ -53,6 +53,15 @@ interface SleeperTransaction {
   adds?: Record<string, number>;
   drops?: Record<string, number>;
   waiver_budget?: Record<string, number>;
+  draft_picks?: SleeperDraftPick[];
+}
+
+interface SleeperDraftPick {
+  season: string;
+  round: number;
+  roster_id: number; // original owner's roster_id
+  previous_owner_id?: number; // previous owner's roster id (in this trade)
+  owner_id: number; // the new owner of this pick after the trade
 }
 
 interface SleeperPlayer {

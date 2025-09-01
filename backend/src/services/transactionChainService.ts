@@ -26,7 +26,7 @@ export interface TransactionNode {
   week?: number;
   season: string;
   leagueName: string;
-  timestamp: bigint;
+  timestamp: string; // Changed from bigint to string for JSON serialization
   creator?: string;
   description: string;
   assetsReceived: AssetNode[];
@@ -282,25 +282,63 @@ export class TransactionChainService {
    */
   private async traceAssetPath(
     rootAsset: AssetNode,
-    graph: TransactionGraph
+    graph: TransactionGraph,
+    visitedAssets: Set<string> = new Set(),
+    depth: number = 0,
+    maxDepth: number = 20
   ): Promise<TransactionChain> {
-    const visited = new Set<string>();
+    // Prevent infinite recursion from circular references
+    if (visitedAssets.has(rootAsset.id)) {
+      console.warn(`Circular reference detected for asset ${rootAsset.id} (${rootAsset.name}). Stopping trace.`);
+      return {
+        rootAsset,
+        totalTransactions: 0,
+        seasonsSpanned: 0,
+        currentOwner: null,
+        originalOwner: null,
+        transactionPath: [],
+        derivedAssets: []
+      };
+    }
+
+    // Safety check for maximum recursion depth
+    if (depth > maxDepth) {
+      console.warn(`Maximum recursion depth (${maxDepth}) exceeded for asset ${rootAsset.id}. Stopping trace.`);
+      return {
+        rootAsset,
+        totalTransactions: 0,
+        seasonsSpanned: 0,
+        currentOwner: null,
+        originalOwner: null,
+        transactionPath: [],
+        derivedAssets: []
+      };
+    }
+
+    // Add this asset to the visited set
+    visitedAssets.add(rootAsset.id);
+
+    const visitedTransactions = new Set<string>();
     const transactionPath: TransactionNode[] = [];
     const derivedAssets: TransactionChain[] = [];
 
     // Get transactions involving this asset
     const assetTransactions = graph.edges.get(rootAsset.id) || [];
 
-    // Sort by timestamp
-    assetTransactions.sort((a, b) => Number(a.timestamp) - Number(b.timestamp));
+    // Sort by timestamp (now strings, but convert back to BigInt for accurate comparison)
+    assetTransactions.sort((a, b) => {
+      const timeA = BigInt(a.timestamp);
+      const timeB = BigInt(b.timestamp);
+      return Number(timeA - timeB);
+    });
 
     let currentOwner = null;
     let originalOwner = null;
 
     // Trace through each transaction
     for (const transaction of assetTransactions) {
-      if (visited.has(transaction.id)) continue;
-      visited.add(transaction.id);
+      if (visitedTransactions.has(transaction.id)) continue;
+      visitedTransactions.add(transaction.id);
 
       transactionPath.push(transaction);
 
@@ -317,7 +355,13 @@ export class TransactionChainService {
       for (const receivedAsset of transaction.assetsReceived) {
         if (receivedAsset.id !== rootAsset.id) {
           try {
-            const derivedChain = await this.traceAssetPath(receivedAsset, graph);
+            const derivedChain = await this.traceAssetPath(
+              receivedAsset, 
+              graph, 
+              visitedAssets,
+              depth + 1,
+              maxDepth
+            );
             derivedAssets.push(derivedChain);
           } catch (error) {
             console.warn(`Failed to trace derived asset ${receivedAsset.id}:`, error);
@@ -325,6 +369,9 @@ export class TransactionChainService {
         }
       }
     }
+
+    // Remove this asset from visited set before returning (allow it to be processed in other branches)
+    visitedAssets.delete(rootAsset.id);
 
     // Calculate metrics
     const seasonsSpanned = new Set(transactionPath.map(t => t.season)).size;
@@ -394,7 +441,7 @@ export class TransactionChainService {
       week: transaction.week,
       season,
       leagueName,
-      timestamp: transaction.timestamp,
+      timestamp: this.safeBigIntToString(transaction.timestamp), // Convert BigInt to string
       creator: transaction.creator,
       description,
       assetsReceived,
@@ -481,6 +528,16 @@ export class TransactionChainService {
               `${draftPick.season} Round ${draftPick.round} Pick`
       };
     }
+  }
+
+  /**
+   * Safely convert BigInt to string for JSON serialization
+   */
+  private safeBigIntToString(value: any): string {
+    if (typeof value === 'bigint') {
+      return value.toString();
+    }
+    return String(value);
   }
 
   /**
