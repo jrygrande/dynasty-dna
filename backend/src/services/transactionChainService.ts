@@ -405,13 +405,39 @@ export class TransactionChainService {
       enhancedTransaction.assetOrigins = [];
       
       for (const draftPick of draftPicks) {
-        // Find the most recent trade involving this draft pick (don't recurse deeply)
+        // Method 1: Try exact ID match first
         const pickTransactionIds = graph.edges.get(draftPick.id) || [];
-        const pickTransactions = pickTransactionIds
+        
+        let pickTransactions = pickTransactionIds
           .map(id => graph.chains.get(id))
           .filter(Boolean)
           .filter(t => t!.type === 'trade' && t!.id !== transaction.id) // Only trades, not this draft
           .sort((a, b) => Number(BigInt(b!.timestamp) - BigInt(a!.timestamp))); // Most recent first
+        
+        // Method 2: If no exact matches, find trades with logically equivalent picks
+        if (pickTransactions.length === 0) {
+          // Find all trades involving picks of same season/round/original owner
+          const equivalentTrades: TransactionNode[] = [];
+          
+          for (const [assetId, asset] of graph.nodes) {
+            if (asset.type === 'draft_pick' && 
+                asset.season === draftPick.season && 
+                asset.round === draftPick.round &&
+                asset.originalOwnerId === draftPick.originalOwnerId) {
+              
+              const equivalentPickTxIds = graph.edges.get(assetId) || [];
+              const equivalentPickTxs = equivalentPickTxIds
+                .map(id => graph.chains.get(id))
+                .filter(Boolean)
+                .filter(t => t!.type === 'trade' && t!.id !== transaction.id);
+              
+              equivalentTrades.push(...equivalentPickTxs as TransactionNode[]);
+            }
+          }
+          
+          pickTransactions = equivalentTrades
+            .sort((a, b) => Number(BigInt(b.timestamp) - BigInt(a.timestamp))); // Most recent first
+        }
         
         if (pickTransactions.length > 0) {
           const mostRecentTrade = pickTransactions[0]!;
@@ -440,14 +466,18 @@ export class TransactionChainService {
     };
 
     // Process each league in dynasty
-    for (const league of leagues) {
-      if (!league.inDatabase) continue;
+    for (const league of leagues) {      
+      if (!league.inDatabase) {
+        continue;
+      }
 
       const internalLeague = await prisma.league.findUnique({
         where: { sleeperLeagueId: league.sleeperLeagueId }
       });
 
-      if (!internalLeague) continue;
+      if (!internalLeague) {
+        continue;
+      }
 
       // Get all transactions for this league
       const transactions = await prisma.transaction.findMany({
@@ -478,6 +508,7 @@ export class TransactionChainService {
           league.season,
           focusAsset
         );
+
 
         // Add all assets involved to the graph
         [...transactionNode.assetsReceived, ...transactionNode.assetsGiven].forEach(asset => {
