@@ -107,7 +107,9 @@ export class AssetTradeTreeService {
   async buildAssetTradeTree(
     assetId: string,
     startingTransactionId: string,
-    leagueId: string
+    leagueId: string,
+    visitedAssets: Set<string> = new Set(),
+    depth: number = 0
   ): Promise<AssetTradeTree> {
     console.log(`🌳 Building asset trade tree for asset: ${assetId} starting from transaction: ${startingTransactionId}`);
     
@@ -133,7 +135,7 @@ export class AssetTradeTreeService {
     if (finalTrade) {
       tree.finalTrade = {
         transaction: finalTrade,
-        tradePackage: await this.buildTradePackage(asset, finalTrade, leagueId)
+        tradePackage: await this.buildTradePackage(asset, finalTrade, leagueId, visitedAssets, depth)
       };
     }
     
@@ -245,15 +247,79 @@ export class AssetTradeTreeService {
    * Build the trade package - what was received when this asset was traded away
    */
   private async buildTradePackage(
-    _tradedAsset: AssetNode,
-    _tradeTransaction: TransactionNode,
-    _leagueId: string
+    tradedAsset: AssetNode,
+    tradeTransaction: TransactionNode,
+    leagueId: string,
+    visitedAssets: Set<string> = new Set(),
+    depth: number = 0
   ): Promise<{ assetsReceived: AssetTradeTree[]; totalValue: string; }> {
-    // This is where we'll recursively build trees for each asset received in the trade
-    // For now, return a placeholder
+    // Prevent infinite recursion
+    if (depth > 10) {
+      console.warn(`Maximum recursion depth reached for asset ${tradedAsset.id}`);
+      return {
+        assetsReceived: [],
+        totalValue: 'Deep recursion prevented'
+      };
+    }
+
+    // Find the manager who traded away the asset
+    let tradingManager: any = null;
+    for (const manager of tradeTransaction.managersInvolved) {
+      if (manager.assetsGiven.some(a => a.id === tradedAsset.id)) {
+        tradingManager = manager;
+        break;
+      }
+    }
+
+    if (!tradingManager) {
+      return {
+        assetsReceived: [],
+        totalValue: 'No trading manager found'
+      };
+    }
+
+    // Get all assets this manager received in the same transaction
+    const assetsReceived = tradingManager.assetsReceived;
+    const tradeTreesReceived: AssetTradeTree[] = [];
+
+    for (const receivedAsset of assetsReceived) {
+      // Prevent infinite loops
+      if (visitedAssets.has(receivedAsset.id)) {
+        console.warn(`Circular reference detected for asset ${receivedAsset.id}`);
+        continue;
+      }
+
+      try {
+        // Add to visited set
+        visitedAssets.add(receivedAsset.id);
+
+        // Recursively build the tree for this received asset
+        const receivedAssetTree = await this.buildAssetTradeTree(
+          receivedAsset.id,
+          tradeTransaction.id,
+          leagueId,
+          visitedAssets,
+          depth + 1
+        );
+
+        tradeTreesReceived.push(receivedAssetTree);
+
+        // Remove from visited set to allow processing in other branches
+        visitedAssets.delete(receivedAsset.id);
+      } catch (error) {
+        console.warn(`Failed to build tree for received asset ${receivedAsset.id}:`, error);
+      }
+    }
+
+    // Build summary description
+    const assetNames = assetsReceived.map(asset => asset.name);
+    const totalValue = assetNames.length === 1 
+      ? assetNames[0]
+      : `${assetNames.length}-asset package: ${assetNames.slice(0, 2).join(', ')}${assetNames.length > 2 ? '...' : ''}`;
+
     return {
-      assetsReceived: [], // TODO: Implement recursive tree building
-      totalValue: 'Multi-asset trade package' // TODO: Build meaningful summary
+      assetsReceived: tradeTreesReceived,
+      totalValue
     };
   }
   
@@ -556,7 +622,9 @@ export class AssetTradeTreeService {
       return {
         id: draftPick.id,
         type: 'draft_pick',
-        name: draftPick.playerSelected?.fullName || `${draftPick.season} Round ${draftPick.round} Pick`,
+        name: draftPick.playerSelected?.fullName 
+          ? `${draftPick.season} Round ${draftPick.round} Pick → ${draftPick.playerSelected.fullName}`
+          : `${draftPick.season} Round ${draftPick.round} Pick`,
         season: draftPick.season,
         round: draftPick.round,
         originalOwnerId: draftPick.originalOwnerId,

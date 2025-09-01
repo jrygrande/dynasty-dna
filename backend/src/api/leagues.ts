@@ -6,6 +6,7 @@ import { sleeperClient } from '../services/sleeperClient';
 import { historicalLeagueService } from '../services/historicalLeagueService';
 import { transactionChainService } from '../services/transactionChainService';
 import { assetTradeTreeService } from '../services/assetTradeTreeService';
+import { treeFormatterService } from '../services/treeFormatterService';
 import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
@@ -499,6 +500,78 @@ leaguesRouter.get('/:leagueId/assets/:assetId/trade-tree', asyncHandler(async (r
     console.error(`❌ Failed to build trade tree:`, error);
     res.status(500).json({
       message: 'Failed to build asset trade tree',
+      assetId,
+      transactionId,
+      leagueId,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+}));
+
+// GET /api/leagues/:leagueId/assets/:assetId/complete-tree - Get complete recursive trade tree
+leaguesRouter.get('/:leagueId/assets/:assetId/complete-tree', asyncHandler(async (req, res) => {
+  const { leagueId, assetId } = z.object({
+    leagueId: z.string(),
+    assetId: z.string()
+  }).parse(req.params);
+  
+  const { transactionId, format = 'json' } = z.object({
+    transactionId: z.string(),
+    format: z.enum(['json', 'ascii']).optional()
+  }).parse(req.query);
+  
+  try {
+    console.log(`🌲 Building complete recursive tree for asset: ${assetId} in league: ${leagueId} from transaction: ${transactionId}`);
+    
+    // Find the internal league ID
+    const league = await prisma.league.findUnique({
+      where: { sleeperLeagueId: leagueId }
+    });
+
+    if (!league) {
+      return res.status(404).json({
+        message: 'League not found in database. Please sync the league first.',
+        leagueId,
+        syncEndpoint: `/api/leagues/${leagueId}/sync`
+      });
+    }
+
+    // Build the complete recursive trade tree
+    const completeTree = await assetTradeTreeService.buildAssetTradeTree(
+      assetId,
+      transactionId,
+      league.id
+    );
+
+    // Format response based on requested format
+    if (format === 'ascii') {
+      const asciiTree = treeFormatterService.formatAssetTree(completeTree, true);
+      const summary = treeFormatterService.formatTreeSummary(completeTree);
+      
+      res.status(200).json({
+        leagueId,
+        assetId,
+        transactionId,
+        format: 'ascii',
+        tree: asciiTree,
+        summary: summary,
+        generatedAt: new Date().toISOString()
+      });
+    } else {
+      // JSON format - return full structured data
+      res.status(200).json({
+        leagueId,
+        assetId,
+        transactionId,
+        format: 'json',
+        completeTree,
+        generatedAt: new Date().toISOString()
+      });
+    }
+  } catch (error) {
+    console.error(`❌ Failed to build complete trade tree:`, error);
+    res.status(500).json({
+      message: 'Failed to build complete asset trade tree',
       assetId,
       transactionId,
       leagueId,
