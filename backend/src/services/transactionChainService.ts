@@ -41,6 +41,12 @@ export interface TransactionNode {
     username: string;
     displayName?: string;
   };
+  assetOrigins?: AssetOrigin[]; // NEW: Origins of assets involved in this transaction
+}
+
+export interface AssetOrigin {
+  asset: AssetNode;
+  originChain: TransactionNode[]; // The trading history of this asset
 }
 
 export interface TransactionChain {
@@ -63,8 +69,8 @@ export interface TransactionChain {
 
 export interface TransactionGraph {
   nodes: Map<string, AssetNode>;
-  edges: Map<string, TransactionNode[]>; // assetId -> transactions involving it
-  chains: Map<string, TransactionChain>;
+  edges: Map<string, string[]>; // assetId -> transaction IDs involving it
+  chains: Map<string, TransactionNode>; // transactionId -> transaction details
 }
 
 export class TransactionChainService {
@@ -87,7 +93,7 @@ export class TransactionChainService {
     // Build transaction graph across all seasons
     const graph = await this.buildTransactionGraph(dynastyChain.leagues, rootAsset);
     
-    // Trace the path for this specific asset
+    // Trace the path for this specific asset (with simple origin enhancement)
     const chain = await this.traceAssetPath(rootAsset, graph);
     
     return chain;
@@ -211,6 +217,216 @@ export class TransactionChainService {
   }
 
   /**
+   * Trace complete asset genealogy including origins of traded assets
+   */
+  private async traceCompleteAssetGenealogy(
+    rootAsset: AssetNode,
+    graph: TransactionGraph,
+    visitedAssets: Set<string> = new Set(),
+    depth: number = 0,
+    maxDepth: number = 20
+  ): Promise<TransactionChain> {
+    // Prevent infinite recursion
+    if (visitedAssets.has(rootAsset.id)) {
+      console.warn(`Circular reference detected for asset ${rootAsset.id} (${rootAsset.name}). Stopping trace.`);
+      return {
+        rootAsset,
+        totalTransactions: 0,
+        seasonsSpanned: 0,
+        currentOwner: null,
+        originalOwner: null,
+        transactionPath: [],
+        derivedAssets: []
+      };
+    }
+
+    if (depth > maxDepth) {
+      console.warn(`Maximum recursion depth (${maxDepth}) exceeded for asset ${rootAsset.id}. Stopping trace.`);
+      return {
+        rootAsset,
+        totalTransactions: 0,
+        seasonsSpanned: 0,
+        currentOwner: null,
+        originalOwner: null,
+        transactionPath: [],
+        derivedAssets: []
+      };
+    }
+
+    visitedAssets.add(rootAsset.id);
+
+    const transactionPath: TransactionNode[] = [];
+    const derivedAssets: TransactionChain[] = [];
+    let currentOwner = null;
+    let originalOwner = null;
+
+    // Get transactions where this asset appears
+    const assetEdges = graph.edges.get(rootAsset.id) || [];
+    
+    // Sort by timestamp to get chronological order
+    const sortedTransactions = assetEdges
+      .map(transactionId => graph.chains.get(transactionId))
+      .filter(Boolean)
+      .sort((a, b) => parseInt(a!.timestamp) - parseInt(b!.timestamp));
+
+    for (const transaction of sortedTransactions) {
+      if (!transaction) continue;
+
+      // For each transaction, check if we need to trace back asset origins
+      const enhancedTransaction = await this.enhanceTransactionWithAssetOrigins(
+        transaction, 
+        graph, 
+        rootAsset,
+        visitedAssets,
+        depth
+      );
+
+      // Add the enhanced transaction to path
+      transactionPath.push(enhancedTransaction);
+
+      // Track ownership
+      if (enhancedTransaction.managerTo) {
+        currentOwner = enhancedTransaction.managerTo;
+      }
+      if (!originalOwner && enhancedTransaction.managerFrom) {
+        originalOwner = enhancedTransaction.managerFrom;
+      }
+    }
+
+    visitedAssets.delete(rootAsset.id);
+
+    const seasonsSpanned = new Set(transactionPath.map(t => t.season)).size;
+
+    return {
+      rootAsset,
+      totalTransactions: transactionPath.length,
+      seasonsSpanned,
+      currentOwner,
+      originalOwner,
+      transactionPath,
+      derivedAssets
+    };
+  }
+
+  /**
+   * Enhance transaction with origins of assets involved (recursive tracing)
+   */
+  private async enhanceTransactionWithAssetOrigins(
+    transaction: TransactionNode,
+    graph: TransactionGraph,
+    rootAsset: AssetNode,
+    visitedAssets: Set<string>,
+    currentDepth: number
+  ): Promise<TransactionNode> {
+    // Create enhanced transaction with potential asset origin chains
+    const enhancedTransaction = { ...transaction };
+    
+    // For draft transactions, trace back the draft pick's trading history
+    if (transaction.type === 'draft') {
+      const draftPicksGiven = transaction.assetsGiven.filter(asset => asset.type === 'draft_pick');
+      
+      for (const draftPick of draftPicksGiven) {
+        if (!visitedAssets.has(draftPick.id)) {
+          try {
+            // Recursively trace this draft pick's history
+            const pickChain = await this.traceCompleteAssetGenealogy(
+              draftPick,
+              graph,
+              new Set(visitedAssets), // Copy visited set to avoid interference
+              currentDepth + 1
+            );
+            
+            // If the pick has a trading history, prepend those transactions
+            if (pickChain.transactionPath.length > 0) {
+              // Add pick's history as "background" transactions
+              enhancedTransaction.assetOrigins = enhancedTransaction.assetOrigins || [];
+              enhancedTransaction.assetOrigins.push({
+                asset: draftPick,
+                originChain: pickChain.transactionPath
+              });
+            }
+          } catch (error) {
+            console.warn(`Failed to trace draft pick origin ${draftPick.id}:`, error);
+          }
+        }
+      }
+    }
+
+    // For trade transactions, check if any assets involved have interesting origins
+    if (transaction.type === 'trade') {
+      const allAssets = [...transaction.assetsReceived, ...transaction.assetsGiven];
+      
+      for (const asset of allAssets) {
+        if (asset.id !== rootAsset.id && asset.type === 'draft_pick' && !visitedAssets.has(asset.id)) {
+          try {
+            // Trace draft pick origins in trades too
+            const pickChain = await this.traceCompleteAssetGenealogy(
+              asset,
+              graph,
+              new Set(visitedAssets),
+              currentDepth + 1
+            );
+            
+            if (pickChain.transactionPath.length > 0) {
+              enhancedTransaction.assetOrigins = enhancedTransaction.assetOrigins || [];
+              enhancedTransaction.assetOrigins.push({
+                asset,
+                originChain: pickChain.transactionPath
+              });
+            }
+          } catch (error) {
+            console.warn(`Failed to trace asset origin ${asset.id}:`, error);
+          }
+        }
+      }
+    }
+
+    return enhancedTransaction;
+  }
+
+  /**
+   * Add simple draft pick origins to a transaction (non-recursive)
+   */
+  private async addSimpleDraftPickOrigins(
+    transaction: TransactionNode,
+    graph: TransactionGraph
+  ): Promise<TransactionNode> {
+    // Only process draft transactions
+    if (transaction.type !== 'draft') {
+      return transaction;
+    }
+
+    const enhancedTransaction = { ...transaction };
+    
+    // Look for draft picks in assetsGiven (picks that were "spent")
+    const draftPicks = transaction.assetsGiven.filter(asset => asset.type === 'draft_pick');
+    
+    if (draftPicks.length > 0) {
+      enhancedTransaction.assetOrigins = [];
+      
+      for (const draftPick of draftPicks) {
+        // Find the most recent trade involving this draft pick (don't recurse deeply)
+        const pickTransactionIds = graph.edges.get(draftPick.id) || [];
+        const pickTransactions = pickTransactionIds
+          .map(id => graph.chains.get(id))
+          .filter(Boolean)
+          .filter(t => t!.type === 'trade' && t!.id !== transaction.id) // Only trades, not this draft
+          .sort((a, b) => Number(BigInt(b!.timestamp) - BigInt(a!.timestamp))); // Most recent first
+        
+        if (pickTransactions.length > 0) {
+          const mostRecentTrade = pickTransactions[0]!;
+          enhancedTransaction.assetOrigins.push({
+            asset: draftPick,
+            originChain: [mostRecentTrade] // Just show the most recent trade, not full history
+          });
+        }
+      }
+    }
+
+    return enhancedTransaction;
+  }
+
+  /**
    * Build transaction graph from dynasty history
    */
   private async buildTransactionGraph(
@@ -270,8 +486,11 @@ export class TransactionChainService {
           if (!graph.edges.has(asset.id)) {
             graph.edges.set(asset.id, []);
           }
-          graph.edges.get(asset.id)!.push(transactionNode);
+          graph.edges.get(asset.id)!.push(transactionNode.id);
         });
+
+        // Store transaction details
+        graph.chains.set(transactionNode.id, transactionNode);
       }
     }
 
@@ -324,9 +543,12 @@ export class TransactionChainService {
     const derivedAssets: TransactionChain[] = [];
 
     // Get transactions involving this asset
-    const assetTransactions = graph.edges.get(rootAsset.id) || [];
+    const assetTransactionIds = graph.edges.get(rootAsset.id) || [];
+    const assetTransactions = assetTransactionIds
+      .map(id => graph.chains.get(id))
+      .filter(Boolean) as TransactionNode[];
 
-    // Sort by timestamp (now strings, but convert back to BigInt for accurate comparison)
+    // Sort by timestamp
     assetTransactions.sort((a, b) => {
       const timeA = BigInt(a.timestamp);
       const timeB = BigInt(b.timestamp);
@@ -341,7 +563,9 @@ export class TransactionChainService {
       if (visitedTransactions.has(transaction.id)) continue;
       visitedTransactions.add(transaction.id);
 
-      transactionPath.push(transaction);
+      // Enhance transaction with draft pick origins if it's a draft
+      const enhancedTransaction = await this.addSimpleDraftPickOrigins(transaction, graph);
+      transactionPath.push(enhancedTransaction);
 
       // Track ownership changes
       if (!originalOwner && transaction.managerFrom) {
