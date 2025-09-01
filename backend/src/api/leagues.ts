@@ -4,6 +4,8 @@ import { asyncHandler } from './middleware/errorHandlers';
 import { dataSyncService } from '../services/dataSyncService';
 import { sleeperClient } from '../services/sleeperClient';
 import { historicalLeagueService } from '../services/historicalLeagueService';
+import { transactionChainService } from '../services/transactionChainService';
+import { assetTradeTreeService } from '../services/assetTradeTreeService';
 import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
@@ -368,6 +370,139 @@ leaguesRouter.post('/:leagueId/sync-dynasty', asyncHandler(async (req, res) => {
       status: 'failed',
       error: error instanceof Error ? error.message : 'Unknown error',
       timestamp: new Date().toISOString()
+    });
+  }
+}));
+
+// GET /api/leagues/:leagueId/transactions/:transactionId/complete-lineage - Get complete asset lineage for transaction
+leaguesRouter.get('/:leagueId/transactions/:transactionId/complete-lineage', asyncHandler(async (req, res) => {
+  const { leagueId, transactionId } = z.object({
+    leagueId: z.string(),
+    transactionId: z.string()
+  }).parse(req.params);
+  
+  const { managerId } = z.object({
+    managerId: z.string()
+  }).parse(req.query);
+  
+  try {
+    console.log(`🔗 Building complete transaction lineage for transaction: ${transactionId}, manager: ${managerId}`);
+    
+    // Find the internal league ID
+    const league = await prisma.league.findUnique({
+      where: { sleeperLeagueId: leagueId }
+    });
+
+    if (!league) {
+      return res.status(404).json({
+        message: 'League not found in database. Please sync the league first.',
+        leagueId,
+        syncEndpoint: `/api/leagues/${leagueId}/sync`
+      });
+    }
+
+    // Find the transaction
+    const transaction = await prisma.transaction.findUnique({
+      where: { sleeperTransactionId: transactionId }
+    });
+
+    if (!transaction) {
+      return res.status(404).json({
+        message: 'Transaction not found in database',
+        transactionId,
+        leagueId
+      });
+    }
+
+    // Find the manager
+    const manager = await prisma.manager.findUnique({
+      where: { sleeperUserId: managerId }
+    });
+
+    if (!manager) {
+      return res.status(404).json({
+        message: 'Manager not found in database',
+        managerId,
+        leagueId
+      });
+    }
+
+    // Build the complete transaction lineage
+    const completeLineage = await transactionChainService.buildCompleteTransactionLineage(
+      transaction.id,
+      manager.id,
+      league.id
+    );
+
+    res.status(200).json({
+      leagueId,
+      transactionId,
+      managerId,
+      managerName: manager.displayName || manager.username,
+      completeLineage,
+      generatedAt: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error(`❌ Failed to build complete transaction lineage:`, error);
+    res.status(500).json({
+      message: 'Failed to build complete transaction lineage',
+      transactionId,
+      managerId,
+      leagueId,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+}));
+
+// GET /api/leagues/:leagueId/assets/:assetId/trade-tree - Test new asset trade tree service
+leaguesRouter.get('/:leagueId/assets/:assetId/trade-tree', asyncHandler(async (req, res) => {
+  const { leagueId, assetId } = z.object({
+    leagueId: z.string(),
+    assetId: z.string()
+  }).parse(req.params);
+  
+  const { transactionId } = z.object({
+    transactionId: z.string()
+  }).parse(req.query);
+  
+  try {
+    console.log(`🌳 Building trade tree for asset: ${assetId} in league: ${leagueId} from transaction: ${transactionId}`);
+    
+    // Find the internal league ID
+    const league = await prisma.league.findUnique({
+      where: { sleeperLeagueId: leagueId }
+    });
+
+    if (!league) {
+      return res.status(404).json({
+        message: 'League not found in database. Please sync the league first.',
+        leagueId,
+        syncEndpoint: `/api/leagues/${leagueId}/sync`
+      });
+    }
+
+    // Build the asset trade tree
+    const tradeTree = await assetTradeTreeService.buildAssetTradeTree(
+      assetId,
+      transactionId,
+      league.id
+    );
+
+    res.status(200).json({
+      leagueId,
+      assetId,
+      transactionId,
+      tradeTree,
+      generatedAt: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error(`❌ Failed to build trade tree:`, error);
+    res.status(500).json({
+      message: 'Failed to build asset trade tree',
+      assetId,
+      transactionId,
+      leagueId,
+      error: error instanceof Error ? error.message : 'Unknown error'
     });
   }
 }));

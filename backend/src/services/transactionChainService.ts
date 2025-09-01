@@ -73,6 +73,98 @@ export interface TransactionGraph {
   chains: Map<string, TransactionNode>; // transactionId -> transaction details
 }
 
+export interface CompleteTransactionLineage {
+  targetTransaction: TransactionNode;
+  perspective: {
+    manager: {
+      id: string;
+      username: string;
+      displayName?: string;
+    };
+    role: 'giving' | 'receiving' | 'both';
+  };
+  
+  // Complete lineage for EVERY asset in the transaction
+  assetLineages: AssetCompleteLineage[];
+  
+  summary: {
+    totalAssetsTraced: number;
+    startupDraftAssets: number;
+    rookieDraftAssets: number;
+    waiverPickups: number;
+    tradeAcquisitions: number;
+    stillActiveAssets: number;
+    retiredAssets: number;
+    longestChainLength: number;
+  };
+}
+
+export interface AssetCompleteLineage {
+  asset: AssetNode;
+  
+  // Which side of the target transaction
+  transactionSide: 'given' | 'received';
+  managedBy: {
+    id: string;
+    username: string;
+    displayName?: string;
+  }; // Who had this asset at target transaction
+  
+  // COMPLETE BACKWARD CHAIN to origin
+  originChain: {
+    transactions: TransactionNode[];
+    originPoint: {
+      type: 'startup_draft' | 'rookie_draft' | 'waiver' | 'free_agent' | 'commissioner';
+      transaction: TransactionNode;
+      originalManager: {
+        id: string;
+        username: string;
+        displayName?: string;
+      };
+      date: Date;
+      metadata?: {
+        draftPosition?: number;
+        waivePriority?: number;
+        faabSpent?: number;
+      };
+    };
+  };
+  
+  // COMPLETE FORWARD CHAIN to present
+  futureChain: {
+    transactions: TransactionNode[];
+    currentStatus: {
+      type: 'active_roster' | 'traded' | 'dropped' | 'retired' | 'draft_pick_used';
+      currentManager?: {
+        id: string;
+        username: string;
+        displayName?: string;
+      };
+      lastTransaction?: TransactionNode;
+      metadata?: {
+        weeksOnRoster?: number;
+        totalPoints?: number;
+        championships?: number;
+      };
+    };
+  };
+  
+  // Visual timeline data
+  timeline: {
+    totalDays: number;
+    managerTenures: {
+      manager: {
+        id: string;
+        username: string;
+        displayName?: string;
+      };
+      startDate: Date;
+      endDate: Date;
+      daysHeld: number;
+    }[];
+  };
+}
+
 export class TransactionChainService {
   /**
    * Build complete transaction chain for an asset (player or draft pick)
@@ -97,6 +189,71 @@ export class TransactionChainService {
     const chain = await this.traceAssetPath(rootAsset, graph);
     
     return chain;
+  }
+
+  /**
+   * Build complete transaction lineage from startup draft to present for all assets in a transaction
+   */
+  async buildCompleteTransactionLineage(
+    transactionId: string,
+    managerId: string,
+    leagueId: string
+  ): Promise<CompleteTransactionLineage> {
+    console.log(`🔄 Building complete lineage for transaction: ${transactionId} from manager: ${managerId} perspective`);
+    
+    // 1. Get the target transaction
+    const targetTransaction = await this.getTransactionById(transactionId);
+    
+    // 2. Get dynasty chain for full context
+    const dynastyChain = await historicalLeagueService.getLeagueHistory(leagueId);
+    
+    // 3. Build complete transaction graph across all seasons
+    const graph = await this.buildTransactionGraph(dynastyChain.leagues);
+    
+    // 4. Determine manager's role in this transaction
+    const perspective = this.determineManagerPerspective(targetTransaction, managerId);
+    
+    // 5. Get all assets in the transaction
+    const allAssets = [...targetTransaction.assetsGiven, ...targetTransaction.assetsReceived];
+    
+    // 6. Build complete lineage for each asset
+    const assetLineages: AssetCompleteLineage[] = [];
+    
+    for (const asset of allAssets) {
+      console.log(`📊 Tracing complete lineage for asset: ${asset.name}`);
+      
+      // Determine which side of transaction this asset is on from manager's perspective
+      const transactionSide = this.getAssetTransactionSide(asset, targetTransaction, managerId);
+      const managedBy = this.getAssetManagerAtTransaction(asset, targetTransaction);
+      
+      // Trace backward to origin
+      const originChain = await this.traceToOrigin(asset, targetTransaction, graph);
+      
+      // Trace forward to present
+      const futureChain = await this.traceToPresent(asset, targetTransaction, graph);
+      
+      // Build timeline
+      const timeline = this.buildAssetTimeline(originChain, targetTransaction, futureChain);
+      
+      assetLineages.push({
+        asset,
+        transactionSide,
+        managedBy,
+        originChain,
+        futureChain,
+        timeline
+      });
+    }
+    
+    // 7. Build summary
+    const summary = this.buildLineageSummary(assetLineages);
+    
+    return {
+      targetTransaction,
+      perspective,
+      assetLineages,
+      summary
+    };
   }
 
   /**
@@ -455,7 +612,7 @@ export class TransactionChainService {
   /**
    * Build transaction graph from dynasty history
    */
-  private async buildTransactionGraph(
+  async buildTransactionGraph(
     leagues: any[],
     focusAsset?: AssetNode
   ): Promise<TransactionGraph> {
@@ -656,81 +813,126 @@ export class TransactionChainService {
     const assetsGiven: AssetNode[] = [];
     let managerFrom = null;
     let managerTo = null;
-    let perspectiveManager = null;
-    let assetWasGiven = false;
 
-    // First pass: find the perspective if we have a root asset
-    if (rootAsset) {
+    if (transaction.type === 'trade') {
+      // For trades, group items by manager to determine who gave what to whom
+      const managerGroups = new Map<string, { add: AssetNode[], drop: AssetNode[], manager: any }>();
+      
       for (const item of transaction.items) {
         const asset = await this.buildAssetNodeFromItem(item);
-        if (asset.id === rootAsset.id) {
-          perspectiveManager = item.manager;
-          assetWasGiven = (item.type === 'drop');
-          break;
+        const managerId = item.manager.id;
+        
+        if (!managerGroups.has(managerId)) {
+          managerGroups.set(managerId, {
+            add: [],
+            drop: [],
+            manager: item.manager
+          });
+        }
+        
+        const group = managerGroups.get(managerId)!;
+        if (item.type === 'add') {
+          group.add.push(asset);
+        } else if (item.type === 'drop') {
+          group.drop.push(asset);
         }
       }
-    }
-
-    // Second pass: build assets from perspective
-    if (perspectiveManager && rootAsset) {
-      // Context-aware building - show from perspective of the root asset's owner
-      for (const item of transaction.items) {
-        const asset = await this.buildAssetNodeFromItem(item);
+      
+      // Convert to arrays for easier handling
+      const managers = Array.from(managerGroups.entries());
+      
+      if (managers.length === 2) {
+        // Standard 2-manager trade
+        const [manager1Id, manager1Data] = managers[0];
+        const [manager2Id, manager2Data] = managers[1];
         
-        if (item.manager.id === perspectiveManager.id) {
-          // This is the perspective manager's side
-          if (item.type === 'add') {
-            assetsReceived.push(asset);
-            if (!managerTo) {
-              managerTo = {
-                id: item.manager.id,
-                username: item.manager.username,
-                displayName: item.manager.displayName
-              };
-            }
-          } else if (item.type === 'drop') {
-            assetsGiven.push(asset);
-            if (!managerFrom) {
-              managerFrom = {
-                id: item.manager.id,
-                username: item.manager.username,
-                displayName: item.manager.displayName
-              };
-            }
+        // Manager1 gives what they drop, receives what they add
+        // Manager2 gives what they drop, receives what they add
+        // From transaction perspective: managerFrom gives, managerTo receives
+        
+        if (rootAsset) {
+          // Determine perspective based on root asset
+          const rootAssetInManager1 = manager1Data.drop.some(a => a.id === rootAsset.id) || 
+                                     manager1Data.add.some(a => a.id === rootAsset.id);
+          
+          if (rootAssetInManager1) {
+            // Show from manager1's perspective
+            managerFrom = {
+              id: manager1Data.manager.id,
+              username: manager1Data.manager.username,
+              displayName: manager1Data.manager.displayName
+            };
+            managerTo = {
+              id: manager2Data.manager.id,
+              username: manager2Data.manager.username,
+              displayName: manager2Data.manager.displayName
+            };
+            assetsGiven.push(...manager1Data.drop);
+            assetsReceived.push(...manager1Data.add);
+          } else {
+            // Show from manager2's perspective  
+            managerFrom = {
+              id: manager2Data.manager.id,
+              username: manager2Data.manager.username,
+              displayName: manager2Data.manager.displayName
+            };
+            managerTo = {
+              id: manager1Data.manager.id,
+              username: manager1Data.manager.username,
+              displayName: manager1Data.manager.displayName
+            };
+            assetsGiven.push(...manager2Data.drop);
+            assetsReceived.push(...manager2Data.add);
           }
         } else {
-          // This is the other side of the trade
+          // No root asset context - use first manager as "from"
+          managerFrom = {
+            id: manager1Data.manager.id,
+            username: manager1Data.manager.username,
+            displayName: manager1Data.manager.displayName
+          };
+          managerTo = {
+            id: manager2Data.manager.id,
+            username: manager2Data.manager.username,
+            displayName: manager2Data.manager.displayName
+          };
+          assetsGiven.push(...manager1Data.drop);
+          assetsReceived.push(...manager2Data.drop); // What manager2 gave = what manager1 received
+        }
+      } else {
+        // Fallback for unusual trade structures
+        for (const item of transaction.items) {
+          const asset = await this.buildAssetNodeFromItem(item);
+          
           if (item.type === 'add') {
-            // Other manager received this, so perspective manager gave it
-            assetsGiven.push(asset);
-            if (!managerFrom) {
-              managerFrom = {
-                id: perspectiveManager.id,
-                username: perspectiveManager.username,
-                displayName: perspectiveManager.displayName
-              };
-            }
-          } else if (item.type === 'drop') {
-            // Other manager gave this, so perspective manager received it
             assetsReceived.push(asset);
             if (!managerTo) {
               managerTo = {
-                id: perspectiveManager.id,
-                username: perspectiveManager.username,
-                displayName: perspectiveManager.displayName
+                id: item.manager.id,
+                username: item.manager.username,
+                displayName: item.manager.displayName
+              };
+            }
+          } else if (item.type === 'drop') {
+            assetsGiven.push(asset);
+            if (!managerFrom) {
+              managerFrom = {
+                id: item.manager.id,
+                username: item.manager.username,
+                displayName: item.manager.displayName
               };
             }
           }
         }
       }
     } else {
-      // Fallback to old behavior if no context
+      // For non-trades (draft, waiver, free_agent), use simple add/drop logic
       for (const item of transaction.items) {
         const asset = await this.buildAssetNodeFromItem(item);
         
         if (item.type === 'add') {
           assetsReceived.push(asset);
-          if (item.manager && !managerTo) {
+          if (!managerTo) {
             managerTo = {
               id: item.manager.id,
               username: item.manager.username,
@@ -739,7 +941,7 @@ export class TransactionChainService {
           }
         } else if (item.type === 'drop') {
           assetsGiven.push(asset);
-          if (item.manager && !managerFrom) {
+          if (!managerFrom) {
             managerFrom = {
               id: item.manager.id,
               username: item.manager.username,
@@ -853,6 +1055,495 @@ export class TransactionChainService {
               `${draftPick.season} Round ${draftPick.round} Pick`
       };
     }
+  }
+
+  /**
+   * Trace backward to find origin of an asset (startup draft, waiver, etc.)
+   */
+  private async traceToOrigin(
+    asset: AssetNode, 
+    beforeTransaction: TransactionNode, 
+    graph: TransactionGraph
+  ): Promise<AssetCompleteLineage['originChain']> {
+    const transactions: TransactionNode[] = [];
+    let currentAsset = asset;
+    const visitedAssets = new Set<string>();
+    
+    while (true) {
+      // Prevent infinite loops
+      if (visitedAssets.has(currentAsset.id)) {
+        console.warn(`Circular reference detected in origin trace for ${currentAsset.id}`);
+        break;
+      }
+      visitedAssets.add(currentAsset.id);
+      
+      // Get all transactions for this asset BEFORE the target transaction
+      const assetTransactionIds = graph.edges.get(currentAsset.id) || [];
+      const relevantTransactions = assetTransactionIds
+        .map(id => graph.chains.get(id))
+        .filter(Boolean)
+        .filter(tx => Number(tx!.timestamp) < Number(beforeTransaction.timestamp))
+        .sort((a, b) => Number(b!.timestamp) - Number(a!.timestamp)); // Most recent first
+      
+      if (relevantTransactions.length === 0) {
+        // No more transactions - we've reached the origin
+        break;
+      }
+      
+      const previousTx = relevantTransactions[0]!;
+      transactions.unshift(previousTx); // Add to beginning
+      
+      // Check if this is an origin transaction
+      if (this.isOriginTransaction(previousTx)) {
+        const originPoint = this.buildOriginPoint(previousTx, currentAsset);
+        return {
+          transactions,
+          originPoint
+        };
+      }
+      
+      // For trades, find what was given to get this asset
+      if (previousTx.type === 'trade') {
+        const tradedForAsset = this.findTradedForAsset(previousTx, currentAsset);
+        if (tradedForAsset) {
+          currentAsset = tradedForAsset;
+        } else {
+          // Can't trace further
+          break;
+        }
+      } else {
+        // Other transaction types end the trace
+        break;
+      }
+    }
+    
+    // Fallback - assume the first transaction is the origin
+    const fallbackTx = transactions[0] || beforeTransaction;
+    const originPoint = this.buildOriginPoint(fallbackTx, asset);
+    
+    return {
+      transactions,
+      originPoint
+    };
+  }
+
+  /**
+   * Trace forward to find current status of an asset
+   */
+  private async traceToPresent(
+    asset: AssetNode,
+    afterTransaction: TransactionNode,
+    graph: TransactionGraph
+  ): Promise<AssetCompleteLineage['futureChain']> {
+    const transactions: TransactionNode[] = [];
+    let currentAsset = asset;
+    const visitedAssets = new Set<string>();
+    
+    // Get all transactions AFTER the target transaction
+    const assetTransactionIds = graph.edges.get(currentAsset.id) || [];
+    const futureTransactions = assetTransactionIds
+      .map(id => graph.chains.get(id))
+      .filter(Boolean)
+      .filter(tx => Number(tx!.timestamp) > Number(afterTransaction.timestamp))
+      .sort((a, b) => Number(a!.timestamp) - Number(b!.timestamp)); // Oldest first
+    
+    for (const tx of futureTransactions) {
+      if (!tx) continue;
+      
+      // Prevent infinite loops
+      if (visitedAssets.has(currentAsset.id)) {
+        console.warn(`Circular reference detected in future trace for ${currentAsset.id}`);
+        break;
+      }
+      visitedAssets.add(currentAsset.id);
+      
+      transactions.push(tx);
+      
+      // If this is a trade, follow the asset
+      if (tx.type === 'trade') {
+        const newAsset = this.findReceivedAsset(tx, currentAsset);
+        if (newAsset) {
+          currentAsset = newAsset;
+        }
+      }
+      
+      // If asset was dropped/drafted, that's the end
+      if (tx.type === 'waiver' || tx.type === 'free_agent' || tx.type === 'draft') {
+        break;
+      }
+    }
+    
+    // Determine current status
+    const currentStatus = this.determineCurrentStatus(currentAsset, transactions);
+    
+    return {
+      transactions,
+      currentStatus
+    };
+  }
+
+  /**
+   * Build timeline showing manager tenures
+   */
+  private buildAssetTimeline(
+    originChain: AssetCompleteLineage['originChain'],
+    targetTransaction: TransactionNode,
+    futureChain: AssetCompleteLineage['futureChain']
+  ): AssetCompleteLineage['timeline'] {
+    const managerTenures: AssetCompleteLineage['timeline']['managerTenures'] = [];
+    
+    // Get all transactions in chronological order
+    const allTransactions = [
+      ...originChain.transactions,
+      targetTransaction,
+      ...futureChain.transactions
+    ].sort((a, b) => Number(a.timestamp) - Number(b.timestamp));
+    
+    let currentManager = originChain.originPoint.originalManager;
+    let tenureStart = originChain.originPoint.date;
+    
+    for (const tx of allTransactions) {
+      const txDate = new Date(Number(tx.timestamp));
+      
+      // If manager changed, record the previous tenure
+      if (tx.managerTo && tx.managerTo.id !== currentManager.id) {
+        const tenureEnd = txDate;
+        const daysHeld = Math.floor((tenureEnd.getTime() - tenureStart.getTime()) / (1000 * 60 * 60 * 24));
+        
+        managerTenures.push({
+          manager: currentManager,
+          startDate: tenureStart,
+          endDate: tenureEnd,
+          daysHeld
+        });
+        
+        currentManager = tx.managerTo;
+        tenureStart = txDate;
+      }
+    }
+    
+    // Add final tenure (if still owned)
+    const finalDate = new Date(); // Current date
+    const finalDaysHeld = Math.floor((finalDate.getTime() - tenureStart.getTime()) / (1000 * 60 * 60 * 24));
+    
+    managerTenures.push({
+      manager: currentManager,
+      startDate: tenureStart,
+      endDate: finalDate,
+      daysHeld: finalDaysHeld
+    });
+    
+    const totalDays = Math.floor((finalDate.getTime() - originChain.originPoint.date.getTime()) / (1000 * 60 * 60 * 24));
+    
+    return {
+      totalDays,
+      managerTenures
+    };
+  }
+
+  /**
+   * Check if transaction is an origin transaction (draft, waiver pickup, etc.)
+   */
+  private isOriginTransaction(transaction: TransactionNode): boolean {
+    return ['draft', 'waiver', 'free_agent', 'commissioner'].includes(transaction.type);
+  }
+
+  /**
+   * Build origin point from transaction
+   */
+  private buildOriginPoint(transaction: TransactionNode, asset: AssetNode): AssetCompleteLineage['originChain']['originPoint'] {
+    let type: AssetCompleteLineage['originChain']['originPoint']['type'] = 'free_agent';
+    
+    if (transaction.type === 'draft') {
+      // Determine if startup or rookie draft based on season/asset
+      if (transaction.season === '2020' || transaction.season === '2021') {
+        type = 'startup_draft';
+      } else {
+        type = 'rookie_draft';
+      }
+    } else if (transaction.type === 'waiver') {
+      type = 'waiver';
+    } else if (transaction.type === 'free_agent') {
+      type = 'free_agent';
+    } else if (transaction.type === 'commissioner') {
+      type = 'commissioner';
+    }
+    
+    return {
+      type,
+      transaction,
+      originalManager: transaction.managerTo || transaction.managerFrom || {
+        id: 'unknown',
+        username: 'unknown',
+        displayName: 'Unknown'
+      },
+      date: new Date(Number(transaction.timestamp)),
+      metadata: {
+        // Could add draft position, FAAB, etc. here
+      }
+    };
+  }
+
+  /**
+   * Find what asset was traded for the current asset in a trade
+   */
+  private findTradedForAsset(transaction: TransactionNode, currentAsset: AssetNode): AssetNode | null {
+    // In a trade, if currentAsset was received, find what was given
+    const wasReceived = transaction.assetsReceived.some(a => a.id === currentAsset.id);
+    
+    if (wasReceived && transaction.assetsGiven.length > 0) {
+      // Return the first asset that was given (simplified logic)
+      return transaction.assetsGiven[0];
+    }
+    
+    // If currentAsset was given, find what was received
+    const wasGiven = transaction.assetsGiven.some(a => a.id === currentAsset.id);
+    
+    if (wasGiven && transaction.assetsReceived.length > 0) {
+      return transaction.assetsReceived[0];
+    }
+    
+    return null;
+  }
+
+  /**
+   * Find what asset was received in exchange for the current asset
+   */
+  private findReceivedAsset(transaction: TransactionNode, currentAsset: AssetNode): AssetNode | null {
+    // Similar logic to findTradedForAsset but in the forward direction
+    return this.findTradedForAsset(transaction, currentAsset);
+  }
+
+  /**
+   * Determine current status of an asset based on its transaction history
+   */
+  private determineCurrentStatus(
+    asset: AssetNode,
+    transactions: TransactionNode[]
+  ): AssetCompleteLineage['futureChain']['currentStatus'] {
+    if (transactions.length === 0) {
+      return {
+        type: 'active_roster',
+        currentManager: undefined,
+        metadata: {}
+      };
+    }
+    
+    const lastTransaction = transactions[transactions.length - 1];
+    
+    switch (lastTransaction.type) {
+      case 'trade':
+        return {
+          type: 'traded',
+          currentManager: lastTransaction.managerTo,
+          lastTransaction,
+          metadata: {}
+        };
+      
+      case 'waiver':
+      case 'free_agent':
+        return {
+          type: 'dropped',
+          lastTransaction,
+          metadata: {}
+        };
+      
+      case 'draft':
+        return {
+          type: 'draft_pick_used',
+          lastTransaction,
+          metadata: {}
+        };
+      
+      default:
+        return {
+          type: 'active_roster',
+          currentManager: lastTransaction.managerTo,
+          metadata: {}
+        };
+    }
+  }
+
+  /**
+   * Get transaction by ID with all related data
+   */
+  private async getTransactionById(transactionId: string): Promise<TransactionNode> {
+    const transaction = await prisma.transaction.findUnique({
+      where: { id: transactionId },
+      include: {
+        items: {
+          include: {
+            player: true,
+            manager: true,
+            draftPick: {
+              include: {
+                playerSelected: true,
+                originalOwner: true,
+                currentOwner: true
+              }
+            }
+          }
+        },
+        league: {
+          select: {
+            name: true,
+            season: true
+          }
+        }
+      }
+    });
+
+    if (!transaction) {
+      throw new Error(`Transaction not found: ${transactionId}`);
+    }
+
+    return this.buildTransactionNode(transaction, transaction.league.name, transaction.league.season);
+  }
+
+  /**
+   * Determine manager's role in a transaction
+   */
+  private determineManagerPerspective(
+    transaction: TransactionNode, 
+    managerId: string
+  ): { manager: { id: string; username: string; displayName?: string }; role: 'giving' | 'receiving' | 'both' } {
+    const managerFrom = transaction.managerFrom;
+    const managerTo = transaction.managerTo;
+    
+    let role: 'giving' | 'receiving' | 'both' = 'receiving';
+    
+    if (managerFrom?.id === managerId && managerTo?.id === managerId) {
+      role = 'both'; // Self-trade (like drafts)
+    } else if (managerFrom?.id === managerId) {
+      role = 'giving';
+    } else if (managerTo?.id === managerId) {
+      role = 'receiving';
+    }
+
+    // Get manager info
+    const manager = managerFrom?.id === managerId ? managerFrom : managerTo;
+    
+    if (!manager) {
+      throw new Error(`Manager ${managerId} not found in transaction ${transaction.id}`);
+    }
+
+    return { manager, role };
+  }
+
+  /**
+   * Determine which side of transaction an asset is on from manager's perspective
+   */
+  private getAssetTransactionSide(
+    asset: AssetNode, 
+    transaction: TransactionNode, 
+    managerId: string
+  ): 'given' | 'received' {
+    // Check if asset is in assetsGiven or assetsReceived
+    const isGiven = transaction.assetsGiven.some(a => a.id === asset.id);
+    const isReceived = transaction.assetsReceived.some(a => a.id === asset.id);
+    
+    // From manager's perspective - simplified logic
+    // If the manager is the one giving (managerFrom), then:
+    //   - assets in assetsGiven were given by this manager
+    //   - assets in assetsReceived were received by this manager
+    // If the manager is the one receiving (managerTo), then:
+    //   - assets in assetsGiven were given by the other manager (so this manager received them)
+    //   - assets in assetsReceived were received by this manager
+    
+    const managerIsGiving = transaction.managerFrom?.id === managerId;
+    
+    if (managerIsGiving) {
+      // This manager is the giver, so assetsGiven = what they gave, assetsReceived = what they received
+      return isGiven ? 'given' : 'received';
+    } else {
+      // This manager is the receiver, so assetsGiven = what other gave (they received), assetsReceived = what they received  
+      return isReceived ? 'received' : 'given';
+    }
+  }
+
+  /**
+   * Get the manager who controlled an asset BEFORE the transaction occurred
+   */
+  private getAssetManagerAtTransaction(asset: AssetNode, transaction: TransactionNode) {
+    // For assets being given, managerFrom controlled them before the transaction
+    const isGiven = transaction.assetsGiven.some(a => a.id === asset.id);
+    
+    if (isGiven && transaction.managerFrom) {
+      return transaction.managerFrom;
+    }
+    
+    // For assets being received, managerTo got them FROM someone else
+    // So the previous owner must be managerFrom (who gave them)
+    if (!isGiven && transaction.managerFrom) {
+      return transaction.managerFrom;
+    }
+    
+    // Fallback
+    return transaction.managerFrom || transaction.managerTo || {
+      id: 'unknown',
+      username: 'unknown',
+      displayName: 'Unknown Manager'
+    };
+  }
+
+  /**
+   * Build summary statistics for asset lineages
+   */
+  private buildLineageSummary(assetLineages: AssetCompleteLineage[]) {
+    let startupDraftAssets = 0;
+    let rookieDraftAssets = 0;
+    let waiverPickups = 0;
+    let tradeAcquisitions = 0;
+    let stillActiveAssets = 0;
+    let retiredAssets = 0;
+    let longestChainLength = 0;
+
+    for (const lineage of assetLineages) {
+      // Count origin types
+      switch (lineage.originChain.originPoint.type) {
+        case 'startup_draft':
+          startupDraftAssets++;
+          break;
+        case 'rookie_draft':
+          rookieDraftAssets++;
+          break;
+        case 'waiver':
+          waiverPickups++;
+          break;
+        case 'free_agent':
+        case 'commissioner':
+          tradeAcquisitions++;
+          break;
+      }
+
+      // Count current status
+      switch (lineage.futureChain.currentStatus.type) {
+        case 'active_roster':
+          stillActiveAssets++;
+          break;
+        case 'traded':
+        case 'dropped':
+        case 'retired':
+        case 'draft_pick_used':
+          retiredAssets++;
+          break;
+      }
+
+      // Track longest chain
+      const totalTransactions = lineage.originChain.transactions.length + lineage.futureChain.transactions.length;
+      longestChainLength = Math.max(longestChainLength, totalTransactions);
+    }
+
+    return {
+      totalAssetsTraced: assetLineages.length,
+      startupDraftAssets,
+      rookieDraftAssets,
+      waiverPickups,
+      tradeAcquisitions,
+      stillActiveAssets,
+      retiredAssets,
+      longestChainLength
+    };
   }
 
   /**
