@@ -22,7 +22,8 @@
     "seed:dev": "tsx src/scripts/seedDevData.ts",
     "seed:current": "tsx src/scripts/seedDevData.ts -- --current-only",
     "db:stats": "tsx src/scripts/checkDbStats.ts",
-    "validate:graph": "tsx src/scripts/validateGraph.ts"
+    "validate:graph": "tsx src/scripts/validateGraph.ts",
+    "visualize:graph": "tsx src/scripts/visualizeGraph.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.16.1",

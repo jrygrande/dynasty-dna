@@ -601,6 +601,217 @@ class GraphValidator {
   }
 
   /**
+   * Validate the new transaction graph endpoint
+   */
+  async validateTransactionGraphEndpoint(): Promise<void> {
+    console.log(chalk.blue('🌐 Validating transaction graph endpoint...'));
+
+    try {
+      const testLeague = await prisma.league.findUnique({
+        where: { sleeperLeagueId: this.leagueId }
+      });
+
+      if (!testLeague) {
+        this.addResult(false, 'Test league not found for endpoint testing', { leagueId: this.leagueId });
+        return;
+      }
+
+      // Test 1: Basic graph endpoint (stats format)
+      const startTime1 = Date.now();
+      const dynastyChain = await (await import('../services/historicalLeagueService')).historicalLeagueService.getLeagueHistory(this.leagueId);
+      const transactionGraph = await transactionChainService.buildTransactionGraph(dynastyChain.leagues);
+      const endTime1 = Date.now();
+
+      this.addResult(true, `Transaction graph endpoint data accessible in ${endTime1 - startTime1}ms`, {
+        buildTimeMs: endTime1 - startTime1,
+        nodeCount: transactionGraph.nodes.size,
+        edgeCount: transactionGraph.edges.size,
+        chainCount: transactionGraph.chains.size
+      });
+
+      // Test 2: Validate graph structure integrity
+      let validNodes = 0;
+      let validEdges = 0;
+      let validTransactions = 0;
+
+      // Check nodes
+      for (const [, node] of transactionGraph.nodes) {
+        if (node.id && node.type && ['player', 'draft_pick'].includes(node.type)) {
+          validNodes++;
+        }
+      }
+
+      // Check edges
+      for (const [assetId, transactionIds] of transactionGraph.edges) {
+        if (transactionGraph.nodes.has(assetId) && Array.isArray(transactionIds)) {
+          validEdges++;
+        }
+      }
+
+      // Check transactions
+      for (const [, transaction] of transactionGraph.chains) {
+        if (transaction.id && transaction.type && transaction.timestamp && 
+            Array.isArray(transaction.assetsReceived) && Array.isArray(transaction.assetsGiven)) {
+          validTransactions++;
+        }
+      }
+
+      if (validNodes === transactionGraph.nodes.size) {
+        this.addResult(true, 'All graph nodes are properly structured', { validNodeCount: validNodes });
+      } else {
+        this.addResult(false, `${transactionGraph.nodes.size - validNodes} nodes have invalid structure`, {
+          totalNodes: transactionGraph.nodes.size,
+          validNodes,
+          invalidNodes: transactionGraph.nodes.size - validNodes
+        });
+      }
+
+      if (validEdges === transactionGraph.edges.size) {
+        this.addResult(true, 'All graph edges are properly structured', { validEdgeCount: validEdges });
+      } else {
+        this.addResult(false, `${transactionGraph.edges.size - validEdges} edges have invalid structure`, {
+          totalEdges: transactionGraph.edges.size,
+          validEdges,
+          invalidEdges: transactionGraph.edges.size - validEdges
+        });
+      }
+
+      if (validTransactions === transactionGraph.chains.size) {
+        this.addResult(true, 'All graph transactions are properly structured', { validTransactionCount: validTransactions });
+      } else {
+        this.addResult(false, `${transactionGraph.chains.size - validTransactions} transactions have invalid structure`, {
+          totalTransactions: transactionGraph.chains.size,
+          validTransactions,
+          invalidTransactions: transactionGraph.chains.size - validTransactions
+        });
+      }
+
+      // Test 3: Test graph serialization (simulate API response)
+      try {
+        const nodesArray = Array.from(transactionGraph.nodes.entries()).map(([, node]) => ({
+          ...node
+        }));
+
+        const edgesArray = Array.from(transactionGraph.edges.entries()).map(([assetId, transactionIds]) => ({
+          assetId,
+          transactionIds
+        }));
+
+        const transactionsArray = Array.from(transactionGraph.chains.entries()).map(([, transaction]) => ({
+          ...transaction
+        }));
+
+        // Test JSON serialization (what the API would do)
+        const serializedData = JSON.stringify({
+          nodes: nodesArray,
+          edges: edgesArray,
+          transactions: transactionsArray
+        });
+
+        const deserializedData = JSON.parse(serializedData);
+
+        if (deserializedData.nodes.length === nodesArray.length &&
+            deserializedData.edges.length === edgesArray.length &&
+            deserializedData.transactions.length === transactionsArray.length) {
+          this.addResult(true, 'Graph data serializes and deserializes correctly for API response', {
+            serializedSizeBytes: serializedData.length,
+            nodesSerialized: deserializedData.nodes.length,
+            edgesSerialized: deserializedData.edges.length,
+            transactionsSerialized: deserializedData.transactions.length
+          });
+        } else {
+          this.addResult(false, 'Graph data serialization failed', {
+            originalNodes: nodesArray.length,
+            deserializedNodes: deserializedData.nodes.length,
+            originalEdges: edgesArray.length,
+            deserializedEdges: deserializedData.edges.length,
+            originalTransactions: transactionsArray.length,
+            deserializedTransactions: deserializedData.transactions.length
+          });
+        }
+      } catch (serializationError) {
+        this.addResult(false, 'Graph data serialization threw an error', {
+          error: serializationError instanceof Error ? serializationError.message : String(serializationError)
+        });
+      }
+
+      // Test 4: Calculate and validate statistics
+      try {
+        const stats = {
+          totalNodes: transactionGraph.nodes.size,
+          totalEdges: Array.from(transactionGraph.edges.values()).reduce((sum, edges) => sum + edges.length, 0),
+          totalTransactions: transactionGraph.chains.size,
+          transactionTypes: {} as Record<string, number>,
+          assetTypes: { player: 0, draft_pick: 0 } as Record<string, number>,
+          seasonsSpanned: new Set<string>(),
+          managersInvolved: new Set<string>()
+        };
+
+        // Calculate statistics
+        for (const [, transaction] of transactionGraph.chains) {
+          stats.transactionTypes[transaction.type] = (stats.transactionTypes[transaction.type] || 0) + 1;
+          stats.seasonsSpanned.add(transaction.season);
+          
+          if (transaction.managerFrom) stats.managersInvolved.add(transaction.managerFrom.id);
+          if (transaction.managerTo) stats.managersInvolved.add(transaction.managerTo.id);
+        }
+
+        for (const [, asset] of transactionGraph.nodes) {
+          stats.assetTypes[asset.type] = (stats.assetTypes[asset.type] || 0) + 1;
+        }
+
+        if (stats.totalNodes > 0 && stats.totalTransactions > 0 && stats.seasonsSpanned.size > 0) {
+          this.addResult(true, 'Graph statistics calculated successfully', {
+            totalNodes: stats.totalNodes,
+            totalEdges: stats.totalEdges,
+            totalTransactions: stats.totalTransactions,
+            transactionTypes: Object.keys(stats.transactionTypes).length,
+            seasonsSpanned: stats.seasonsSpanned.size,
+            managersInvolved: stats.managersInvolved.size
+          });
+        } else {
+          this.addResult(false, 'Graph statistics appear invalid', stats);
+        }
+      } catch (statsError) {
+        this.addResult(false, 'Statistics calculation failed', {
+          error: statsError instanceof Error ? statsError.message : String(statsError)
+        });
+      }
+
+      // Test 5: Performance validation for large graphs
+      const performanceStartTime = Date.now();
+      
+      // Simulate filtering operations that the API endpoint would do
+      const seasonFilter = Array.from(transactionGraph.chains.values())
+        .filter(tx => tx.season === '2023')
+        .length;
+
+      const tradeFilter = Array.from(transactionGraph.chains.values())
+        .filter(tx => tx.type === 'trade')
+        .length;
+
+      const performanceTime = Date.now() - performanceStartTime;
+
+      if (performanceTime < 1000) { // Should complete filtering in under 1 second
+        this.addResult(true, `Graph filtering operations completed in ${performanceTime}ms`, {
+          filteringTimeMs: performanceTime,
+          seasonFilterResults: seasonFilter,
+          tradeFilterResults: tradeFilter
+        });
+      } else {
+        this.addResult(false, `Graph filtering operations too slow: ${performanceTime}ms`, {
+          filteringTimeMs: performanceTime
+        });
+      }
+
+    } catch (error) {
+      this.addResult(false, 'Transaction graph endpoint validation failed', {
+        error: error instanceof Error ? error.message : String(error)
+      });
+    }
+  }
+
+  /**
    * Run all validations
    */
   async runAllValidations(): Promise<GraphValidationReport> {
@@ -612,6 +823,7 @@ class GraphValidator {
     await this.validateDataIntegrity();
     await this.validateKnownScenarios();
     await this.validatePerformance();
+    await this.validateTransactionGraphEndpoint();
 
     return this.generateReport();
   }

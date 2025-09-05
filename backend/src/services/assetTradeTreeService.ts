@@ -253,12 +253,21 @@ export class AssetTradeTreeService {
     visitedAssets: Set<string> = new Set(),
     depth: number = 0
   ): Promise<{ assetsReceived: AssetTradeTree[]; totalValue: string; }> {
-    // Prevent infinite recursion
-    if (depth > 10) {
-      console.warn(`Maximum recursion depth reached for asset ${tradedAsset.id}`);
+    // Prevent infinite recursion with stricter limits
+    if (depth > 5) {
+      console.warn(`Maximum recursion depth reached for asset ${tradedAsset.id} at depth ${depth}`);
       return {
         assetsReceived: [],
         totalValue: 'Deep recursion prevented'
+      };
+    }
+
+    // Additional guard: check if we already have many visited assets (potential explosion)
+    if (visitedAssets.size > 100) {
+      console.warn(`Too many visited assets (${visitedAssets.size}) for asset ${tradedAsset.id}, stopping recursion`);
+      return {
+        assetsReceived: [],
+        totalValue: 'Asset explosion prevented'
       };
     }
 
@@ -304,8 +313,8 @@ export class AssetTradeTreeService {
 
         tradeTreesReceived.push(receivedAssetTree);
 
-        // Remove from visited set to allow processing in other branches
-        visitedAssets.delete(receivedAsset.id);
+        // Keep asset in visited set to prevent circular references
+        // Note: We do NOT remove from visitedAssets to prevent infinite loops
       } catch (error) {
         console.warn(`Failed to build tree for received asset ${receivedAsset.id}:`, error);
       }

@@ -387,7 +387,8 @@ export class TransactionChainService {
     graph: TransactionGraph,
     visitedAssets: Set<string> = new Set(),
     depth: number = 0,
-    maxDepth: number = 20
+    maxDepth: number = 10, // Reduce default max depth from 20 to 10
+    visitedTransactions: Set<string> = new Set()
   ): Promise<TransactionChain> {
     // Prevent infinite recursion
     if (visitedAssets.has(rootAsset.id)) {
@@ -405,6 +406,20 @@ export class TransactionChainService {
 
     if (depth > maxDepth) {
       console.warn(`Maximum recursion depth (${maxDepth}) exceeded for asset ${rootAsset.id}. Stopping trace.`);
+      return {
+        rootAsset,
+        totalTransactions: 0,
+        seasonsSpanned: 0,
+        currentOwner: null,
+        originalOwner: null,
+        transactionPath: [],
+        derivedAssets: []
+      };
+    }
+
+    // Additional guard: check for asset explosion
+    if (visitedAssets.size > 500) {
+      console.warn(`Too many visited assets (${visitedAssets.size}) for ${rootAsset.name}, stopping recursion to prevent memory explosion`);
       return {
         rootAsset,
         totalTransactions: 0,
@@ -434,6 +449,13 @@ export class TransactionChainService {
 
     for (const transaction of sortedTransactions) {
       if (!transaction) continue;
+      
+      // Skip if we've already processed this transaction in this chain
+      if (visitedTransactions.has(transaction.id)) {
+        console.warn(`Skipping already processed transaction ${transaction.id} for asset ${rootAsset.name}`);
+        continue;
+      }
+      visitedTransactions.add(transaction.id);
 
       // For each transaction, check if we need to trace back asset origins
       const enhancedTransaction = await this.enhanceTransactionWithAssetOrigins(
@@ -441,7 +463,8 @@ export class TransactionChainService {
         graph, 
         rootAsset,
         visitedAssets,
-        depth
+        depth,
+        visitedTransactions
       );
 
       // Add the enhanced transaction to path
@@ -456,7 +479,8 @@ export class TransactionChainService {
       }
     }
 
-    visitedAssets.delete(rootAsset.id);
+    // Keep asset in visited set to prevent circular references  
+    // Note: We do NOT remove from visitedAssets to prevent infinite loops
 
     const seasonsSpanned = new Set(transactionPath.map(t => t.season)).size;
 
@@ -479,7 +503,8 @@ export class TransactionChainService {
     graph: TransactionGraph,
     rootAsset: AssetNode,
     visitedAssets: Set<string>,
-    currentDepth: number
+    currentDepth: number,
+    visitedTransactions: Set<string> = new Set()
   ): Promise<TransactionNode> {
     // Create enhanced transaction with potential asset origin chains
     const enhancedTransaction = { ...transaction };
@@ -496,7 +521,9 @@ export class TransactionChainService {
               draftPick,
               graph,
               new Set(visitedAssets), // Copy visited set to avoid interference
-              currentDepth + 1
+              currentDepth + 1,
+              10, // Reduce max depth
+              new Set(visitedTransactions) // Copy visited transactions too
             );
             
             // If the pick has a trading history, prepend those transactions
@@ -527,7 +554,9 @@ export class TransactionChainService {
               asset,
               graph,
               new Set(visitedAssets),
-              currentDepth + 1
+              currentDepth + 1,
+              10, // Reduce max depth
+              new Set(visitedTransactions) // Copy visited transactions too
             );
             
             if (pickChain.transactionPath.length > 0) {
@@ -699,7 +728,8 @@ export class TransactionChainService {
     graph: TransactionGraph,
     visitedAssets: Set<string> = new Set(),
     depth: number = 0,
-    maxDepth: number = 20
+    maxDepth: number = 10, // Reduce default max depth
+    visitedTransactions: Set<string> = new Set()
   ): Promise<TransactionChain> {
     // Prevent infinite recursion from circular references
     if (visitedAssets.has(rootAsset.id)) {
@@ -729,10 +759,22 @@ export class TransactionChainService {
       };
     }
 
+    // Additional guard: check for asset explosion 
+    if (visitedAssets.size > 500) {
+      console.warn(`Too many visited assets (${visitedAssets.size}) for ${rootAsset.name}, stopping recursion to prevent memory explosion`);
+      return {
+        rootAsset,
+        totalTransactions: 0,
+        seasonsSpanned: 0,
+        currentOwner: null,
+        originalOwner: null,
+        transactionPath: [],
+        derivedAssets: []
+      };
+    }
+
     // Add this asset to the visited set
     visitedAssets.add(rootAsset.id);
-
-    const visitedTransactions = new Set<string>();
     const transactionPath: TransactionNode[] = [];
     const derivedAssets: TransactionChain[] = [];
 
@@ -779,7 +821,8 @@ export class TransactionChainService {
               graph, 
               visitedAssets,
               depth + 1,
-              maxDepth
+              maxDepth,
+              visitedTransactions
             );
             derivedAssets.push(derivedChain);
           } catch (error) {
@@ -789,8 +832,8 @@ export class TransactionChainService {
       }
     }
 
-    // Remove this asset from visited set before returning (allow it to be processed in other branches)
-    visitedAssets.delete(rootAsset.id);
+    // Keep asset in visited set to prevent re-processing and circular references
+    // Note: We do NOT remove from visitedAssets to prevent infinite loops
 
     // Calculate metrics
     const seasonsSpanned = new Set(transactionPath.map(t => t.season)).size;

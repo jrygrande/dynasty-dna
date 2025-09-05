@@ -595,3 +595,206 @@ leaguesRouter.get('/:leagueId/assets/:assetId/complete-tree', asyncHandler(async
     });
   }
 }));
+
+// GET /api/leagues/:leagueId/transaction-graph - Get complete transaction graph for league
+leaguesRouter.get('/:leagueId/transaction-graph', asyncHandler(async (req, res) => {
+  const { leagueId } = leagueParamsSchema.parse(req.params);
+  
+  const { 
+    format = 'json',
+    season,
+    transactionType,
+    managerId
+  } = z.object({
+    format: z.enum(['json', 'stats']).optional(),
+    season: z.string().optional(),
+    transactionType: z.string().optional(),
+    managerId: z.string().optional()
+  }).parse(req.query);
+  
+  try {
+    console.log(`📊 Building complete transaction graph for league: ${leagueId}`);
+    
+    // Find the internal league
+    const league = await prisma.league.findUnique({
+      where: { sleeperLeagueId: leagueId }
+    });
+
+    if (!league) {
+      return res.status(404).json({
+        message: 'League not found in database. Please sync the league first.',
+        leagueId,
+        syncEndpoint: `/api/leagues/${leagueId}/sync`
+      });
+    }
+
+    // Get dynasty history to work across all seasons
+    const dynastyChain = await historicalLeagueService.getLeagueHistory(leagueId);
+    
+    // Filter leagues based on query parameters
+    let filteredLeagues = dynastyChain.leagues;
+    if (season) {
+      filteredLeagues = filteredLeagues.filter(l => l.season === season);
+    }
+
+    // Build the complete transaction graph
+    const startTime = Date.now();
+    const transactionGraph = await transactionChainService.buildTransactionGraph(filteredLeagues);
+    const buildTime = Date.now() - startTime;
+
+    // Apply filtering if specified
+    let filteredNodes = transactionGraph.nodes;
+    let filteredEdges = transactionGraph.edges;
+    let filteredChains = transactionGraph.chains;
+
+    if (transactionType || managerId) {
+      // Filter chains by transaction type or manager
+      const filteredChainMap = new Map();
+      const filteredAssetIds = new Set<string>();
+
+      for (const [chainId, chain] of transactionGraph.chains) {
+        let shouldInclude = true;
+
+        // Filter by transaction type
+        if (transactionType && chain.type !== transactionType) {
+          shouldInclude = false;
+        }
+
+        // Filter by manager involvement
+        if (managerId && shouldInclude) {
+          const managerInvolved = chain.managerFrom?.id === managerId || 
+                                 chain.managerTo?.id === managerId;
+          if (!managerInvolved) {
+            shouldInclude = false;
+          }
+        }
+
+        if (shouldInclude) {
+          filteredChainMap.set(chainId, chain);
+          // Track assets involved in filtered transactions
+          [...chain.assetsReceived, ...chain.assetsGiven].forEach(asset => {
+            filteredAssetIds.add(asset.id);
+          });
+        }
+      }
+
+      // Update filtered collections
+      filteredChains = filteredChainMap;
+      filteredNodes = new Map();
+      filteredEdges = new Map();
+
+      for (const assetId of filteredAssetIds) {
+        const node = transactionGraph.nodes.get(assetId);
+        if (node) {
+          filteredNodes.set(assetId, node);
+        }
+
+        const edges = transactionGraph.edges.get(assetId);
+        if (edges) {
+          // Only include edges to filtered transactions
+          const validEdges = edges.filter(edgeId => filteredChainMap.has(edgeId));
+          if (validEdges.length > 0) {
+            filteredEdges.set(assetId, validEdges);
+          }
+        }
+      }
+    }
+
+    // Calculate graph statistics
+    const stats = {
+      buildTimeMs: buildTime,
+      totalNodes: filteredNodes.size,
+      totalEdges: Array.from(filteredEdges.values()).reduce((sum, edges) => sum + edges.length, 0),
+      totalTransactions: filteredChains.size,
+      transactionTypes: {} as Record<string, number>,
+      assetTypes: { player: 0, draft_pick: 0 } as Record<string, number>,
+      seasonsSpanned: new Set<string>(),
+      managersInvolved: new Set<string>(),
+      avgTransactionsPerAsset: 0,
+      maxTransactionsPerAsset: 0
+    };
+
+    // Analyze transaction types and other stats
+    for (const [, transaction] of filteredChains) {
+      stats.transactionTypes[transaction.type] = (stats.transactionTypes[transaction.type] || 0) + 1;
+      stats.seasonsSpanned.add(transaction.season);
+      
+      if (transaction.managerFrom) stats.managersInvolved.add(transaction.managerFrom.id);
+      if (transaction.managerTo) stats.managersInvolved.add(transaction.managerTo.id);
+    }
+
+    // Analyze asset types and transaction frequency
+    let totalTransactionsAcrossAssets = 0;
+    for (const [, asset] of filteredNodes) {
+      stats.assetTypes[asset.type] = (stats.assetTypes[asset.type] || 0) + 1;
+      
+      const assetTransactionCount = filteredEdges.get(asset.id)?.length || 0;
+      totalTransactionsAcrossAssets += assetTransactionCount;
+      stats.maxTransactionsPerAsset = Math.max(stats.maxTransactionsPerAsset, assetTransactionCount);
+    }
+
+    stats.avgTransactionsPerAsset = filteredNodes.size > 0 ? 
+      Math.round((totalTransactionsAcrossAssets / filteredNodes.size) * 100) / 100 : 0;
+
+    // Convert Set to numbers for response
+    const finalStats = {
+      ...stats,
+      seasonsSpanned: stats.seasonsSpanned.size,
+      managersInvolved: stats.managersInvolved.size
+    };
+
+    if (format === 'stats') {
+      // Return just statistics
+      res.status(200).json({
+        leagueId,
+        format: 'stats',
+        statistics: finalStats,
+        filters: {
+          season,
+          transactionType,
+          managerId
+        },
+        generatedAt: new Date().toISOString()
+      });
+    } else {
+      // Convert Maps to Objects for JSON serialization
+      const nodesArray = Array.from(filteredNodes.entries()).map(([, node]) => ({
+        ...node
+      }));
+
+      const edgesArray = Array.from(filteredEdges.entries()).map(([assetId, transactionIds]) => ({
+        assetId,
+        transactionIds
+      }));
+
+      const transactionsArray = Array.from(filteredChains.entries()).map(([, transaction]) => ({
+        ...transaction
+      }));
+
+      // Return full graph data
+      res.status(200).json({
+        leagueId,
+        format: 'json',
+        graph: {
+          nodes: nodesArray,
+          edges: edgesArray,
+          transactions: transactionsArray
+        },
+        statistics: finalStats,
+        filters: {
+          season,
+          transactionType,
+          managerId
+        },
+        generatedAt: new Date().toISOString()
+      });
+    }
+  } catch (error) {
+    console.error(`❌ Failed to build transaction graph for league: ${leagueId}`, error);
+    return res.status(500).json({
+      message: 'Failed to build transaction graph',
+      leagueId,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+}));
