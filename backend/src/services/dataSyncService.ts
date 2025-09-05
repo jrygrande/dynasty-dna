@@ -873,8 +873,8 @@ export class DataSyncService {
       selection.pickNumber
     );
     
-    // If pick was traded, add it as "currency spent"
-    if (draftPick && draftPick.originalOwnerId !== draftPick.currentOwnerId) {
+    // If pick was traded or re-acquired, add it as "currency spent"
+    if (draftPick && (draftPick.originalOwnerId !== draftPick.currentOwnerId || draftPick.previousOwnerId !== null)) {
       // Validation: Check if this draft pick is already being used by another transaction
       const existingUsage = await prisma.transactionItem.findFirst({
         where: {
@@ -898,7 +898,8 @@ export class DataSyncService {
           }
         });
         
-        console.log(`    💰 Associated traded draft pick with ${player.fullName} (R${selection.round}P${selection.pickNumber})`);
+        const pickType = draftPick.originalOwnerId !== draftPick.currentOwnerId ? 'traded' : 're-acquired';
+        console.log(`    💰 Associated ${pickType} draft pick with ${player.fullName} (R${selection.round}P${selection.pickNumber})`);
       }
     }
     
