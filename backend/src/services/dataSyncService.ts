@@ -662,6 +662,125 @@ export class DataSyncService {
   }
 
   /**
+   * Re-sync all existing draft picks with their selection information
+   */
+  async resyncDraftPicks(): Promise<{ updated: number; skipped: number }> {
+    console.log('🔄 Starting draft picks resync...');
+    
+    let updated = 0;
+    let skipped = 0;
+    
+    try {
+      // Get all draft selections that have been made
+      const allDraftSelections = await prisma.draftSelection.findMany({
+        include: {
+          draft: {
+            include: {
+              league: true
+            }
+          },
+          player: true
+        },
+        orderBy: [
+          { draft: { season: 'asc' } },
+          { pickNumber: 'asc' }
+        ]
+      });
+      
+      console.log(`📊 Found ${allDraftSelections.length} draft selections to process`);
+      
+      for (const selection of allDraftSelections) {
+        try {
+          // Get the manager who made this selection
+          const manager = await prisma.manager.findUnique({
+            where: { sleeperUserId: selection.pickedBy }
+          });
+          
+          if (manager) {
+            // Use our existing method to update the draft pick
+            await this.updateDraftPickWithSelection(
+              selection,
+              selection.draft,
+              selection.player,
+              manager,
+              selection.draft.league.sleeperLeagueId
+            );
+            updated++;
+          } else {
+            console.warn(`⚠️  Could not find manager for selection ${selection.player.fullName} (pickedBy: ${selection.pickedBy})`);
+            skipped++;
+          }
+        } catch (error) {
+          console.warn(`❌ Failed to update draft pick for ${selection.player.fullName}:`, error);
+          skipped++;
+        }
+      }
+      
+      console.log(`\n✅ Draft picks resync complete: ${updated} updated, ${skipped} skipped`);
+      return { updated, skipped };
+      
+    } catch (error) {
+      console.error('❌ Draft picks resync failed:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Find the correct draft pick for a specific selection
+   * This handles cases where managers have multiple picks in the same round
+   */
+  private async findCorrectDraftPick(
+    leagueId: string,
+    season: string,
+    round: number,
+    draftSlot: number,
+    managerId: string,
+    pickNumber: number
+  ): Promise<any | null> {
+    // Strategy 1: Try to find by draft slot (most accurate)
+    // Draft slot corresponds to original roster position
+    let draftPick = await prisma.draftPick.findFirst({
+      where: {
+        leagueId,
+        season,
+        round,
+        currentOwnerId: managerId,
+        // If this pick was never traded, originalOwner roster should match draft slot
+        // But we don't store roster position in draft_picks, so this is complex
+      }
+    });
+    
+    // Strategy 2: If manager has multiple picks in this round, use process of elimination
+    const managerPicksInRound = await prisma.draftPick.findMany({
+      where: {
+        leagueId,
+        season,
+        round,
+        currentOwnerId: managerId
+      },
+      orderBy: { createdAt: 'asc' } // Consistent ordering
+    });
+    
+    if (managerPicksInRound.length === 1) {
+      return managerPicksInRound[0];
+    }
+    
+    // Strategy 3: For multiple picks, try to match by whether pick was traded or not
+    // If this is pick that matches the manager's original draft slot, it should be originalOwner = currentOwner
+    // If this is a traded pick, originalOwner != currentOwner
+    
+    // For now, prefer picks that don't have a playerSelectedId yet (haven't been used)
+    const unusedPick = managerPicksInRound.find(pick => !pick.playerSelectedId);
+    if (unusedPick) {
+      return unusedPick;
+    }
+    
+    // Fallback: return first pick (this is the current problematic behavior, but better than nothing)
+    console.warn(`⚠️  Could not definitively identify correct draft pick for ${managerId} R${round} P${pickNumber}. Using first available.`);
+    return managerPicksInRound[0] || null;
+  }
+
+  /**
    * Update draft pick with selection information
    */
   private async updateDraftPickWithSelection(
@@ -743,26 +862,44 @@ export class DataSyncService {
       }
     });
     
-    // Check if this pick was traded (i.e., if there's a DraftPick record)
-    const draftPick = await prisma.draftPick.findFirst({
-      where: {
-        leagueId: internalLeagueId,
-        season: draft.season,
-        round: selection.round,
-        currentOwnerId: manager.id
-      }
-    });
+    // Find the specific draft pick used for this selection
+    // We need to be more precise than just round/owner since managers can have multiple picks in same round
+    const draftPick = await this.findCorrectDraftPick(
+      internalLeagueId,
+      draft.season,
+      selection.round,
+      selection.draftSlot,
+      manager.id,
+      selection.pickNumber
+    );
     
     // If pick was traded, add it as "currency spent"
     if (draftPick && draftPick.originalOwnerId !== draftPick.currentOwnerId) {
-      await prisma.transactionItem.create({
-        data: {
-          transactionId: transaction.id,
-          managerId: manager.id,
+      // Validation: Check if this draft pick is already being used by another transaction
+      const existingUsage = await prisma.transactionItem.findFirst({
+        where: {
           draftPickId: draftPick.id,
-          type: 'drop' // "Spending" the traded pick
+          type: 'drop'
+        },
+        include: {
+          transaction: true
         }
       });
+      
+      if (existingUsage) {
+        console.warn(`⚠️  Draft pick ${draftPick.id} already used by transaction ${existingUsage.transaction.sleeperTransactionId}. Skipping duplicate association for ${player.fullName}`);
+      } else {
+        await prisma.transactionItem.create({
+          data: {
+            transactionId: transaction.id,
+            managerId: manager.id,
+            draftPickId: draftPick.id,
+            type: 'drop' // "Spending" the traded pick
+          }
+        });
+        
+        console.log(`    💰 Associated traded draft pick with ${player.fullName} (R${selection.round}P${selection.pickNumber})`);
+      }
     }
     
     // Add the player received
