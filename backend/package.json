@@ -18,7 +18,10 @@
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
     "db:studio": "prisma studio",
-    "db:reset": "prisma migrate reset --force"
+    "db:reset": "prisma migrate reset --force && npm run seed:dev",
+    "seed:dev": "tsx src/scripts/seedDevData.ts",
+    "seed:current": "tsx src/scripts/seedDevData.ts -- --current-only",
+    "db:stats": "tsx src/scripts/checkDbStats.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.16.1",

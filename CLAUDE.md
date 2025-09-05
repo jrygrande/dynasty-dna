@@ -24,9 +24,17 @@ npm run dev                  # Start development server with hot reload
 npm run build               # Build for production
 npm run lint                # Run ESLint
 npm run typecheck           # Run TypeScript type checking
+
+# Database commands
 npx prisma migrate dev      # Create and apply database migrations
 npx prisma studio           # Open Prisma Studio GUI for database
 npx prisma generate         # Regenerate Prisma Client after schema changes
+npm run db:reset            # Reset database and reseed with test data
+
+# Development data seeding
+npm run seed:dev            # Sync complete dynasty history for test league
+npm run seed:current        # Sync only current season data
+npm run db:stats            # Show detailed database statistics
 
 # Frontend commands (from /frontend directory)
 npm install                 # Install dependencies
@@ -131,3 +139,38 @@ dynasty-dna/
 3. **Player ID Mapping:** Phase 2+ requires mapping between Sleeper and nflverse IDs
 4. **Rate Limiting:** Implement exponential backoff for Sleeper API calls
 5. **Caching Strategy:** Cache everything except current week during season
+
+## Development Data Setup
+
+### Ensuring Full Test Data
+
+The test league "Dynasty Domination" (ID: 1191596293294166016) spans multiple seasons (2021-2025). To ensure complete data for development:
+
+1. **Initial Setup:** Run `npm run seed:dev` to sync the full dynasty history
+2. **Daily Development:** Use `npm run seed:current` to update only current season
+3. **After Schema Changes:** Run `npm run db:reset` to reset and reseed
+4. **Verify Data:** Use `npm run db:stats` to check data completeness
+
+### Data Seeding Options
+
+```bash
+# Full dynasty history sync (recommended for new development environments)
+npm run seed:dev
+
+# Current season only (faster for daily development)
+npm run seed:current
+
+# With verbose output and cache clearing
+npm run seed:dev -- --verbose --clear-cache
+
+# Current season with verbose output
+npm run seed:current -- --verbose
+```
+
+### Database Verification
+
+Use `npm run db:stats` to verify:
+- Transaction counts per season
+- Week coverage (should show weeks 1-17 for completed seasons, week 1 for current season)
+- Dynasty chain continuity
+- Test league presence and data completeness
