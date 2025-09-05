@@ -652,9 +652,48 @@ export class DataSyncService {
           }
         });
         
+        // Update the corresponding draft pick with pickNumber and playerSelectedId
+        await this.updateDraftPickWithSelection(draftSelection, dbDraft, player, manager, leagueId);
+        
         // Create draft transaction
         await this.createDraftTransaction(draftSelection, dbDraft, player, manager, leagueId);
       }
+    }
+  }
+
+  /**
+   * Update draft pick with selection information
+   */
+  private async updateDraftPickWithSelection(
+    selection: any,
+    draft: any,
+    player: any,
+    manager: any,
+    leagueId: string
+  ): Promise<void> {
+    const internalLeagueId = await this.getInternalLeagueId(leagueId);
+    
+    // Find the draft pick that corresponds to this selection
+    const draftPick = await prisma.draftPick.findFirst({
+      where: {
+        leagueId: internalLeagueId,
+        season: draft.season,
+        round: selection.round,
+        currentOwnerId: manager.id
+      }
+    });
+    
+    // If we found a matching draft pick, update it with the selection info
+    if (draftPick) {
+      await prisma.draftPick.update({
+        where: { id: draftPick.id },
+        data: {
+          pickNumber: selection.pickNumber,
+          playerSelectedId: player.id
+        }
+      });
+      
+      console.log(`    📊 Updated draft pick with selection: ${player.fullName} (R${selection.round}P${selection.pickNumber})`);
     }
   }
 

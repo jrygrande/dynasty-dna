@@ -1003,7 +1003,11 @@ export class TransactionChainService {
 
     // Build description
     let description = `${transaction.type} transaction`;
-    if (managerFrom && managerTo) {
+    if (transaction.type === 'draft') {
+      if (managerTo) {
+        description = `Draft selection by ${managerTo.displayName || managerTo.username}`;
+      }
+    } else if (managerFrom && managerTo) {
       description = `Trade between ${managerFrom.displayName || managerFrom.username} and ${managerTo.displayName || managerTo.username}`;
     } else if (managerTo) {
       description = `${transaction.type} by ${managerTo.displayName || managerTo.username}`;
