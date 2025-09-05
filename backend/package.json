@@ -21,7 +21,8 @@
     "db:reset": "prisma migrate reset --force && npm run seed:dev",
     "seed:dev": "tsx src/scripts/seedDevData.ts",
     "seed:current": "tsx src/scripts/seedDevData.ts -- --current-only",
-    "db:stats": "tsx src/scripts/checkDbStats.ts"
+    "db:stats": "tsx src/scripts/checkDbStats.ts",
+    "validate:graph": "tsx src/scripts/validateGraph.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.16.1",
@@ -41,6 +42,7 @@
     "@types/supertest": "^6.0.3",
     "@typescript-eslint/eslint-plugin": "^7.16.0",
     "@typescript-eslint/parser": "^7.16.0",
+    "chalk": "^4.1.2",
     "eslint": "^8.57.0",
     "jest": "^30.1.1",
     "prisma": "^5.16.1",
@@ -52,8 +54,13 @@
   "jest": {
     "preset": "ts-jest",
     "testEnvironment": "node",
-    "roots": ["<rootDir>/tests"],
-    "testMatch": ["**/__tests__/**/*.ts", "**/?(*.)+(spec|test).ts"],
+    "roots": [
+      "<rootDir>/tests"
+    ],
+    "testMatch": [
+      "**/__tests__/**/*.ts",
+      "**/?(*.)+(spec|test).ts"
+    ],
     "transform": {
       "^.+\\.ts$": "ts-jest"
     },
