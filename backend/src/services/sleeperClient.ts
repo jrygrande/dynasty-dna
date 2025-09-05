@@ -2,6 +2,7 @@ import { config } from '../config';
 import NodeCache from 'node-cache';
 // Define types locally to avoid import path issues
 interface SleeperLeague {
+  league_id?: string;
   name: string;
   season: string;
   season_type?: string;
@@ -40,7 +41,7 @@ interface SleeperRoster {
   };
 }
 
-interface SleeperTransaction {
+export interface SleeperTransaction {
   transaction_id: string;
   type: string;
   status: string;
@@ -161,8 +162,12 @@ class SleeperClient {
   private lastRequestTime = 0;
 
   constructor() {
-    // Cache for 1 hour by default
-    this.cache = new NodeCache({ stdTTL: 3600 });
+    // Cache for 1 hour by default, with statistics tracking enabled
+    this.cache = new NodeCache({ 
+      stdTTL: 3600,
+      useClones: false,
+      checkperiod: 600
+    });
   }
 
   /**
@@ -190,8 +195,11 @@ class SleeperClient {
     cacheTTL?: number
   ): Promise<T> {
     // Check cache first
-    if (cacheKey && this.cache.has(cacheKey)) {
-      return this.cache.get<T>(cacheKey)!;
+    if (cacheKey) {
+      const cached = this.cache.get<T>(cacheKey);
+      if (cached !== undefined) {
+        return cached;
+      }
     }
 
     await this.enforceRateLimit();
@@ -243,34 +251,54 @@ class SleeperClient {
   /**
    * Get user information by username or user ID
    */
-  async getUser(identifier: string): Promise<SleeperUser> {
-    return this.request<SleeperUser>(
-      `/user/${identifier}`,
-      `user-${identifier}`,
-      3600 // Cache for 1 hour
-    );
+  async getUser(identifier: string): Promise<SleeperUser | null> {
+    try {
+      return await this.request<SleeperUser>(
+        `/user/${identifier}`,
+        `user-${identifier}`,
+        3600 // Cache for 1 hour
+      );
+    } catch (error) {
+      if (error instanceof SleeperAPIError && error.statusCode === 404) {
+        return null;
+      }
+      throw error;
+    }
   }
 
   /**
    * Get all leagues for a user in a specific season
    */
-  async getUserLeagues(userId: string, season: string): Promise<SleeperLeague[]> {
-    return this.request<SleeperLeague[]>(
+  async getUserLeagues(userId: string, season: string): Promise<Array<SleeperLeague & { league_id: string }>> {
+    const response = await this.request<Record<string, SleeperLeague>>(
       `/user/${userId}/leagues/nfl/${season}`,
       `user-leagues-${userId}-${season}`,
       1800 // Cache for 30 minutes
     );
+    
+    // Convert keyed object to array with league_id included
+    return Object.entries(response).map(([leagueId, league]) => ({
+      ...league,
+      league_id: leagueId
+    }));
   }
 
   /**
    * Get specific league information
    */
-  async getLeague(leagueId: string): Promise<SleeperLeague> {
-    return this.request<SleeperLeague>(
-      `/league/${leagueId}`,
-      `league-${leagueId}`,
-      3600 // Cache for 1 hour
-    );
+  async getLeague(leagueId: string): Promise<SleeperLeague | null> {
+    try {
+      return await this.request<SleeperLeague>(
+        `/league/${leagueId}`,
+        `league-${leagueId}`,
+        3600 // Cache for 1 hour
+      );
+    } catch (error) {
+      if (error instanceof SleeperAPIError && error.statusCode === 404) {
+        return null;
+      }
+      throw error;
+    }
   }
 
   /**

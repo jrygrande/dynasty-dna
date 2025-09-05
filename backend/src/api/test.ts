@@ -1,5 +1,4 @@
 import { Router } from 'express';
-import { z } from 'zod';
 import { asyncHandler } from './middleware/errorHandlers';
 import { dataSyncService } from '../services/dataSyncService';
 import { historicalLeagueService } from '../services/historicalLeagueService';
@@ -11,7 +10,7 @@ const prisma = new PrismaClient();
 export const testRouter = Router();
 
 // POST /api/test/sync-test-league - Sync the Dynasty Domination test league
-testRouter.post('/sync-test-league', asyncHandler(async (req, res) => {
+testRouter.post('/sync-test-league', asyncHandler(async (_req, res) => {
   const testLeagueId = config.testLeagueId || '1191596293294166016';
   
   try {
@@ -60,7 +59,7 @@ testRouter.post('/sync-test-league', asyncHandler(async (req, res) => {
 }));
 
 // POST /api/test/sync-dynasty-history - Sync complete dynasty history for test league
-testRouter.post('/sync-dynasty-history', asyncHandler(async (req, res) => {
+testRouter.post('/sync-dynasty-history', asyncHandler(async (_req, res) => {
   const testLeagueId = config.testLeagueId || '1191596293294166016';
   
   try {
@@ -93,7 +92,7 @@ testRouter.post('/sync-dynasty-history', asyncHandler(async (req, res) => {
 }));
 
 // GET /api/test/dynasty-chain - Get dynasty chain for test league
-testRouter.get('/dynasty-chain', asyncHandler(async (req, res) => {
+testRouter.get('/dynasty-chain', asyncHandler(async (_req, res) => {
   const testLeagueId = config.testLeagueId || '1191596293294166016';
   
   try {
@@ -117,7 +116,7 @@ testRouter.get('/dynasty-chain', asyncHandler(async (req, res) => {
 }));
 
 // GET /api/test/search-user - Search for test username
-testRouter.get('/search-user', asyncHandler(async (req, res) => {
+testRouter.get('/search-user', asyncHandler(async (_req, res) => {
   const testUsername = config.testUsername || 'jrygrande';
   
   try {
@@ -141,7 +140,7 @@ testRouter.get('/search-user', asyncHandler(async (req, res) => {
 }));
 
 // GET /api/test/api-status - Check Sleeper API connectivity and rate limiting
-testRouter.get('/api-status', asyncHandler(async (req, res) => {
+testRouter.get('/api-status', asyncHandler(async (_req, res) => {
   try {
     console.log(`🧪 Testing Sleeper API connectivity`);
     
@@ -187,7 +186,7 @@ testRouter.get('/api-status', asyncHandler(async (req, res) => {
 }));
 
 // GET /api/test/database-stats - Get database statistics
-testRouter.get('/database-stats', asyncHandler(async (req, res) => {
+testRouter.get('/database-stats', asyncHandler(async (_req, res) => {
   try {
     console.log(`🧪 Getting database statistics`);
     
@@ -248,7 +247,7 @@ testRouter.get('/database-stats', asyncHandler(async (req, res) => {
 }));
 
 // POST /api/test/clear-cache - Clear Sleeper API cache
-testRouter.post('/clear-cache', asyncHandler(async (req, res) => {
+testRouter.post('/clear-cache', asyncHandler(async (_req, res) => {
   try {
     console.log(`🧪 Clearing Sleeper API cache`);
     

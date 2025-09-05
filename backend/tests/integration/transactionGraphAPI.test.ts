@@ -4,8 +4,8 @@ import { config } from '../../src/config';
 
 // Mock app creation - in a real test, you'd import your actual app
 const createTestApp = async () => {
-  const { app } = await import('../../src/index');
-  return app;
+  const app = await import('../../src/index');
+  return app.default;
 };
 
 describe('Transaction Graph API Integration Tests', () => {
@@ -56,7 +56,7 @@ describe('Transaction Graph API Integration Tests', () => {
 
     testPlayerId = playerTransaction.items[0].player!.id;
     testTransactionId = playerTransaction.id;
-    testManagerId = playerTransaction.items[0].manager.id;
+    testManagerId = playerTransaction.items[0].manager?.id || '';
   });
 
   afterAll(async () => {

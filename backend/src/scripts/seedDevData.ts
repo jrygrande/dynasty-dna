@@ -76,13 +76,13 @@ async function seedDevData(options: SeedOptions = {}) {
       prisma.draft.count()
     ]);
 
-    // Get transactions by season
-    const transactionsByLeague = await prisma.transaction.groupBy({
-      by: ['leagueId'],
-      _count: {
-        id: true
-      }
-    });
+    // Get transactions by season (for reference)
+    // const _transactionsByLeague = await prisma.transaction.groupBy({
+    //   by: ['leagueId'],
+    //   _count: {
+    //     id: true
+    //   }
+    // });
 
     const leagueStats = await prisma.league.findMany({
       select: {

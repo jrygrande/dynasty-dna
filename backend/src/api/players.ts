@@ -69,7 +69,7 @@ playersRouter.get('/:playerId/transaction-chain', asyncHandler(async (req, res) 
     });
   } catch (error) {
     console.error(`❌ Failed to build transaction chain for player: ${playerId}`, error);
-    res.status(500).json({
+    return res.status(500).json({
       message: 'Failed to build transaction chain',
       playerId,
       error: error instanceof Error ? error.message : 'Unknown error'
@@ -101,7 +101,7 @@ playersRouter.get('/:playerId/seasons', asyncHandler(async (req, res) => {
     });
   } catch (error) {
     console.error(`❌ Failed to get player seasons: ${playerId}`, error);
-    res.status(500).json({
+    return res.status(500).json({
       message: 'Failed to get player season data',
       playerId,
       error: error instanceof Error ? error.message : 'Unknown error'
@@ -155,7 +155,7 @@ playersRouter.get('/search/:sleeperId', asyncHandler(async (req, res) => {
     });
   } catch (error) {
     console.error(`❌ Failed to search for player: ${sleeperId}`, error);
-    res.status(500).json({
+    return res.status(500).json({
       message: 'Failed to search for player',
       sleeperId,
       error: error instanceof Error ? error.message : 'Unknown error'
@@ -284,7 +284,7 @@ playersRouter.get('/:playerId/performance', asyncHandler(async (req, res) => {
     });
   } catch (error) {
     console.error(`❌ Failed to get player performance: ${playerId}`, error);
-    res.status(500).json({
+    return res.status(500).json({
       message: 'Failed to get player performance data',
       playerId,
       error: error instanceof Error ? error.message : 'Unknown error'

@@ -1,47 +1,37 @@
-import { TransactionChainService, AssetNode, TransactionNode, TransactionGraph } from '../../src/services/transactionChainService';
-import { PrismaClient } from '@prisma/client';
+import { TransactionChainService } from '../../src/services/transactionChainService';
+import { mockPrisma, resetPrismaMocks } from '../mocks/prisma.mock';
 
 // Mock Prisma
 jest.mock('@prisma/client');
-const mockPrisma = {
-  league: {
-    findUnique: jest.fn(),
-    findMany: jest.fn()
-  },
-  transaction: {
-    findMany: jest.fn(),
-    findUnique: jest.fn()
-  },
-  player: {
-    findUnique: jest.fn()
-  },
-  draftPick: {
-    findUnique: jest.fn()
-  },
-  manager: {
-    findUnique: jest.fn()
-  },
-  roster: {
-    findFirst: jest.fn()
-  },
-  $disconnect: jest.fn()
-} as any;
 
 // Mock historical league service
 jest.mock('../../src/services/historicalLeagueService', () => ({
   historicalLeagueService: {
-    getLeagueHistory: jest.fn()
+    getLeagueHistory: jest.fn(),
+    syncFullDynastyHistory: jest.fn(),
+    findPlayerAcrossSeasons: jest.fn(),
+    getTransactionChainAcrossSeasons: jest.fn(),
+    findLeaguesByUsername: jest.fn(),
+    disconnect: jest.fn().mockResolvedValue(undefined)
   }
 }));
+
+const { historicalLeagueService: mockHistoricalLeagueService } = jest.mocked(
+  require('../../src/services/historicalLeagueService')
+);
 
 describe('TransactionGraph Construction', () => {
   let service: TransactionChainService;
   
   beforeEach(() => {
-    jest.clearAllMocks();
-    service = new TransactionChainService();
-    // Replace the prisma instance with our mock
-    (service as any).prisma = mockPrisma;
+    resetPrismaMocks();
+    // Reset historical league service mocks
+    Object.values(mockHistoricalLeagueService).forEach(method => {
+      if (typeof method === 'function' && 'mockReset' in method) {
+        (method as jest.MockedFunction<any>).mockReset();
+      }
+    });
+    service = new TransactionChainService(mockPrisma);
   });
 
   afterEach(async () => {

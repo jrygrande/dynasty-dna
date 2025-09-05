@@ -12,7 +12,6 @@ interface LeagueStats {
   sleeperLeagueId: string;
   transactions: number;
   rosters: number;
-  managers: number;
   matchups: number;
   playerScores: number;
   draftPicks: number;
@@ -26,7 +25,6 @@ async function getLeagueStats(): Promise<LeagueStats[]> {
         select: {
           transactions: true,
           rosters: true,
-          managers: true,
           matchupResults: true,
           playerWeeklyScores: true,
           draftPicks: true
@@ -45,7 +43,6 @@ async function getLeagueStats(): Promise<LeagueStats[]> {
     sleeperLeagueId: league.sleeperLeagueId,
     transactions: league._count.transactions,
     rosters: league._count.rosters,
-    managers: league._count.managers,
     matchups: league._count.matchupResults,
     playerScores: league._count.playerWeeklyScores,
     draftPicks: league._count.draftPicks,
@@ -144,7 +141,6 @@ async function checkDbStats() {
       console.log(`   ID: ${league.sleeperLeagueId}`);
       console.log(`   Transactions: ${league.transactions.toLocaleString()}`);
       console.log(`   Rosters: ${league.rosters}`);
-      console.log(`   Managers: ${league.managers}`);
       console.log(`   Matchups: ${league.matchups.toLocaleString()}`);
       console.log(`   Player Scores: ${league.playerScores.toLocaleString()}`);
       console.log(`   Draft Picks: ${league.draftPicks}`);
@@ -156,7 +152,7 @@ async function checkDbStats() {
     console.log('=============================');
     
     const weekCoverage = await getTransactionWeekCoverage();
-    Object.entries(weekCoverage).forEach(([leagueId, data]) => {
+    Object.entries(weekCoverage).forEach(([, data]) => {
       console.log(`\n📈 ${data.season} - ${data.name}:`);
       if (data.weeks.length === 0) {
         console.log('   No transactions with week data');
@@ -180,7 +176,7 @@ async function checkDbStats() {
           }
         });
 
-        if (currentRange) {
+        if (currentRange !== null) {
           if (currentRange.start === currentRange.end) {
             weekRanges.push(`Week ${currentRange.start} (${currentRange.count})`);
           } else {
@@ -204,8 +200,7 @@ async function checkDbStats() {
         _count: {
           select: {
             transactions: true,
-            rosters: true,
-            managers: true
+            rosters: true
           }
         }
       }
@@ -215,7 +210,6 @@ async function checkDbStats() {
       console.log(`✅ Test league found: ${testLeague.season} ${testLeague.name}`);
       console.log(`   Transactions: ${testLeague._count.transactions}`);
       console.log(`   Rosters: ${testLeague._count.rosters}`);
-      console.log(`   Managers: ${testLeague._count.managers}`);
     } else {
       console.log('❌ Test league not found in database');
     }

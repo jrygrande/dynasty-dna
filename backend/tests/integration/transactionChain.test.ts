@@ -1,4 +1,4 @@
-import request from 'supertest';
+// import request from 'supertest';
 import { PrismaClient } from '@prisma/client';
 import { transactionChainService } from '../../src/services/transactionChainService';
 import { config } from '../../src/config';
@@ -64,8 +64,8 @@ describe('Transaction Chain Integration Tests', () => {
     // Find a real manager
     const manager = await prisma.manager.findFirst({
       where: {
-        leagues: {
-          some: { id: testLeague.id }
+        rosters: {
+          some: { leagueId: testLeague.id }
         }
       }
     });

@@ -1,72 +1,5 @@
 import { PrismaClient } from '@prisma/client';
-import { sleeperClient, PlayerWeeklyScore } from './sleeperClient';
-// Define necessary types locally to avoid import issues
-interface SleeperLeague {
-  name: string;
-  season: string;
-  season_type?: string;
-  status?: string;
-  sport?: string;
-  total_rosters: number;
-  roster_positions?: string[];
-  scoring_settings?: Record<string, any>;
-  previous_league_id?: string;
-}
-
-interface SleeperUser {
-  user_id: string;
-  username?: string;
-  display_name?: string;
-  avatar?: string;
-}
-
-interface SleeperRoster {
-  roster_id: number;
-  owner_id: string;
-  players?: string[];
-  starters?: string[];
-  settings?: {
-    wins?: number;
-    losses?: number;
-    ties?: number;
-    fpts?: number;
-    fpts_against?: number;
-    fpts_decimal?: number;
-    fpts_against_decimal?: number;
-    waiver_budget_used?: number;
-    waiver_position?: number;
-    total_moves?: number;
-    division?: number;
-  };
-}
-
-interface SleeperTransaction {
-  transaction_id: string;
-  type: string;
-  status: string;
-  leg: number;
-  status_updated: number;
-  creator?: string;
-  consenter_ids?: number[];
-  roster_ids?: number[];
-  metadata?: Record<string, any>;
-  adds?: Record<string, number>;
-  drops?: Record<string, number>;
-  waiver_budget?: Record<string, number>;
-}
-
-interface SleeperPlayer {
-  first_name?: string;
-  last_name?: string;
-  full_name?: string;
-  position?: string;
-  team?: string;
-  age?: number;
-  years_exp?: number;
-  status?: string;
-  injury_status?: string;
-  number?: number;
-}
+import { sleeperClient, type SleeperTransaction } from './sleeperClient';
 
 const prisma = new PrismaClient();
 
@@ -186,6 +119,10 @@ export class DataSyncService {
    */
   private async syncLeagueInfo(leagueId: string): Promise<void> {
     const leagueData = await sleeperClient.getLeague(leagueId);
+    
+    if (!leagueData) {
+      throw new DataSyncError(`League not found: ${leagueId}`, 'syncLeagueInfo', leagueId);
+    }
     
     await prisma.league.upsert({
       where: { sleeperLeagueId: leagueId },
@@ -317,7 +254,7 @@ export class DataSyncService {
           leagueId_sleeperRosterId_week: {
             leagueId: internalLeagueId,
             sleeperRosterId: roster.roster_id,
-            week: null
+            week: 0
           }
         },
         update: {
@@ -434,7 +371,7 @@ export class DataSyncService {
     // Sync transaction items (adds, drops, trades)
     if (transaction.adds) {
       for (const [playerId, rosterId] of Object.entries(transaction.adds)) {
-        const manager = await this.getManagerByRosterId(leagueId, rosterId);
+        const manager = await this.getManagerByRosterId(leagueId, Number(rosterId));
         const player = await prisma.player.findFirst({ where: { sleeperId: playerId } });
 
         if (player && manager) {
@@ -464,7 +401,7 @@ export class DataSyncService {
 
     if (transaction.drops) {
       for (const [playerId, rosterId] of Object.entries(transaction.drops)) {
-        const manager = await this.getManagerByRosterId(leagueId, rosterId);
+        const manager = await this.getManagerByRosterId(leagueId, Number(rosterId));
         const player = await prisma.player.findFirst({ where: { sleeperId: playerId } });
 
         if (player && manager) {
@@ -498,7 +435,7 @@ export class DataSyncService {
         console.log(`  📅 ${pick.season} Round ${pick.round}: Roster ${pick.roster_id} → Roster ${pick.owner_id}`);
         // Map roster IDs to manager IDs
         const originalOwnerManager = await this.getManagerByRosterId(leagueId, pick.roster_id);
-        const currentOwnerManager = await this.getManagerByRosterId(leagueId, pick.owner_id);
+        const currentOwnerManager = pick.owner_id ? await this.getManagerByRosterId(leagueId, pick.owner_id) : null;
 
         if (!originalOwnerManager || !currentOwnerManager) {
           console.warn(`Could not find managers for draft pick trade: original=${pick.roster_id}, current=${pick.owner_id}`);
@@ -556,7 +493,7 @@ export class DataSyncService {
         }
 
         // New owner receives the pick
-        const newOwnerManager = await this.getManagerByRosterId(leagueId, pick.owner_id);
+        const newOwnerManager = pick.owner_id ? await this.getManagerByRosterId(leagueId, pick.owner_id) : null;
         if (newOwnerManager) {
           const existingAddItem = await prisma.transactionItem.findFirst({
             where: {

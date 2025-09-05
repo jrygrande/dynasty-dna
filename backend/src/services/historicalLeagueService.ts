@@ -243,7 +243,7 @@ export class HistoricalLeagueService {
   async getTransactionChainAcrossSeasons(
     assetId: string,
     assetType: 'player' | 'draft_pick',
-    startLeagueId: string
+    _startLeagueId: string
   ): Promise<any[]> {
     // This will be implemented with the transaction chain service
     // For now, return empty array
@@ -266,6 +266,10 @@ export class HistoricalLeagueService {
     try {
       // First, get user info from Sleeper
       const user = await sleeperClient.getUser(username);
+      
+      if (!user) {
+        throw new Error(`User not found: ${username}`);
+      }
       
       // Get current NFL state to determine current season
       const nflState = await sleeperClient.getNFLState();
@@ -311,7 +315,7 @@ export class HistoricalLeagueService {
       }
 
       return {
-        username: user.display_name || user.username,
+        username: user.display_name || user.username || '',
         totalLeagues: dynastyChains.length,
         dynastyChains
       };
@@ -363,6 +367,10 @@ export class HistoricalLeagueService {
     } else {
       // Fallback to Sleeper API
       const sleeperLeague = await sleeperClient.getLeague(leagueId);
+      
+      if (!sleeperLeague) {
+        throw new Error(`League not found: ${leagueId}`);
+      }
       
       return {
         leagueId: '', // No internal ID yet

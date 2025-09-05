@@ -30,12 +30,20 @@ leaguesRouter.post('/:leagueId/sync', asyncHandler(async (req, res) => {
     // Validate league exists in Sleeper
     const leagueData = await sleeperClient.getLeague(leagueId);
     
+    if (!leagueData) {
+      return res.status(404).json({
+        message: 'League not found in Sleeper',
+        leagueId,
+        timestamp: new Date().toISOString()
+      });
+    }
+    
     // Perform the sync
     const syncResult = await dataSyncService.syncLeague(leagueId);
     
     if (syncResult.success) {
       console.log(`✅ Successfully synced league: ${leagueId}`);
-      res.status(200).json({
+      return res.status(200).json({
         message: 'League sync completed successfully',
         leagueId,
         leagueName: leagueData.name,
@@ -46,7 +54,7 @@ leaguesRouter.post('/:leagueId/sync', asyncHandler(async (req, res) => {
       });
     } else {
       console.warn(`⚠️ Partial sync for league: ${leagueId}`, syncResult.errors);
-      res.status(206).json({
+      return res.status(206).json({
         message: 'League sync completed with some errors',
         leagueId,
         leagueName: leagueData.name,
@@ -59,7 +67,7 @@ leaguesRouter.post('/:leagueId/sync', asyncHandler(async (req, res) => {
     }
   } catch (error) {
     console.error(`❌ Failed to sync league: ${leagueId}`, error);
-    res.status(500).json({
+    return res.status(500).json({
       message: 'League sync failed',
       leagueId,
       status: 'failed',
@@ -118,7 +126,15 @@ leaguesRouter.get('/:leagueId', asyncHandler(async (req, res) => {
       // Fallback to Sleeper API
       const sleeperLeague = await sleeperClient.getLeague(leagueId);
       
-      res.status(200).json({
+      if (!sleeperLeague) {
+        return res.status(404).json({
+          message: 'League not found',
+          leagueId,
+          error: 'League does not exist in Sleeper'
+        });
+      }
+      
+      return res.status(200).json({
         source: 'sleeper_api',
         league: {
           sleeperLeagueId: leagueId,
@@ -137,7 +153,7 @@ leaguesRouter.get('/:leagueId', asyncHandler(async (req, res) => {
     }
   } catch (error) {
     console.error(`❌ Failed to get league: ${leagueId}`, error);
-    res.status(404).json({
+    return res.status(404).json({
       message: 'League not found',
       leagueId,
       error: error instanceof Error ? error.message : 'Unknown error'
@@ -234,7 +250,7 @@ leaguesRouter.get('/:leagueId/transactions', asyncHandler(async (req, res) => {
     });
   } catch (error) {
     console.error(`❌ Failed to get transactions for league: ${leagueId}`, error);
-    res.status(500).json({
+    return res.status(500).json({
       message: 'Failed to fetch transactions',
       leagueId,
       error: error instanceof Error ? error.message : 'Unknown error'
@@ -277,7 +293,7 @@ leaguesRouter.post('/:leagueId/transactions/sync', asyncHandler(async (req, res)
     });
   } catch (error) {
     console.error(`❌ Failed to sync transactions for league: ${leagueId}`, error);
-    res.status(500).json({
+    return res.status(500).json({
       message: 'Failed to sync transactions',
       leagueId,
       error: error instanceof Error ? error.message : 'Unknown error'
@@ -302,7 +318,7 @@ leaguesRouter.get('/search/:username', asyncHandler(async (req, res) => {
     });
   } catch (error) {
     console.error(`❌ Failed to search leagues for username: ${username}`, error);
-    res.status(404).json({
+    return res.status(404).json({
       message: 'Failed to find leagues for username',
       username,
       error: error instanceof Error ? error.message : 'Unknown error'
@@ -326,7 +342,7 @@ leaguesRouter.get('/:leagueId/history', asyncHandler(async (req, res) => {
     });
   } catch (error) {
     console.error(`❌ Failed to get dynasty history for league: ${leagueId}`, error);
-    res.status(500).json({
+    return res.status(500).json({
       message: 'Failed to get dynasty history',
       leagueId,
       error: error instanceof Error ? error.message : 'Unknown error'
@@ -365,7 +381,7 @@ leaguesRouter.post('/:leagueId/sync-dynasty', asyncHandler(async (req, res) => {
     }
   } catch (error) {
     console.error(`❌ Failed to sync dynasty history for league: ${leagueId}`, error);
-    res.status(500).json({
+    return res.status(500).json({
       message: 'Dynasty history sync failed',
       leagueId,
       status: 'failed',
@@ -445,7 +461,7 @@ leaguesRouter.get('/:leagueId/transactions/:transactionId/complete-lineage', asy
     });
   } catch (error) {
     console.error(`❌ Failed to build complete transaction lineage:`, error);
-    res.status(500).json({
+    return res.status(500).json({
       message: 'Failed to build complete transaction lineage',
       transactionId,
       managerId,
@@ -498,7 +514,7 @@ leaguesRouter.get('/:leagueId/assets/:assetId/trade-tree', asyncHandler(async (r
     });
   } catch (error) {
     console.error(`❌ Failed to build trade tree:`, error);
-    res.status(500).json({
+    return res.status(500).json({
       message: 'Failed to build asset trade tree',
       assetId,
       transactionId,
@@ -570,7 +586,7 @@ leaguesRouter.get('/:leagueId/assets/:assetId/complete-tree', asyncHandler(async
     }
   } catch (error) {
     console.error(`❌ Failed to build complete trade tree:`, error);
-    res.status(500).json({
+    return res.status(500).json({
       message: 'Failed to build complete asset trade tree',
       assetId,
       transactionId,

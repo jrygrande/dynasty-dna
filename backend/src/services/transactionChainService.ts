@@ -12,10 +12,10 @@ export interface AssetNode {
   originalOwnerId?: string;
   currentOwnerId?: string;
   name?: string;
-  position?: string;
-  team?: string;
-  pickNumber?: number;
-  playerSelectedId?: string;
+  position?: string | null;
+  team?: string | null;
+  pickNumber?: number | null;
+  playerSelectedId?: string | null;
 }
 
 export interface TransactionNode {
@@ -166,6 +166,12 @@ export interface AssetCompleteLineage {
 }
 
 export class TransactionChainService {
+  private prisma: PrismaClient;
+
+  constructor(prismaInstance?: PrismaClient) {
+    this.prisma = prismaInstance || prisma;
+  }
+
   /**
    * Build complete transaction chain for an asset (player or draft pick)
    */
@@ -268,7 +274,7 @@ export class TransactionChainService {
     acquisitionChains: TransactionChain[];
   }> {
     // Get manager info
-    const manager = await prisma.manager.findUnique({
+    const manager = await this.prisma.manager.findUnique({
       where: { id: managerId }
     });
 
@@ -277,7 +283,7 @@ export class TransactionChainService {
     }
 
     // Get current roster
-    const internalLeague = await prisma.league.findUnique({
+    const internalLeague = await this.prisma.league.findUnique({
       where: { sleeperLeagueId: leagueId }
     });
 
@@ -285,7 +291,7 @@ export class TransactionChainService {
       throw new Error(`League not found: ${leagueId}`);
     }
 
-    const roster = await prisma.roster.findFirst({
+    const roster = await this.prisma.roster.findFirst({
       where: {
         managerId: manager.id,
         leagueId: internalLeague.id,
@@ -314,8 +320,8 @@ export class TransactionChainService {
         type: 'player',
         sleeperId: slot.player.sleeperId,
         name: slot.player.fullName || 'Unknown Player',
-        position: slot.player.position,
-        team: slot.player.team
+        position: slot.player.position || undefined,
+        team: slot.player.team || undefined
       };
 
       currentRoster.push(playerAsset);
@@ -349,7 +355,7 @@ export class TransactionChainService {
     leagueId: string
   ): Promise<TransactionChain> {
     // Find the draft pick
-    const internalLeague = await prisma.league.findUnique({
+    const internalLeague = await this.prisma.league.findUnique({
       where: { sleeperLeagueId: leagueId }
     });
 
@@ -357,7 +363,7 @@ export class TransactionChainService {
       throw new Error(`League not found: ${leagueId}`);
     }
 
-    const draftPick = await prisma.draftPick.findFirst({
+    const draftPick = await this.prisma.draftPick.findFirst({
       where: {
         leagueId: internalLeague.id,
         season,
@@ -628,7 +634,7 @@ export class TransactionChainService {
         continue;
       }
 
-      const internalLeague = await prisma.league.findUnique({
+      const internalLeague = await this.prisma.league.findUnique({
         where: { sleeperLeagueId: league.sleeperLeagueId }
       });
 
@@ -637,7 +643,7 @@ export class TransactionChainService {
       }
 
       // Get all transactions for this league
-      const transactions = await prisma.transaction.findMany({
+      const transactions = await this.prisma.transaction.findMany({
         where: { leagueId: internalLeague.id },
         include: {
           items: {
@@ -843,8 +849,8 @@ export class TransactionChainService {
       
       if (managers.length === 2) {
         // Standard 2-manager trade
-        const [manager1Id, manager1Data] = managers[0];
-        const [manager2Id, manager2Data] = managers[1];
+        const [, manager1Data] = managers[0];
+        const [, manager2Data] = managers[1];
         
         // Manager1 gives what they drop, receives what they add
         // Manager2 gives what they drop, receives what they add
@@ -973,8 +979,8 @@ export class TransactionChainService {
       description,
       assetsReceived,
       assetsGiven,
-      managerFrom,
-      managerTo
+      managerFrom: managerFrom || undefined,
+      managerTo: managerTo || undefined
     };
   }
 
@@ -1014,7 +1020,7 @@ export class TransactionChainService {
    */
   private async getAssetNode(assetId: string, assetType: 'player' | 'draft_pick'): Promise<AssetNode> {
     if (assetType === 'player') {
-      const player = await prisma.player.findUnique({
+      const player = await this.prisma.player.findUnique({
         where: { id: assetId }
       });
 
@@ -1027,11 +1033,11 @@ export class TransactionChainService {
         type: 'player',
         sleeperId: player.sleeperId,
         name: player.fullName || 'Unknown Player',
-        position: player.position,
-        team: player.team
+        position: player.position || undefined,
+        team: player.team || undefined
       };
     } else {
-      const draftPick = await prisma.draftPick.findUnique({
+      const draftPick = await this.prisma.draftPick.findUnique({
         where: { id: assetId },
         include: {
           playerSelected: true
@@ -1049,8 +1055,8 @@ export class TransactionChainService {
         round: draftPick.round,
         originalOwnerId: draftPick.originalOwnerId,
         currentOwnerId: draftPick.currentOwnerId,
-        pickNumber: draftPick.pickNumber,
-        playerSelectedId: draftPick.playerSelectedId,
+        pickNumber: draftPick.pickNumber || undefined,
+        playerSelectedId: draftPick.playerSelectedId || undefined,
         name: draftPick.playerSelected?.fullName || 
               `${draftPick.season} Round ${draftPick.round} Pick`
       };
@@ -1251,7 +1257,7 @@ export class TransactionChainService {
   /**
    * Build origin point from transaction
    */
-  private buildOriginPoint(transaction: TransactionNode, asset: AssetNode): AssetCompleteLineage['originChain']['originPoint'] {
+  private buildOriginPoint(transaction: TransactionNode, _asset: AssetNode): AssetCompleteLineage['originChain']['originPoint'] {
     let type: AssetCompleteLineage['originChain']['originPoint']['type'] = 'free_agent';
     
     if (transaction.type === 'draft') {
@@ -1318,7 +1324,7 @@ export class TransactionChainService {
    * Determine current status of an asset based on its transaction history
    */
   private determineCurrentStatus(
-    asset: AssetNode,
+    _asset: AssetNode,
     transactions: TransactionNode[]
   ): AssetCompleteLineage['futureChain']['currentStatus'] {
     if (transactions.length === 0) {
@@ -1368,7 +1374,7 @@ export class TransactionChainService {
    * Get transaction by ID with all related data
    */
   private async getTransactionById(transactionId: string): Promise<TransactionNode> {
-    const transaction = await prisma.transaction.findUnique({
+    const transaction = await this.prisma.transaction.findUnique({
       where: { id: transactionId },
       include: {
         items: {
@@ -1560,7 +1566,7 @@ export class TransactionChainService {
    * Clean up resources
    */
   async disconnect(): Promise<void> {
-    await prisma.$disconnect();
+    await this.prisma.$disconnect();
   }
 }
 

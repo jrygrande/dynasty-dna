@@ -10,14 +10,14 @@ export interface AssetNode {
   type: 'player' | 'draft_pick';
   sleeperId?: string;
   name: string;
-  position?: string;
-  team?: string;
+  position?: string | null;
+  team?: string | null;
   season?: string;
   round?: number;
   originalOwnerId?: string;
   currentOwnerId?: string;
-  pickNumber?: number;
-  playerSelectedId?: string;
+  pickNumber?: number | null;
+  playerSelectedId?: string | null;
 }
 
 export interface TransactionNode {
@@ -312,7 +312,7 @@ export class AssetTradeTreeService {
     }
 
     // Build summary description
-    const assetNames = assetsReceived.map(asset => asset.name);
+    const assetNames = assetsReceived.map((asset: AssetNode) => asset.name);
     const totalValue = assetNames.length === 1 
       ? assetNames[0]
       : `${assetNames.length}-asset package: ${assetNames.slice(0, 2).join(', ')}${assetNames.length > 2 ? '...' : ''}`;

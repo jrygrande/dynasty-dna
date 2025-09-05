@@ -1,33 +1,34 @@
 import { TransactionChainService } from '../../src/services/transactionChainService';
-import { PrismaClient } from '@prisma/client';
+import { mockPrisma, resetPrismaMocks } from '../mocks/prisma.mock';
 
 // Mock Prisma and dependencies
 jest.mock('@prisma/client');
 jest.mock('../../src/services/historicalLeagueService', () => ({
   historicalLeagueService: {
-    getLeagueHistory: jest.fn()
+    getLeagueHistory: jest.fn(),
+    syncFullDynastyHistory: jest.fn(),
+    findPlayerAcrossSeasons: jest.fn(),
+    getTransactionChainAcrossSeasons: jest.fn(),
+    findLeaguesByUsername: jest.fn(),
+    disconnect: jest.fn().mockResolvedValue(undefined)
   }
 }));
 
-const mockPrisma = {
-  league: { findUnique: jest.fn() },
-  transaction: { findMany: jest.fn(), findUnique: jest.fn() },
-  player: { findUnique: jest.fn() },
-  draftPick: { findUnique: jest.fn() },
-  manager: { findUnique: jest.fn() },
-  roster: { findFirst: jest.fn() },
-  $disconnect: jest.fn()
-} as any;
-
-const mockHistoricalService = require('../../src/services/historicalLeagueService').historicalLeagueService;
+const { historicalLeagueService: mockHistoricalLeagueService } = jest.mocked(
+  require('../../src/services/historicalLeagueService')
+);
 
 describe('Transaction Graph Edge Cases and Performance Tests', () => {
   let service: TransactionChainService;
 
   beforeEach(() => {
-    jest.clearAllMocks();
-    service = new TransactionChainService();
-    (service as any).prisma = mockPrisma;
+    resetPrismaMocks();
+    Object.values(mockHistoricalLeagueService).forEach(method => {
+      if (typeof method === 'function' && 'mockReset' in method) {
+        (method as jest.MockedFunction<any>).mockReset();
+      }
+    });
+    service = new TransactionChainService(mockPrisma);
   });
 
   afterEach(async () => {
@@ -82,7 +83,7 @@ describe('Transaction Graph Edge Cases and Performance Tests', () => {
 
       mockPrisma.league.findUnique.mockResolvedValue(mockLeague);
       mockPrisma.transaction.findMany.mockResolvedValue(mockTransactions);
-      mockHistoricalService.getLeagueHistory.mockResolvedValue({ leagues: mockLeagues });
+      mockHistoricalLeagueService.getLeagueHistory.mockResolvedValue({ leagues: mockLeagues });
       mockPrisma.player.findUnique.mockResolvedValue({ 
         id: 'player-A', 
         sleeperId: 'pA', 
@@ -132,7 +133,7 @@ describe('Transaction Graph Edge Cases and Performance Tests', () => {
 
       mockPrisma.league.findUnique.mockResolvedValue(mockLeague);
       mockPrisma.transaction.findMany.mockResolvedValue(mockTransactions);
-      mockHistoricalService.getLeagueHistory.mockResolvedValue({ leagues: mockLeagues });
+      mockHistoricalLeagueService.getLeagueHistory.mockResolvedValue({ leagues: mockLeagues });
       mockPrisma.draftPick.findUnique.mockResolvedValue({
         id: 'pick-1',
         season: '2024',
@@ -204,7 +205,7 @@ describe('Transaction Graph Edge Cases and Performance Tests', () => {
 
       mockPrisma.league.findUnique.mockResolvedValue(mockLeague);
       mockPrisma.transaction.findMany.mockResolvedValue(mockTransactions);
-      mockHistoricalService.getLeagueHistory.mockResolvedValue({ leagues: mockLeagues });
+      mockHistoricalLeagueService.getLeagueHistory.mockResolvedValue({ leagues: mockLeagues });
 
       const graph = await service.buildTransactionGraph(mockLeagues);
 
@@ -483,7 +484,7 @@ describe('Transaction Graph Edge Cases and Performance Tests', () => {
 
       mockPrisma.league.findUnique.mockResolvedValue(mockLeague);
       mockPrisma.transaction.findMany.mockResolvedValue(mockTransactions);
-      mockHistoricalService.getLeagueHistory.mockResolvedValue({ leagues: mockLeagues });
+      mockHistoricalLeagueService.getLeagueHistory.mockResolvedValue({ leagues: mockLeagues });
       mockPrisma.player.findUnique.mockResolvedValue({ 
         id: 'player-0', 
         sleeperId: 'p0', 

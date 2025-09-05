@@ -99,7 +99,7 @@ class GraphValidator {
 
       // Validate that all assets in transactions are in nodes
       let orphanedAssets = 0;
-      for (const [txId, transaction] of graph.chains) {
+      for (const [, transaction] of graph.chains) {
         const allAssets = [...transaction.assetsReceived, ...transaction.assetsGiven];
         for (const asset of allAssets) {
           if (!graph.nodes.has(asset.id)) {
@@ -116,7 +116,7 @@ class GraphValidator {
 
       // Validate that all edges point to valid transactions
       let invalidEdges = 0;
-      for (const [assetId, txIds] of graph.edges) {
+      for (const [, txIds] of graph.edges) {
         for (const txId of txIds) {
           if (!graph.chains.has(txId)) {
             invalidEdges++;
@@ -226,8 +226,8 @@ class GraphValidator {
       const startTimeLineage = Date.now();
       const manager = await prisma.manager.findFirst({
         where: {
-          leagues: {
-            some: { id: testLeague.id }
+          rosters: {
+            some: { leagueId: testLeague.id }
           }
         }
       });
@@ -412,7 +412,7 @@ class GraphValidator {
         }
 
         // Should have at least 2 different managers involved
-        const managers = new Set(tradeTransaction.items.map(item => item.manager.id));
+        const managers = new Set(tradeTransaction.items.map(item => item.manager?.id).filter(Boolean));
         if (managers.size >= 2) {
           this.addResult(true, `Trade involves ${managers.size} managers`, {
             managerCount: managers.size
@@ -467,7 +467,7 @@ class GraphValidator {
         const startTime = Date.now();
         
         try {
-          const tradeTree = await assetTradeTreeService.buildAssetTradeTree(
+          await assetTradeTreeService.buildAssetTradeTree(
             assetId,
             tradeTransaction.id,
             testLeague.id
@@ -642,7 +642,7 @@ async function runValidation(leagueId?: string) {
     console.log(`  Performance: ${report.summary.performance === 'PASS' ? chalk.green('PASS') : chalk.red('FAIL')}`);
     
     console.log('\n📝 Detailed Results:');
-    report.results.forEach((result, index) => {
+    report.results.forEach((result) => {
       const icon = result.passed ? '✅' : '❌';
       const color = result.passed ? chalk.green : chalk.red;
       console.log(`  ${icon} ${color(result.message)}`);
