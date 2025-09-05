@@ -9,7 +9,13 @@
 ✅ **Transaction Graph API Implemented** - Complete transaction graph visualization with recursive asset tracing, but draft pick associations need comprehensive fix for full accuracy.
 
 ### ⚠️ Critical Next Step
-**Fix Draft Pick Data Model** - See `backend/DRAFT_PICK_FIX_PLAN.md` for comprehensive solution to ensure accurate draft pick associations without manual database fixes.
+**Fix Database Data Completeness** - See `backend/DATABASE_FIX_PLAN.md` for comprehensive solution to sync all missing data:
+- Historical draft data (2021 startup + all rookie drafts)
+- Complete matchup results (all weeks, not just week 1)
+- NFL state for game timing
+- Player weekly scores from matchups
+
+**Note:** The draft pick graph fix documented in `DRAFT_PICK_FIX_PLAN.md` will be addressed AFTER database completeness is resolved.
 
 ### 🚀 Development Environment Status
 - **Backend API:** Running on http://localhost:3001 ✅
@@ -126,13 +132,17 @@
 - [ ] Comparison to league averages using actual fantasy points
 
 ## Current Sprint Focus
-**Goal:** Fix draft pick data model for accurate associations
-**Target Completion:** September 6-7, 2025
+**Goal:** Fix database data completeness issues
+**Target Completion:** September 5-6, 2025
 **Next Steps:** 
-1. ✅ Transaction graph API implementation - COMPLETED
-2. ✅ Recursive asset tracing - COMPLETED  
-3. 🔧 Partial fix for draft descriptions and re-acquired picks - COMPLETED
-4. ⚠️ **CRITICAL:** Implement comprehensive draft pick fix (see DRAFT_PICK_FIX_PLAN.md)
+1. ⚠️ **IMMEDIATE PRIORITY:** Fix database completeness (see DATABASE_FIX_PLAN.md)
+   - Sync all historical drafts (2021-2025)
+   - Sync all matchup weeks (not just week 1)
+   - Populate NFL state data
+   - Extract player weekly scores
+2. 🔧 Fix draft pick data model associations (see DRAFT_PICK_FIX_PLAN.md)
+3. ✅ Transaction graph API implementation - COMPLETED
+4. ✅ Recursive asset tracing - COMPLETED  
 5. Then proceed to frontend visualizations
 
 ## Notes & Decisions
@@ -144,9 +154,15 @@
 - **CRITICAL DISCOVERY:** Sleeper matchups endpoint provides individual player fantasy points - no external data sources needed!
 
 ## Blockers & Risks
-- **Draft Pick Data Model Issue:** Current implementation only tracks traded picks, causing incorrect associations
-  - Manual database fixes required for accuracy
-  - Re-sync would not produce correct data
+- **Database Completeness Issues:** Multiple critical data gaps discovered
+  - Missing all 2021 draft data (startup year)
+  - Matchups only have week 1 data for all seasons
+  - NFLState table is completely empty
+  - No player weekly scoring data
+  - Solution documented in DATABASE_FIX_PLAN.md
+- **Draft Pick Data Model Issue:** Current implementation only tracks traded picks
+  - Causes incorrect associations in transaction graphs
+  - Will be addressed after database completeness fix
   - Solution documented in DRAFT_PICK_FIX_PLAN.md
 
 ## Success Metrics
