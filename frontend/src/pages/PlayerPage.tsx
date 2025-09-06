@@ -1,8 +1,9 @@
 import { useParams } from 'react-router-dom';
 import { useEffect, useState } from 'react';
-import { User, Calendar, GitBranch, Loader2, AlertCircle, Settings, Activity } from 'lucide-react';
+import { User, Calendar, GitBranch, Loader2, AlertCircle, Settings, Activity, BarChart3, Network } from 'lucide-react';
 import { api } from '../services/api';
 import { TransactionTreeVisualization } from '../components/visualizations/TransactionTreeVisualization';
+import { TransactionTimeline } from '../components/visualizations/TransactionTimeline';
 import { transformTransactionGraphToD3, calculateOptimalSize } from '../utils/treeTransformers';
 import { TreeData, LayoutType } from '../types/visualization';
 
@@ -57,6 +58,7 @@ export function PlayerPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [networkDepth, setNetworkDepth] = useState(2);
+  const [viewMode, setViewMode] = useState<'network' | 'timeline'>('timeline');
 
   // For now, we'll use a test league ID - this should come from context or route
   const TEST_LEAGUE_ID = '1191596293294166016';
@@ -291,49 +293,89 @@ export function PlayerPage() {
         )}
       </div>
 
-      {treeData && (
+      {playerNetworkData && (
         <div className="card">
-          <div className="flex justify-between items-center mb-4">
-            <h2 className="text-xl font-bold text-gray-900">Transaction Chain Visualization</h2>
+          {/* View Toggle */}
+          <div className="flex justify-between items-center mb-6">
+            <div className="flex items-center space-x-4">
+              <h2 className="text-xl font-bold text-gray-900">Transaction History</h2>
+              <div className="flex bg-gray-100 rounded-lg p-1">
+                <button
+                  onClick={() => setViewMode('timeline')}
+                  className={`flex items-center px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                    viewMode === 'timeline'
+                      ? 'bg-white text-blue-600 shadow-sm'
+                      : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  <BarChart3 className="h-4 w-4 mr-1.5" />
+                  Timeline
+                </button>
+                <button
+                  onClick={() => setViewMode('network')}
+                  className={`flex items-center px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                    viewMode === 'network'
+                      ? 'bg-white text-blue-600 shadow-sm'
+                      : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  <Network className="h-4 w-4 mr-1.5" />
+                  Network
+                </button>
+              </div>
+            </div>
             <div className="text-sm text-gray-600">
-              {treeData.nodes.length} nodes, {treeData.links.length} connections
+              {playerNetworkData.stats.totalTransactions} transactions across {Object.keys(playerNetworkData.stats.depthDistribution).length} degrees
             </div>
           </div>
-          
-          <div className="overflow-x-auto">
-            <TransactionTreeVisualization
-              data={treeData}
-              config={{
-                width: optimalSize.width,
-                height: optimalSize.height,
-                layout: LayoutType.FORCE_DIRECTED,
-                enableZoom: true,
-                enableDrag: true,
-                showTooltips: true
-              }}
-              onNodeClick={handleNodeClick}
-              className="mx-auto"
+
+          {/* Timeline View */}
+          {viewMode === 'timeline' && (
+            <TransactionTimeline
+              transactions={playerNetworkData.network.transactions}
+              className="transaction-timeline-view"
             />
-          </div>
-          
-          <div className="mt-4 flex gap-4 text-xs text-gray-600">
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 rounded-full bg-blue-500"></div>
-              <span>Players</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 rounded-full bg-yellow-500"></div>
-              <span>Draft Picks</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 rounded-full bg-indigo-500"></div>
-              <span>Trades</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 rounded-full bg-orange-500"></div>
-              <span>Waivers</span>
-            </div>
-          </div>
+          )}
+
+          {/* Network View */}
+          {viewMode === 'network' && treeData && (
+            <>
+              <div className="overflow-x-auto mb-4">
+                <TransactionTreeVisualization
+                  data={treeData}
+                  config={{
+                    width: optimalSize.width,
+                    height: optimalSize.height,
+                    layout: LayoutType.FORCE_DIRECTED,
+                    enableZoom: true,
+                    enableDrag: true,
+                    showTooltips: true
+                  }}
+                  onNodeClick={handleNodeClick}
+                  className="mx-auto"
+                />
+              </div>
+              
+              <div className="flex gap-4 text-xs text-gray-600">
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-full bg-blue-500"></div>
+                  <span>Players</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-full bg-yellow-500"></div>
+                  <span>Draft Picks</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-full bg-indigo-500"></div>
+                  <span>Trades</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-full bg-orange-500"></div>
+                  <span>Waivers</span>
+                </div>
+              </div>
+            </>
+          )}
         </div>
       )}
     </div>
