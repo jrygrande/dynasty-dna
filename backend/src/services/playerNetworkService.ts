@@ -441,8 +441,8 @@ export class PlayerNetworkService {
         pickNumber: item.draftPick.pickNumber,
         playerSelectedId: item.draftPick.playerSelectedId,
         originalOwnerName: item.draftPick.originalOwner?.displayName || item.draftPick.originalOwner?.username,
-        name: item.draftPick.playerSelected?.fullName || 
-              `${item.draftPick.season} Round ${item.draftPick.round} Pick`
+        playerSelectedName: item.draftPick.playerSelected?.fullName,
+        name: `${item.draftPick.season} Round ${item.draftPick.round} Pick`
       };
     }
 
