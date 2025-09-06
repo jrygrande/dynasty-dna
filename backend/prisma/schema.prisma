@@ -168,6 +168,7 @@ model DraftPick {
   previousOwnerId String?  // previous_owner_id in Sleeper API - who traded it most recently
   season          String   // Store as string like API (e.g. "2025")
   round           Int
+  draftSlot       Int?     // Position within round (1-12 for each round)
   pickNumber      Int?     // Actual pick number when used
   playerSelectedId String? // Player selected with this pick
   traded          Boolean  @default(false)

@@ -23,7 +23,9 @@
     "seed:current": "tsx src/scripts/seedDevData.ts -- --current-only",
     "db:stats": "tsx src/scripts/checkDbStats.ts",
     "validate:graph": "tsx src/scripts/validateGraph.ts",
-    "visualize:graph": "tsx src/scripts/visualizeGraph.ts"
+    "visualize:graph": "tsx src/scripts/visualizeGraph.ts",
+    "fix:draft-picks": "tsx src/scripts/fixDraftPickSystem.ts",
+    "fix:draft-picks-v2": "tsx src/scripts/fixDraftPickSystemV2.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.16.1",
