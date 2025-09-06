@@ -290,27 +290,81 @@ export class PlayerNetworkService {
     let managerFrom = null;
     let managerTo = null;
 
-    // Process transaction items
-    for (const item of transaction.items) {
-      const asset = await this.buildAssetNodeFromItem(item);
+    // For trades, we need to show the complete bilateral exchange
+    if (transaction.type === 'trade') {
+      // Group items by manager
+      const itemsByManager = new Map<string, { adds: any[], drops: any[], manager: any }>();
       
-      if (item.type === 'add') {
-        assetsReceived.push(asset);
-        if (!managerTo) {
-          managerTo = {
-            id: item.manager.id,
-            username: item.manager.username,
-            displayName: item.manager.displayName
-          };
+      for (const item of transaction.items) {
+        const managerId = item.manager.id;
+        if (!itemsByManager.has(managerId)) {
+          itemsByManager.set(managerId, { adds: [], drops: [], manager: item.manager });
         }
-      } else if (item.type === 'drop') {
-        assetsGiven.push(asset);
-        if (!managerFrom) {
-          managerFrom = {
-            id: item.manager.id,
-            username: item.manager.username,
-            displayName: item.manager.displayName
-          };
+        
+        if (item.type === 'add') {
+          itemsByManager.get(managerId)!.adds.push(item);
+        } else if (item.type === 'drop') {
+          itemsByManager.get(managerId)!.drops.push(item);
+        }
+      }
+
+      // Find the managers involved in the trade
+      const managerEntries = Array.from(itemsByManager.entries());
+      
+      if (managerEntries.length >= 2) {
+        // For the transaction view, we'll show what both managers traded
+        // Manager 1's drops go to assetsGiven, Manager 2's drops go to assetsReceived
+        const [manager1Id, manager1Data] = managerEntries[0];
+        const [manager2Id, manager2Data] = managerEntries[1];
+        
+        // What manager1 gave away (their drops)
+        for (const item of manager1Data.drops) {
+          const asset = await this.buildAssetNodeFromItem(item);
+          assetsGiven.push(asset);
+        }
+        
+        // What manager2 gave away (their drops) = what manager1 received
+        for (const item of manager2Data.drops) {
+          const asset = await this.buildAssetNodeFromItem(item);
+          assetsReceived.push(asset);
+        }
+        
+        // Set the trading partners
+        managerFrom = {
+          id: manager1Data.manager.id,
+          username: manager1Data.manager.username,
+          displayName: manager1Data.manager.displayName
+        };
+        
+        managerTo = {
+          id: manager2Data.manager.id,
+          username: manager2Data.manager.username,
+          displayName: manager2Data.manager.displayName
+        };
+      }
+    } else {
+      // For non-trades, use the original logic
+      for (const item of transaction.items) {
+        const asset = await this.buildAssetNodeFromItem(item);
+        
+        if (item.type === 'add') {
+          assetsReceived.push(asset);
+          if (!managerTo) {
+            managerTo = {
+              id: item.manager.id,
+              username: item.manager.username,
+              displayName: item.manager.displayName
+            };
+          }
+        } else if (item.type === 'drop') {
+          assetsGiven.push(asset);
+          if (!managerFrom) {
+            managerFrom = {
+              id: item.manager.id,
+              username: item.manager.username,
+              displayName: item.manager.displayName
+            };
+          }
         }
       }
     }
@@ -327,6 +381,22 @@ export class PlayerNetworkService {
       description = `${transaction.type} by ${managerTo.displayName || managerTo.username}`;
     }
 
+    // For trades, restructure to show participants and what they received
+    let participants: Array<{ manager: any, assetsReceived: any[] }> = [];
+    
+    if (transaction.type === 'trade' && managerFrom && managerTo) {
+      participants = [
+        {
+          manager: managerFrom,
+          assetsReceived: assetsReceived // What manager1 received (manager2's drops)
+        },
+        {
+          manager: managerTo,
+          assetsReceived: assetsGiven // What manager2 received (manager1's drops)
+        }
+      ];
+    }
+
     return {
       id: transaction.id,
       sleeperTransactionId: transaction.sleeperTransactionId,
@@ -341,7 +411,8 @@ export class PlayerNetworkService {
       assetsReceived,
       assetsGiven,
       managerFrom: managerFrom || undefined,
-      managerTo: managerTo || undefined
+      managerTo: managerTo || undefined,
+      participants: participants.length > 0 ? participants : undefined
     };
   }
 
