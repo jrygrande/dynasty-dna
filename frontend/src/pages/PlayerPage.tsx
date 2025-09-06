@@ -1,9 +1,10 @@
 import { useParams } from 'react-router-dom';
 import { useEffect, useState } from 'react';
-import { User, Calendar, GitBranch, Loader2, AlertCircle, Settings, Activity, BarChart3, Network } from 'lucide-react';
+import { User, Calendar, GitBranch, Loader2, AlertCircle, Activity, BarChart3, Network } from 'lucide-react';
 import { api } from '../services/api';
 import { TransactionTreeVisualization } from '../components/visualizations/TransactionTreeVisualization';
 import { TransactionTimeline } from '../components/visualizations/TransactionTimeline';
+import { TransactionMultiTrackTimeline } from '../components/visualizations/TransactionMultiTrackTimeline';
 import { transformTransactionGraphToD3, calculateOptimalSize } from '../utils/treeTransformers';
 import { TreeData, LayoutType } from '../types/visualization';
 
@@ -57,20 +58,10 @@ export function PlayerPage() {
   const [treeData, setTreeData] = useState<TreeData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [networkDepth, setNetworkDepth] = useState(2);
-  const [viewMode, setViewMode] = useState<'network' | 'timeline'>('timeline');
+  const [viewMode, setViewMode] = useState<'network' | 'timeline' | 'multitrack'>('multitrack');
 
   // For now, we'll use a test league ID - this should come from context or route
   const TEST_LEAGUE_ID = '1191596293294166016';
-
-  // Depth labels for the slider
-  const depthLabels: Record<number, string> = {
-    1: 'Direct Transactions',
-    2: 'One Degree Out',
-    3: 'Two Degrees Out',
-    4: 'Three Degrees Out',
-    5: 'Four Degrees Out'
-  };
 
   useEffect(() => {
     const fetchPlayerNetworkData = async () => {
@@ -80,11 +71,11 @@ export function PlayerPage() {
       setError(null);
 
       try {
-        console.log(`🎯 Fetching player network for ${playerId} with depth ${networkDepth}`);
+        console.log(`🎯 Fetching player network for ${playerId}`);
         
-        // Use the new optimized player network endpoint
+        // Use the new optimized player network endpoint with fixed depth of 1 (direct transactions only)
         const response = await api.getPlayerNetwork(TEST_LEAGUE_ID, playerId, {
-          depth: networkDepth,
+          depth: 1,
           includeStats: true
         });
         
@@ -107,7 +98,7 @@ export function PlayerPage() {
     };
 
     fetchPlayerNetworkData();
-  }, [playerId, networkDepth]);
+  }, [playerId]);
 
   // Transform player network data to D3 format
   const transformPlayerNetworkToD3 = (network: PlayerNetworkData['network']): TreeData => {
@@ -134,6 +125,17 @@ export function PlayerPage() {
   const handleNodeClick = (node: any) => {
     console.log('Node clicked:', node);
     // TODO: Implement node selection/expansion logic
+  };
+
+  // Handle fetching asset history for multi-track timeline
+  const handleFetchAssetHistory = async (assetId: string) => {
+    try {
+      const response = await api.getAssetHistory(assetId, TEST_LEAGUE_ID);
+      return response.transactions;
+    } catch (error) {
+      console.error('Failed to fetch asset history:', error);
+      throw error;
+    }
   };
 
   if (loading) {
@@ -223,75 +225,41 @@ export function PlayerPage() {
         </div>
       </div>
 
-      {/* Network Depth Control */}
-      <div className="card mb-8">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center">
-            <Settings className="h-6 w-6 text-blue-600 mr-2" />
-            <h3 className="text-lg font-semibold text-gray-900">Network Depth</h3>
-          </div>
-          <div className="text-sm text-gray-600">
-            {depthLabels[networkDepth]}
-          </div>
-        </div>
-        
-        <div className="flex items-center space-x-4">
-          <span className="text-sm text-gray-500">1</span>
-          <input
-            type="range"
-            min="1"
-            max="5"
-            value={networkDepth}
-            onChange={(e) => setNetworkDepth(parseInt(e.target.value))}
-            className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
-          />
-          <span className="text-sm text-gray-500">5</span>
-        </div>
-        
-        <div className="flex justify-between text-xs text-gray-500 mt-2">
-          {Object.entries(depthLabels).map(([depth, label]) => (
-            <span key={depth} className={networkDepth === parseInt(depth) ? 'text-blue-600 font-medium' : ''}>
-              {label}
-            </span>
-          ))}
-        </div>
-
-        {/* Stats Panel */}
-        {playerNetworkData && (
-          <div className="mt-6 pt-6 border-t border-gray-200">
-            <h4 className="text-sm font-semibold text-gray-900 mb-3">Network Statistics</h4>
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="text-center">
-                <div className="text-lg font-bold text-blue-600">
-                  {playerNetworkData.stats.buildTimeMs}ms
-                </div>
-                <div className="text-xs text-gray-500">Query Time</div>
+      {/* Stats Panel */}
+      {playerNetworkData && (
+        <div className="card mb-8">
+          <h4 className="text-lg font-semibold text-gray-900 mb-4">Player Statistics</h4>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="text-center">
+              <div className="text-lg font-bold text-blue-600">
+                {playerNetworkData.stats.buildTimeMs}ms
               </div>
-              
-              <div className="text-center">
-                <div className="text-lg font-bold text-blue-600">
-                  {Object.keys(playerNetworkData.stats.transactionTypes).length}
-                </div>
-                <div className="text-xs text-gray-500">Transaction Types</div>
+              <div className="text-xs text-gray-500">Query Time</div>
+            </div>
+            
+            <div className="text-center">
+              <div className="text-lg font-bold text-blue-600">
+                {Object.keys(playerNetworkData.stats.transactionTypes).length}
               </div>
-              
-              <div className="text-center">
-                <div className="text-lg font-bold text-blue-600">
-                  {Object.values(playerNetworkData.stats.depthDistribution).reduce((a, b) => a + b, 0)}
-                </div>
-                <div className="text-xs text-gray-500">Connected Assets</div>
+              <div className="text-xs text-gray-500">Transaction Types</div>
+            </div>
+            
+            <div className="text-center">
+              <div className="text-lg font-bold text-blue-600">
+                {Object.values(playerNetworkData.stats.depthDistribution).reduce((a, b) => a + b, 0)}
               </div>
-              
-              <div className="text-center">
-                <div className="text-lg font-bold text-blue-600">
-                  {networkDepth}
-                </div>
-                <div className="text-xs text-gray-500">Current Depth</div>
+              <div className="text-xs text-gray-500">Connected Assets</div>
+            </div>
+            
+            <div className="text-center">
+              <div className="text-lg font-bold text-blue-600">
+                {playerNetworkData.stats.totalTransactions}
               </div>
+              <div className="text-xs text-gray-500">Total Transactions</div>
             </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {playerNetworkData && (
         <div className="card">
@@ -301,6 +269,17 @@ export function PlayerPage() {
               <h2 className="text-xl font-bold text-gray-900">Transaction History</h2>
               <div className="flex bg-gray-100 rounded-lg p-1">
                 <button
+                  onClick={() => setViewMode('multitrack')}
+                  className={`flex items-center px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                    viewMode === 'multitrack'
+                      ? 'bg-white text-blue-600 shadow-sm'
+                      : 'text-gray-600 hover:text-gray-900'
+                  }`}
+                >
+                  <BarChart3 className="h-4 w-4 mr-1.5" />
+                  Multi-Track
+                </button>
+                <button
                   onClick={() => setViewMode('timeline')}
                   className={`flex items-center px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
                     viewMode === 'timeline'
@@ -308,7 +287,7 @@ export function PlayerPage() {
                       : 'text-gray-600 hover:text-gray-900'
                   }`}
                 >
-                  <BarChart3 className="h-4 w-4 mr-1.5" />
+                  <Calendar className="h-4 w-4 mr-1.5" />
                   Timeline
                 </button>
                 <button
@@ -325,11 +304,22 @@ export function PlayerPage() {
               </div>
             </div>
             <div className="text-sm text-gray-600">
-              {playerNetworkData.stats.totalTransactions} transactions across {Object.keys(playerNetworkData.stats.depthDistribution).length} degrees
+              {playerNetworkData.stats.totalTransactions} transactions
             </div>
           </div>
 
-          {/* Timeline View */}
+          {/* Multi-Track Timeline View */}
+          {viewMode === 'multitrack' && (
+            <TransactionMultiTrackTimeline
+              focalPlayerTransactions={playerNetworkData.network.transactions}
+              focalPlayerName={playerNetworkData.focalPlayer.name}
+              focalPlayerId={playerNetworkData.focalPlayer.id}
+              onFetchAssetHistory={handleFetchAssetHistory}
+              className="multi-track-timeline-view"
+            />
+          )}
+
+          {/* Simple Timeline View */}
           {viewMode === 'timeline' && (
             <TransactionTimeline
               transactions={playerNetworkData.network.transactions}

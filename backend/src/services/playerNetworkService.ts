@@ -190,7 +190,7 @@ export class PlayerNetworkService {
   /**
    * Get all transactions involving a specific asset across dynasty history
    */
-  private async getAssetTransactions(
+  async getAssetTransactions(
     assetId: string,
     leagueId: string,
     options: {

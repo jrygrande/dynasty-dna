@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { asyncHandler } from './middleware/errorHandlers';
 import { transactionChainService } from '../services/transactionChainService';
 import { historicalLeagueService } from '../services/historicalLeagueService';
+import { playerNetworkService } from '../services/playerNetworkService';
 import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
@@ -158,6 +159,43 @@ playersRouter.get('/search/:sleeperId', asyncHandler(async (req, res) => {
     return res.status(500).json({
       message: 'Failed to search for player',
       sleeperId,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+}));
+
+// GET /api/players/:playerId/asset-history - Get transaction history for any asset (player or draft pick)
+playersRouter.get('/:assetId/asset-history', asyncHandler(async (req, res) => {
+  const { assetId } = z.object({ assetId: z.string() }).parse(req.params);
+  const { leagueId } = z.object({ leagueId: z.string() }).parse(req.query);
+  
+  try {
+    console.log(`🔍 Getting asset history for: ${assetId} in league: ${leagueId}`);
+
+    // Use the player network service to get asset transactions
+    const assetTransactions = await playerNetworkService.getAssetTransactions(
+      assetId,
+      leagueId,
+      {} // No additional filters
+    );
+
+    // Sort transactions chronologically
+    const sortedTransactions = assetTransactions.sort((a, b) => 
+      parseInt(a.timestamp) - parseInt(b.timestamp)
+    );
+
+    res.status(200).json({
+      assetId,
+      leagueId,
+      transactions: sortedTransactions,
+      totalTransactions: sortedTransactions.length,
+      generatedAt: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error(`❌ Failed to get asset history: ${assetId}`, error);
+    return res.status(500).json({
+      message: 'Failed to get asset transaction history',
+      assetId,
       error: error instanceof Error ? error.message : 'Unknown error'
     });
   }

@@ -183,6 +183,33 @@ export const api = {
       generatedAt: string;
     }>(url);
   },
+
+  // Asset History Endpoint for Multi-Track Timeline
+  async getAssetHistory(assetId: string, leagueId: string) {
+    return fetchApi<{
+      assetId: string;
+      leagueId: string;
+      transactions: Array<{
+        id: string;
+        type: string;
+        description: string;
+        timestamp: string;
+        season: string;
+        week?: number;
+        leagueName: string;
+        assetsReceived: any[];
+        assetsGiven: any[];
+        managerFrom?: { id: string; username: string; displayName?: string; };
+        managerTo?: { id: string; username: string; displayName?: string; };
+        participants?: Array<{
+          manager: { id: string; username: string; displayName?: string; };
+          assetsReceived: any[];
+        }>;
+      }>;
+      totalTransactions: number;
+      generatedAt: string;
+    }>(`/players/${assetId}/asset-history?leagueId=${leagueId}`);
+  },
 };
 
 export { ApiError };
