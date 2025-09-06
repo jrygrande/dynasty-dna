@@ -229,6 +229,7 @@ export class PlayerNetworkService {
           some: {
             OR: [
               { playerId: assetId },
+              { draftPickId: assetId },
               { draftPick: { playerSelectedId: assetId } }
             ]
           }
