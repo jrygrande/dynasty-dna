@@ -258,16 +258,21 @@ async function validateDraftIntegrity(): Promise<ValidationResult[]> {
 async function validateTemporalConsistency(): Promise<ValidationResult[]> {
   const results: ValidationResult[] = [];
   
-  // Check for transactions without timestamps
-  const noTimestamp = await prisma.transaction.count({
-    where: { timestamp: null }
+  // Check for transactions with invalid timestamps (timestamp field is required BigInt)
+  // Instead, check for very old or zero timestamps which indicate missing data
+  const invalidTimestamp = await prisma.transaction.count({
+    where: { 
+      timestamp: {
+        lt: BigInt(1000000000000) // Before year 2001 in milliseconds
+      }
+    }
   });
   
   results.push({
     category: 'Transaction Temporal Consistency',
-    passed: noTimestamp === 0,
-    message: `Transactions without timestamps`,
-    count: noTimestamp
+    passed: invalidTimestamp === 0,
+    message: `Transactions with invalid timestamps`,
+    count: invalidTimestamp
   });
   
   // Check for transactions without involved parties
