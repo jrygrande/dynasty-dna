@@ -113,6 +113,76 @@ export const api = {
       };
     }>(`/leagues/${leagueId}/assets/${assetId}/trade-tree`);
   },
+
+  // Player Network Endpoint
+  async getPlayerNetwork(leagueId: string, playerId: string, options?: {
+    depth?: number;
+    season?: string;
+    transactionType?: string;
+    includeStats?: boolean;
+  }) {
+    const params = new URLSearchParams();
+    if (options?.depth) params.append('depth', options.depth.toString());
+    if (options?.season) params.append('season', options.season);
+    if (options?.transactionType) params.append('transactionType', options.transactionType);
+    if (options?.includeStats !== undefined) params.append('includeStats', options.includeStats.toString());
+    
+    const queryString = params.toString();
+    const url = `/leagues/${leagueId}/players/${playerId}/network${queryString ? `?${queryString}` : ''}`;
+    
+    return fetchApi<{
+      leagueId: string;
+      playerId: string;
+      depth: number;
+      focalPlayer: {
+        id: string;
+        type: 'player';
+        name: string;
+        position?: string;
+        team?: string;
+      };
+      network: {
+        nodes: Array<{
+          id: string;
+          type: 'player' | 'draft_pick';
+          name: string;
+          position?: string;
+          team?: string;
+          depth: number;
+          importance: number;
+        }>;
+        transactions: Array<{
+          id: string;
+          type: string;
+          description: string;
+          timestamp: string;
+          season: string;
+          assetsReceived: any[];
+          assetsGiven: any[];
+          managerFrom?: { id: string; username: string; displayName?: string; };
+          managerTo?: { id: string; username: string; displayName?: string; };
+        }>;
+        connections: Array<{
+          fromAsset: string;
+          toAsset: string;
+          transactionId: string;
+          depth: number;
+        }>;
+      };
+      stats: {
+        totalNodes: number;
+        totalTransactions: number;
+        depthDistribution: Record<number, number>;
+        transactionTypes: Record<string, number>;
+        buildTimeMs: number;
+      };
+      filters?: {
+        season?: string;
+        transactionType?: string;
+      };
+      generatedAt: string;
+    }>(url);
+  },
 };
 
 export { ApiError };
