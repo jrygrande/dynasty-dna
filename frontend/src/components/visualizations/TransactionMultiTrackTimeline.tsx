@@ -10,6 +10,7 @@ interface Asset {
   season?: string;
   round?: number;
   originalOwnerName?: string;
+  playerSelectedName?: string;
 }
 
 interface Manager {
@@ -265,18 +266,27 @@ export const TransactionMultiTrackTimeline: React.FC<TransactionMultiTrackTimeli
           }}
           onMouseEnter={() => hasConnections && setHoveredAsset(asset.id)}
           onMouseLeave={() => setHoveredAsset(null)}
-          className={`flex items-center space-x-1 p-1 rounded transition-colors ${
+          className={`flex items-start space-x-1 p-1 rounded transition-colors ${
             isHighlighted ? 'bg-blue-100 ring-1 ring-blue-400' : 'hover:bg-gray-200'
           } ${hasConnections ? 'cursor-pointer' : ''}`}
           disabled={loadingAssets.has(asset.id)}
         >
-          <div className={`w-2 h-2 rounded-full ${
+          <div className={`w-2 h-2 rounded-full mt-1 ${
             asset.type === 'player' ? 'bg-blue-400' : 'bg-yellow-400'
           } ${isHighlighted ? 'ring-2 ring-blue-600' : ''}`}></div>
-          <span className={`text-xs font-medium ${isHighlighted ? 'text-blue-700' : ''}`}>
-            {asset.name}
-          </span>
-          {asset.position && <span className="text-xs text-gray-500">({asset.position})</span>}
+          <div className="flex flex-col items-start">
+            <span className={`text-xs font-medium ${isHighlighted ? 'text-blue-700' : ''}`}>
+              {asset.name}
+            </span>
+            {asset.type === 'draft_pick' && asset.playerSelectedName && (
+              <span className="text-xs text-gray-600">
+                → {asset.playerSelectedName}
+              </span>
+            )}
+            {asset.position && (
+              <span className="text-xs text-gray-500">({asset.position})</span>
+            )}
+          </div>
           {hasConnections && <span className="text-xs text-blue-500">↗</span>}
           {loadingAssets.has(asset.id) && <span className="text-xs text-gray-400">...</span>}
         </button>
