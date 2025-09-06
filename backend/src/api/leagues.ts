@@ -532,7 +532,7 @@ leaguesRouter.get('/:leagueId/assets/:assetId/complete-tree', asyncHandler(async
   }).parse(req.params);
   
   const { transactionId, format = 'json' } = z.object({
-    transactionId: z.string(),
+    transactionId: z.string().optional(),
     format: z.enum(['json', 'ascii']).optional()
   }).parse(req.query);
   

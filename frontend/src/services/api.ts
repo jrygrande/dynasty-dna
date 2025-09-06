@@ -1,4 +1,5 @@
 import type { ApiResponse, LeagueSyncRequest, LeagueSyncResponse, TransactionChainNode } from '@/shared/types';
+import type { TransactionGraph, AssetTradeTree, TransactionGraphFilters } from '../types/api';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
 
@@ -67,6 +68,50 @@ export const api = {
 
   async getPlayerPerformance(playerId: string) {
     return fetchApi<ApiResponse<any>>(`/players/${playerId}/performance`);
+  },
+
+  // Transaction Tree Visualization Endpoints
+  
+  async getTransactionGraph(leagueId: string, filters?: TransactionGraphFilters) {
+    const params = new URLSearchParams();
+    if (filters?.season) params.append('season', filters.season);
+    if (filters?.transactionType) params.append('transactionType', filters.transactionType);
+    if (filters?.managerId) params.append('managerId', filters.managerId);
+    if (filters?.format) params.append('format', filters.format);
+    
+    const queryString = params.toString();
+    const url = `/leagues/${leagueId}/transaction-graph${queryString ? `?${queryString}` : ''}`;
+    
+    return fetchApi<{
+      graph: TransactionGraph;
+      stats: {
+        totalNodes: number;
+        totalTransactions: number;
+        seasonsSpanned: number;
+        buildTimeMs: number;
+      };
+    }>(url);
+  },
+
+  async getAssetCompleteTree(leagueId: string, assetId: string) {
+    return fetchApi<{
+      tree: AssetTradeTree;
+      metadata: {
+        totalNodes: number;
+        maxDepth: number;
+        buildTimeMs: number;
+      };
+    }>(`/leagues/${leagueId}/assets/${assetId}/complete-tree`);
+  },
+
+  async getAssetTradeTree(leagueId: string, assetId: string) {
+    return fetchApi<{
+      tree: AssetTradeTree;
+      metadata: {
+        totalNodes: number;
+        buildTimeMs: number;
+      };
+    }>(`/leagues/${leagueId}/assets/${assetId}/trade-tree`);
   },
 };
 
