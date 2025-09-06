@@ -9,6 +9,7 @@ interface Asset {
   team?: string;
   season?: string;
   round?: number;
+  originalOwnerName?: string;
 }
 
 interface Manager {
@@ -43,9 +44,10 @@ interface TransactionTimelineProps {
 const TransactionMarker: React.FC<{
   transaction: Transaction;
   position: number;
+  verticalOffset: number;
   hoveredTransaction: string | null;
   onHover: (id: string | null) => void;
-}> = ({ transaction, position, hoveredTransaction, onHover }) => {
+}> = ({ transaction, position, verticalOffset, hoveredTransaction, onHover }) => {
   const getTransactionIcon = () => {
     switch (transaction.type) {
       case 'trade':
@@ -77,9 +79,8 @@ const TransactionMarker: React.FC<{
   };
 
   const isHovered = hoveredTransaction === transaction.id;
-  const markerSize = isHovered ? 'h-4 w-4' : 'h-3 w-3';
-  const markerClass = `${markerSize} ${getTransactionColor()} rounded-full flex items-center justify-center text-white cursor-pointer transition-all duration-200 transform ${isHovered ? 'scale-125' : ''}`;
-
+  
+  // Helper functions for formatting
   const formatDate = (timestamp: string) => {
     const date = new Date(parseInt(timestamp));
     return date.toLocaleDateString('en-US', { 
@@ -87,6 +88,18 @@ const TransactionMarker: React.FC<{
       day: 'numeric',
       year: 'numeric'
     });
+  };
+
+  const getActionLabel = (type: string, isGiven: boolean) => {
+    switch (type) {
+      case 'draft':
+        return 'Selected:';
+      case 'waiver':
+      case 'free_agent':
+        return isGiven ? 'Dropped:' : 'Added:';
+      default:
+        return isGiven ? 'Given:' : 'Received:';
+    }
   };
 
   const formatAsset = (asset: Asset) => {
@@ -101,11 +114,13 @@ const TransactionMarker: React.FC<{
         </div>
       );
     } else if (asset.type === 'draft_pick') {
+      const pickText = `${asset.season} R${asset.round} Pick`;
+      const originalOwnerText = asset.originalOwnerName ? ` (orig: ${asset.originalOwnerName})` : '';
       return (
         <div className="flex items-center space-x-1">
           <div className="w-1.5 h-1.5 rounded-full bg-yellow-400"></div>
           <span className="font-medium text-sm">
-            {asset.season} R{asset.round} Pick
+            {pickText}{originalOwnerText}
           </span>
         </div>
       );
@@ -113,17 +128,62 @@ const TransactionMarker: React.FC<{
     return <span className="text-sm">{asset.name}</span>;
   };
 
+  const truncateName = (name: string, maxLength: number = 12) => {
+    return name.length > maxLength ? name.substring(0, maxLength - 1) + '…' : name;
+  };
+
+  const renderMarkerContent = () => {
+    if (transaction.type === 'trade' && transaction.participants && transaction.participants.length >= 2) {
+      // Trade marker - show both manager names
+      const manager1 = transaction.participants[0].manager.displayName || transaction.participants[0].manager.username;
+      const manager2 = transaction.participants[1].manager.displayName || transaction.participants[1].manager.username;
+      
+      return (
+        <div className={`${getTransactionColor()} rounded-lg px-3 py-1.5 text-white cursor-pointer transition-all duration-200 transform ${isHovered ? 'scale-105' : ''} shadow-md`}>
+          <div className="flex items-center text-xs font-medium">
+            <span className="truncate max-w-[80px]">{truncateName(manager1, 10)}</span>
+            <ArrowRight className="h-3 w-3 mx-1 flex-shrink-0" />
+            <span className="truncate max-w-[80px]">{truncateName(manager2, 10)}</span>
+          </div>
+        </div>
+      );
+    } else {
+      // Other transaction types - show manager name + icon
+      const manager = transaction.managerTo || transaction.managerFrom;
+      const managerName = manager ? (manager.displayName || manager.username) : 'Unknown';
+      
+      return (
+        <div className={`${getTransactionColor()} rounded-lg px-2 py-1 text-white cursor-pointer transition-all duration-200 transform ${isHovered ? 'scale-105' : ''} shadow-md flex items-center space-x-1`}>
+          {getTransactionIcon()}
+          <span className="text-xs font-medium truncate max-w-[100px]">{truncateName(managerName, 12)}</span>
+        </div>
+      );
+    }
+  };
+
   return (
     <div
       className="absolute transform -translate-x-1/2"
-      style={{ left: `${position}%` }}
+      style={{ 
+        left: `${position}%`, 
+        top: `${32 + verticalOffset}px` // Base position + offset
+      }}
       onMouseEnter={() => onHover(transaction.id)}
       onMouseLeave={() => onHover(null)}
     >
+      {/* Connector line to timeline */}
+      {verticalOffset !== 0 && (
+        <div 
+          className="absolute w-px bg-gray-400 left-1/2 transform -translate-x-1/2"
+          style={{
+            top: verticalOffset > 0 ? '-8px' : `${Math.abs(verticalOffset) + 24}px`,
+            height: `${Math.abs(verticalOffset) + 8}px`
+          }}
+        />
+      )}
+      
       {/* Transaction Marker */}
-      <div className={markerClass}>
-        {getTransactionIcon()}
-      </div>
+      {renderMarkerContent()}
       
       {/* Hover Popup */}
       {isHovered && (
@@ -139,7 +199,7 @@ const TransactionMarker: React.FC<{
                   <div className="text-xs font-semibold mb-1 text-gray-200">
                     {participant.manager.displayName || participant.manager.username}
                   </div>
-                  <div className="text-xs text-gray-300 mb-1">Received:</div>
+                  <div className="text-xs text-gray-300 mb-1">{getActionLabel(transaction.type, false)}</div>
                   <div className="space-y-1">
                     {participant.assetsReceived.length > 0 ? (
                       participant.assetsReceived.slice(0, 3).map((asset, assetIdx) => (
@@ -162,7 +222,7 @@ const TransactionMarker: React.FC<{
             <div className="grid grid-cols-2 gap-3">
               {transaction.assetsGiven.length > 0 && (
                 <div className="p-2 rounded bg-red-800/30">
-                  <div className="text-xs font-semibold mb-1 text-gray-200">Given:</div>
+                  <div className="text-xs font-semibold mb-1 text-gray-200">{getActionLabel(transaction.type, true)}</div>
                   <div className="space-y-1">
                     {transaction.assetsGiven.slice(0, 3).map((asset, idx) => (
                       <div key={idx}>
@@ -178,7 +238,7 @@ const TransactionMarker: React.FC<{
               
               {transaction.assetsReceived.length > 0 && (
                 <div className="p-2 rounded bg-green-800/30">
-                  <div className="text-xs font-semibold mb-1 text-gray-200">Received:</div>
+                  <div className="text-xs font-semibold mb-1 text-gray-200">{getActionLabel(transaction.type, false)}</div>
                   <div className="space-y-1">
                     {transaction.assetsReceived.slice(0, 3).map((asset, idx) => (
                       <div key={idx}>
@@ -218,7 +278,7 @@ export const TransactionTimeline: React.FC<TransactionTimelineProps> = ({
     return sortedTransactions.filter(t => t.type === filterType);
   }, [sortedTransactions, filterType]);
 
-  // Calculate time-based positions
+  // Calculate time-based positions with vertical offsets
   const timelineData = useMemo(() => {
     if (filteredTransactions.length === 0) return [];
     
@@ -226,16 +286,43 @@ export const TransactionTimeline: React.FC<TransactionTimelineProps> = ({
     const lastTimestamp = parseInt(filteredTransactions[filteredTransactions.length - 1].timestamp);
     const totalTimeSpan = lastTimestamp - firstTimestamp || 1;
     
-    return filteredTransactions.map((transaction, index) => {
+    const positionedTransactions = filteredTransactions.map((transaction, index) => {
       const timestamp = parseInt(transaction.timestamp);
       const relativeTime = timestamp - firstTimestamp;
       const position = (relativeTime / totalTimeSpan) * 100;
       
       return {
         transaction,
-        position: Math.max(5, Math.min(95, position)) // Keep within 5-95% range
+        position: Math.max(5, Math.min(95, position)), // Keep within 5-95% range
+        verticalOffset: 0 // Will be calculated below
       };
     });
+
+    // Calculate vertical offsets for overlapping transactions
+    const proximityThreshold = 3; // Transactions within 3% are considered close
+    const verticalOffsets = [0, -30, 30, -60, 60, -90, 90]; // Available offset levels
+    
+    for (let i = 0; i < positionedTransactions.length; i++) {
+      let offsetIndex = 0;
+      
+      // Check for conflicts with previous transactions
+      for (let j = 0; j < i; j++) {
+        const distance = Math.abs(positionedTransactions[i].position - positionedTransactions[j].position);
+        if (distance < proximityThreshold) {
+          // There's a conflict, try the next offset level
+          const conflictingOffset = positionedTransactions[j].verticalOffset;
+          const conflictingOffsetIndex = verticalOffsets.indexOf(conflictingOffset);
+          if (offsetIndex <= conflictingOffsetIndex) {
+            offsetIndex = conflictingOffsetIndex + 1;
+          }
+        }
+      }
+      
+      // Assign the calculated offset (or 0 if we've run out of levels)
+      positionedTransactions[i].verticalOffset = verticalOffsets[offsetIndex] || 0;
+    }
+    
+    return positionedTransactions;
   }, [filteredTransactions]);
 
   // Get unique transaction types for filter
@@ -334,7 +421,7 @@ export const TransactionTimeline: React.FC<TransactionTimelineProps> = ({
         ) : (
           <>
             {/* Timeline Background */}
-            <div className="relative h-16">
+            <div className="relative h-48"> {/* Increased height for vertical offsets */}
               {/* Main timeline line */}
               <div className="absolute top-8 left-0 right-0 h-0.5 bg-gray-300"></div>
               
@@ -353,11 +440,12 @@ export const TransactionTimeline: React.FC<TransactionTimelineProps> = ({
               ))}
               
               {/* Transaction markers */}
-              {timelineData.map(({ transaction, position }, index) => (
+              {timelineData.map(({ transaction, position, verticalOffset }, index) => (
                 <TransactionMarker
                   key={transaction.id}
                   transaction={transaction}
                   position={position}
+                  verticalOffset={verticalOffset}
                   hoveredTransaction={hoveredTransaction}
                   onHover={setHoveredTransaction}
                 />
