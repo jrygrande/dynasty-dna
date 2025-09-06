@@ -25,7 +25,10 @@
     "validate:graph": "tsx src/scripts/validateGraph.ts",
     "validate:data-integrity": "tsx src/scripts/validateDataIntegrity.ts",
     "visualize:graph": "tsx src/scripts/visualizeGraph.ts",
-    "fix:draft-picks-v2": "tsx src/scripts/migrations/fixDraftPickSystemV2.ts"
+    "fix:draft-picks-v2": "tsx src/scripts/migrations/fixDraftPickSystemV2.ts",
+    "fix:incomplete-transactions": "tsx src/scripts/migrations/fixIncompleteTransactions.ts",
+    "resync:incomplete-transactions": "tsx src/scripts/migrations/resyncIncompleteTransactions.ts",
+    "cleanup:orphaned-picks": "tsx src/scripts/migrations/cleanupOrphanedDraftPicks.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.16.1",

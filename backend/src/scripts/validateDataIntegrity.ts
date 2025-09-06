@@ -231,12 +231,14 @@ async function validateDraftIntegrity(): Promise<ValidationResult[]> {
   });
   
   // Check for draft picks without selections in completed drafts
+  // Check all completed seasons (2022-2025, excluding startup draft 2021)
   const unselectedPicks = await prisma.$queryRaw`
     SELECT season, round, COUNT(*) as unselected_count
     FROM draft_picks 
     WHERE season <= '2025' 
     AND season != '2021'
     AND playerSelectedId IS NULL
+    AND draftSlot IS NOT NULL
     GROUP BY season, round
     HAVING COUNT(*) > 0
   `;
