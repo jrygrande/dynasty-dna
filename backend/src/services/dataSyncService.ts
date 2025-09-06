@@ -91,7 +91,15 @@ export class DataSyncService {
         errors.push(`Player scores: ${error instanceof Error ? error.message : 'Unknown error'}`);
       }
 
-      // 8. Sync matchup results
+      // 9. Sync NFL state data
+      try {
+        await this.syncNFLState();
+        synced.push('NFL state data');
+      } catch (error) {
+        errors.push(`NFL state: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+
+      // 10. Sync matchup results
       try {
         await this.syncMatchupResults(leagueId);
         synced.push('Matchup results');
@@ -733,13 +741,13 @@ export class DataSyncService {
     leagueId: string,
     season: string,
     round: number,
-    draftSlot: number,
+    _draftSlot: number,
     managerId: string,
-    pickNumber: number
+    _pickNumber: number
   ): Promise<any | null> {
     // Strategy 1: Try to find by draft slot (most accurate)
     // Draft slot corresponds to original roster position
-    let draftPick = await prisma.draftPick.findFirst({
+    let _draftPick = await prisma.draftPick.findFirst({
       where: {
         leagueId,
         season,
@@ -776,7 +784,7 @@ export class DataSyncService {
     }
     
     // Fallback: return first pick (this is the current problematic behavior, but better than nothing)
-    console.warn(`⚠️  Could not definitively identify correct draft pick for ${managerId} R${round} P${pickNumber}. Using first available.`);
+    console.warn(`⚠️  Could not definitively identify correct draft pick for ${managerId} R${round} P${_pickNumber}. Using first available.`);
     return managerPicksInRound[0] || null;
   }
 
@@ -994,9 +1002,17 @@ export class DataSyncService {
     const allMatchups = await sleeperClient.getAllLeagueMatchups(leagueId);
 
     for (const matchup of allMatchups) {
-      // Find opponent in the same matchup
+      // Skip if no week information (shouldn't happen with updated client)
+      if (!matchup.week) {
+        console.warn(`Matchup missing week information for roster ${matchup.roster_id}`);
+        continue;
+      }
+
+      // Find opponent in the same matchup and week
       const opponent = allMatchups.find(m => 
-        m.matchup_id === matchup.matchup_id && m.roster_id !== matchup.roster_id
+        m.matchup_id === matchup.matchup_id && 
+        m.roster_id !== matchup.roster_id &&
+        m.week === matchup.week
       );
 
       await prisma.matchupResult.upsert({
@@ -1004,7 +1020,7 @@ export class DataSyncService {
           leagueId_rosterId_week_season: {
             leagueId: internalLeagueId,
             rosterId: matchup.roster_id,
-            week: 1, // TODO: Get actual week from context
+            week: matchup.week,
             season: league.season
           }
         },
@@ -1016,7 +1032,7 @@ export class DataSyncService {
         create: {
           leagueId: internalLeagueId,
           rosterId: matchup.roster_id,
-          week: 1, // TODO: Get actual week from context
+          week: matchup.week,
           season: league.season,
           matchupId: matchup.matchup_id || 0,
           totalPoints: matchup.points,
@@ -1024,6 +1040,92 @@ export class DataSyncService {
           won: opponent ? matchup.points > opponent.points : null
         }
       });
+    }
+  }
+
+  /**
+   * Sync NFL state data from Sleeper API
+   */
+  private async syncNFLState(): Promise<void> {
+    try {
+      // Get current NFL state
+      const nflState = await sleeperClient.getNFLState();
+      
+      if (!nflState) {
+        console.warn('No NFL state data received from Sleeper API');
+        return;
+      }
+
+      // Upsert the current season's NFL state
+      await prisma.nFLState.upsert({
+        where: { season: nflState.season },
+        update: {
+          seasonType: nflState.season_type || 'regular',
+          week: nflState.week || 1,
+          leg: nflState.leg || 1,
+          previousSeason: nflState.previous_season || '',
+          seasonStartDate: nflState.season_start_date || '',
+          displayWeek: nflState.display_week || nflState.week || 1,
+          leagueSeason: nflState.league_season || nflState.season,
+          leagueCreateSeason: nflState.season, // Usually same as season
+          seasonHasScores: true, // Assume true for current API data
+          lastUpdated: new Date(),
+          updatedAt: new Date()
+        },
+        create: {
+          season: nflState.season,
+          seasonType: nflState.season_type || 'regular',
+          week: nflState.week || 1,
+          leg: nflState.leg || 1,
+          previousSeason: nflState.previous_season || '',
+          seasonStartDate: nflState.season_start_date || '',
+          displayWeek: nflState.display_week || nflState.week || 1,
+          leagueSeason: nflState.league_season || nflState.season,
+          leagueCreateSeason: nflState.season,
+          seasonHasScores: true
+        }
+      });
+
+      console.log(`✅ NFL state synced for season ${nflState.season}`);
+
+      // Also ensure we have historical NFL states for previous seasons (2021-2024)
+      const currentYear = parseInt(nflState.season);
+      const historicalSeasons = [];
+      
+      for (let year = 2021; year < currentYear; year++) {
+        historicalSeasons.push(year.toString());
+      }
+
+      // Create minimal historical NFL state records if they don't exist
+      for (const season of historicalSeasons) {
+        const existingState = await prisma.nFLState.findUnique({
+          where: { season }
+        });
+
+        if (!existingState) {
+          await prisma.nFLState.create({
+            data: {
+              season,
+              seasonType: 'regular',
+              week: 18, // Completed seasons
+              leg: 1,
+              previousSeason: (parseInt(season) - 1).toString(),
+              seasonStartDate: `${season}-09-01`, // Approximate start date
+              displayWeek: 18,
+              leagueSeason: season,
+              leagueCreateSeason: season,
+              seasonHasScores: true
+            }
+          });
+          console.log(`✅ Created historical NFL state for season ${season}`);
+        }
+      }
+
+    } catch (error) {
+      throw new DataSyncError(
+        `Failed to sync NFL state: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        'syncNFLState'
+      );
     }
   }
 

@@ -146,6 +146,7 @@ export interface SleeperMatchup {
   starters?: string[]; // Player IDs of starters
   players?: string[]; // All player IDs on roster
   custom_points?: number;
+  week?: number; // Week number (added during getAllLeagueMatchups)
 }
 
 export interface PlayerWeeklyScore {
@@ -455,7 +456,12 @@ class SleeperClient {
     for (let week = 1; week <= 18; week++) {
       try {
         const weekMatchups = await this.getLeagueMatchups(leagueId, week);
-        allMatchups.push(...weekMatchups);
+        // Add week information to each matchup
+        const matchupsWithWeek = weekMatchups.map(matchup => ({
+          ...matchup,
+          week
+        }));
+        allMatchups.push(...matchupsWithWeek);
       } catch (error) {
         // Log error but continue with other weeks
         console.warn(`Failed to fetch matchups for week ${week}:`, error);
