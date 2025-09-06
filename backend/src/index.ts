@@ -16,7 +16,7 @@ app.use(helmet());
 app.use(cors({
   origin: process.env.NODE_ENV === 'production' 
     ? ['https://dynasty-dna.vercel.app'] 
-    : ['http://localhost:5173'],
+    : ['http://localhost:5173', 'http://localhost:5174'],
   credentials: true,
 }));
 app.use(morgan('combined'));
