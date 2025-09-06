@@ -7,6 +7,7 @@ import { historicalLeagueService } from '../services/historicalLeagueService';
 import { transactionChainService } from '../services/transactionChainService';
 import { assetTradeTreeService } from '../services/assetTradeTreeService';
 import { treeFormatterService } from '../services/treeFormatterService';
+import { playerNetworkService } from '../services/playerNetworkService';
 import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
@@ -794,6 +795,82 @@ leaguesRouter.get('/:leagueId/transaction-graph', asyncHandler(async (req, res) 
     return res.status(500).json({
       message: 'Failed to build transaction graph',
       leagueId,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+}));
+
+// GET /api/leagues/:leagueId/players/:playerId/network - Get player-centric transaction network
+leaguesRouter.get('/:leagueId/players/:playerId/network', asyncHandler(async (req, res) => {
+  const { leagueId } = leagueParamsSchema.parse(req.params);
+  const { playerId } = z.object({
+    playerId: z.string(),
+  }).parse(req.params);
+  
+  const { 
+    depth = '2',
+    season,
+    transactionType,
+    includeStats = 'true'
+  } = z.object({
+    depth: z.string().optional(),
+    season: z.string().optional(),
+    transactionType: z.string().optional(),
+    includeStats: z.string().optional()
+  }).parse(req.query);
+  
+  const depthNumber = parseInt(depth);
+  if (isNaN(depthNumber) || depthNumber < 1 || depthNumber > 5) {
+    return res.status(400).json({
+      message: 'Depth must be a number between 1 and 5',
+      provided: depth
+    });
+  }
+  
+  try {
+    console.log(`🎯 Building player network for player ${playerId} in league ${leagueId} with depth ${depthNumber}`);
+    
+    // Check if league exists in database
+    const league = await prisma.league.findUnique({
+      where: { sleeperLeagueId: leagueId }
+    });
+
+    if (!league) {
+      return res.status(404).json({
+        message: 'League not found in database. Please sync the league first.',
+        leagueId,
+        syncEndpoint: `/api/leagues/${leagueId}/sync`
+      });
+    }
+
+    const networkResponse = await playerNetworkService.getPlayerNetwork(
+      playerId,
+      leagueId,
+      depthNumber,
+      {
+        season,
+        transactionType,
+        includeStats: includeStats === 'true'
+      }
+    );
+
+    res.status(200).json({
+      leagueId,
+      playerId,
+      depth: depthNumber,
+      ...networkResponse,
+      filters: {
+        season,
+        transactionType
+      },
+      generatedAt: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error(`❌ Failed to build player network for player ${playerId} in league ${leagueId}:`, error);
+    return res.status(500).json({
+      message: 'Failed to build player network',
+      leagueId,
+      playerId,
       error: error instanceof Error ? error.message : 'Unknown error'
     });
   }

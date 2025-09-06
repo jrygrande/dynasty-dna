@@ -98,6 +98,10 @@ model Transaction {
   items         TransactionItem[]
   draftPicks    TransactionDraftPick[]
 
+  @@index([leagueId])
+  @@index([timestamp])
+  @@index([leagueId, timestamp])
+  @@index([type])
   @@map("transactions")
 }
 
@@ -116,6 +120,9 @@ model TransactionItem {
   player        Player?     @relation(fields: [playerId], references: [id])
   draftPick     DraftPick?  @relation(fields: [draftPickId], references: [id])
 
+  @@index([playerId])
+  @@index([transactionId])
+  @@index([draftPickId])
   @@map("transaction_items")
 }
 
@@ -184,6 +191,8 @@ model DraftPick {
   transactionDraftPicks TransactionDraftPick[]
 
   @@unique([leagueId, season, round, originalOwnerId])
+  @@index([playerSelectedId])
+  @@index([leagueId])
   @@map("draft_picks")
 }
 
