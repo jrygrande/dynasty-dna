@@ -7,6 +7,7 @@ import { healthRouter } from './api/health';
 import { leaguesRouter } from './api/leagues';
 import { playersRouter } from './api/players';
 import { testRouter } from './api/test';
+import { exportsRouter } from './api/exports';
 import { errorHandler, notFoundHandler } from './api/middleware/errorHandlers';
 
 const app = express();
@@ -26,6 +27,7 @@ app.use('/api/health', healthRouter);
 app.use('/api/leagues', leaguesRouter);
 app.use('/api/players', playersRouter);
 app.use('/api/test', testRouter);
+app.use('/api/exports', exportsRouter);
 
 app.use(notFoundHandler);
 app.use(errorHandler);
