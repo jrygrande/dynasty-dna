@@ -425,6 +425,45 @@ async function validateHistoricalStates(): Promise<ValidationResult[]> {
     count: (unbalancedTrades as any[]).length,
     details: (unbalancedTrades as any[]).map(t => `${t.sleeperTransactionId}: ${t.adds} adds, ${t.drops} drops`)
   });
+
+  // Check draft pick transaction coverage - should be high coverage now  
+  const totalTrades = await prisma.transaction.count({
+    where: { type: 'trade' }
+  });
+  
+  const tradesWithDraftPicks = await prisma.$queryRaw<{count: bigint}[]>`
+    SELECT COUNT(DISTINCT ti.transactionId) as count
+    FROM transaction_items ti
+    WHERE ti.draftPickId IS NOT NULL
+  `;
+  
+  const draftPickCoverage = Number(tradesWithDraftPicks[0].count);
+  const coveragePercent = Math.round((draftPickCoverage / totalTrades) * 100);
+
+  results.push({
+    category: 'Historical State Consistency',
+    passed: coveragePercent >= 90, // 90%+ coverage is good (not all trades have picks)
+    message: `Draft pick transaction coverage`,
+    count: draftPickCoverage,
+    details: [`${draftPickCoverage}/${totalTrades} trades (${coveragePercent}%) have draft pick items`]
+  });
+
+  // Check TransactionDraftPick population
+  const transactionDraftPickCount = await prisma.transactionDraftPick.count();
+  const expectedTransactionDraftPicks = await prisma.$queryRaw<{count: bigint}[]>`
+    SELECT COUNT(*) as count
+    FROM transaction_items ti
+    WHERE ti.draftPickId IS NOT NULL
+  `;
+  const expectedCount = Number(expectedTransactionDraftPicks[0].count) / 2; // Each pick has add + drop
+
+  results.push({
+    category: 'Historical State Consistency',
+    passed: transactionDraftPickCount >= expectedCount,
+    message: `TransactionDraftPick table population`,
+    count: transactionDraftPickCount,
+    details: [`Expected ~${expectedCount}, found ${transactionDraftPickCount}`]
+  });
   
   return results;
 }

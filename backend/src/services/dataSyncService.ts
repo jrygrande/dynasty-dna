@@ -1266,6 +1266,24 @@ export class DataSyncService {
   }
 
   private async getManagerByRosterId(leagueId: string, rosterId: number) {
+    // First try to find the roster in our historical roster data
+    const internalLeagueId = await this.getInternalLeagueId(leagueId);
+    const historicalRoster = await prisma.roster.findFirst({
+      where: {
+        leagueId: internalLeagueId,
+        sleeperRosterId: rosterId
+      },
+      include: {
+        manager: true
+      }
+    });
+
+    if (historicalRoster) {
+      return historicalRoster.manager;
+    }
+
+    // Fallback to API if not in historical data (for current league)
+    console.warn(`⚠️  No historical roster data for roster ${rosterId} in league ${leagueId}, falling back to API`);
     const rosters = await sleeperClient.getLeagueRosters(leagueId);
     const roster = rosters.find(r => r.roster_id === rosterId);
     

@@ -28,7 +28,10 @@
     "fix:draft-picks-v2": "tsx src/scripts/migrations/fixDraftPickSystemV2.ts",
     "fix:incomplete-transactions": "tsx src/scripts/migrations/fixIncompleteTransactions.ts",
     "resync:incomplete-transactions": "tsx src/scripts/migrations/resyncIncompleteTransactions.ts",
-    "cleanup:orphaned-picks": "tsx src/scripts/migrations/cleanupOrphanedDraftPicks.ts"
+    "cleanup:orphaned-picks": "tsx src/scripts/migrations/cleanupOrphanedDraftPicks.ts",
+    "sync:historical-rosters": "tsx src/scripts/migrations/syncHistoricalRosters.ts",
+    "fix:missing-draft-pick-items": "tsx src/scripts/migrations/fixMissingDraftPickItems.ts",
+    "populate:transaction-draft-picks": "tsx src/scripts/migrations/populateTransactionDraftPicks.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.16.1",
