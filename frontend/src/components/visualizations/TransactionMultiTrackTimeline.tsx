@@ -87,7 +87,7 @@ export const TransactionMultiTrackTimeline: React.FC<TransactionMultiTrackTimeli
     }
   ]);
 
-  const [persistedTransactions, setPersistedTransactions] = useState<Set<string>>(new Set());
+  const [openTransactionId, setOpenTransactionId] = useState<string | null>(null);
   const [loadingAssets, setLoadingAssets] = useState<Set<string>>(new Set());
   const [hoveredAsset, setHoveredAsset] = useState<string | null>(null);
 
@@ -161,17 +161,9 @@ export const TransactionMultiTrackTimeline: React.FC<TransactionMultiTrackTimeli
     return connections;
   }, [tracks, getTimePosition]);
 
-  // Toggle transaction persistence
-  const toggleTransactionPersistence = useCallback((transactionId: string) => {
-    setPersistedTransactions(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(transactionId)) {
-        newSet.delete(transactionId);
-      } else {
-        newSet.add(transactionId);
-      }
-      return newSet;
-    });
+  // Toggle transaction details
+  const toggleTransactionDetails = useCallback((transactionId: string) => {
+    setOpenTransactionId(prev => prev === transactionId ? null : transactionId);
   }, []);
 
   // Add new asset track
@@ -234,14 +226,37 @@ export const TransactionMultiTrackTimeline: React.FC<TransactionMultiTrackTimeli
     setTracks(prev => prev.filter(track => track.id !== trackId));
   }, []);
 
+  // Detect overlapping transactions and assign alternating positions
+  const getMarkerPosition = useCallback((transaction: Transaction, track: Track) => {
+    const currentPosition = getTimePosition(transaction.timestamp);
+    
+    // Find other transactions in the same track that are close in time (within 8% of timeline)
+    const overlappingTransactions = track.transactions.filter(t => {
+      if (t.id === transaction.id) return false;
+      const otherPosition = getTimePosition(t.timestamp);
+      return Math.abs(currentPosition - otherPosition) < 8;
+    });
+    
+    // Alternate above/below based on transaction index
+    const transactionIndex = track.transactions.findIndex(t => t.id === transaction.id);
+    const shouldAlternate = overlappingTransactions.length > 0;
+    const isAbove = shouldAlternate && transactionIndex % 2 === 0;
+    
+    return {
+      position: currentPosition,
+      isAbove,
+      hasOverlap: shouldAlternate
+    };
+  }, [getTimePosition]);
+
   // Transaction marker component
   const TransactionMarker: React.FC<{
     transaction: Transaction;
     track: Track;
-    isPersisted: boolean;
-    onTogglePersistence: () => void;
-  }> = ({ transaction, track, isPersisted, onTogglePersistence }) => {
-    const position = getTimePosition(transaction.timestamp);
+    isOpen: boolean;
+    onToggle: () => void;
+  }> = ({ transaction, track, isOpen, onToggle }) => {
+    const markerInfo = getMarkerPosition(transaction, track);
 
     const getTransactionIcon = () => {
       switch (transaction.type) {
@@ -294,27 +309,38 @@ export const TransactionMultiTrackTimeline: React.FC<TransactionMultiTrackTimeli
     };
 
     return (
-      <div
-        className="absolute transform -translate-x-1/2"
-        style={{ left: `${position}%` }}
-      >
-        {/* Compact marker */}
-        <button
-          onClick={onTogglePersistence}
-          className={`${track.color} ${isPersisted ? 'ring-2 ring-yellow-400' : ''} rounded-lg px-2 py-1 text-white cursor-pointer transition-all duration-200 hover:scale-105 shadow-sm flex items-center space-x-1`}
+      <>
+        <div
+          className={`absolute transform -translate-x-1/2 ${markerInfo.isAbove ? 'bottom-10' : 'top-10'}`}
+          style={{ left: `${markerInfo.position}%` }}
         >
-          {getTransactionIcon()}
-          <span className="text-xs font-medium">
-            {transaction.type === 'trade' && transaction.participants?.length >= 2
-              ? `${transaction.participants[0].manager.displayName || transaction.participants[0].manager.username} ↔ ${transaction.participants[1].manager.displayName || transaction.participants[1].manager.username}`
-              : (transaction.managerTo?.displayName || transaction.managerFrom?.displayName || 'Unknown')
-            }
-          </span>
-        </button>
+          {/* Compact marker */}
+          <button
+            onClick={onToggle}
+            className={`${track.color} ${isOpen ? 'ring-2 ring-yellow-400' : ''} ${markerInfo.hasOverlap ? (markerInfo.isAbove ? 'mb-2' : 'mt-2') : ''} rounded-lg px-2 py-1 text-white cursor-pointer transition-all duration-200 hover:scale-105 shadow-sm flex items-center space-x-1`}
+          >
+            {getTransactionIcon()}
+            <span className="text-xs font-medium">
+              {transaction.type === 'trade' && transaction.participants?.length >= 2
+                ? `${transaction.participants[0].manager.displayName || transaction.participants[0].manager.username} ↔ ${transaction.participants[1].manager.displayName || transaction.participants[1].manager.username}`
+                : (transaction.managerTo?.displayName || transaction.managerFrom?.displayName || 'Unknown')
+              }
+            </span>
+          </button>
+          
+          {markerInfo.hasOverlap && (
+            <div className={`w-px h-4 bg-gray-400 mx-auto ${markerInfo.isAbove ? 'order-2' : ''}`}></div>
+          )}
+        </div>
 
-        {/* Expanded details when persisted */}
-        {isPersisted && (
-          <div className="absolute top-8 left-1/2 transform -translate-x-1/2 bg-white border border-gray-300 rounded-lg shadow-lg p-4 z-20 min-w-96 max-w-md">
+        {/* Modal overlay and details when open */}
+        {isOpen && (
+          <>
+            <div 
+              className="fixed inset-0 bg-black bg-opacity-25 z-40" 
+              onClick={onToggle}
+            />
+            <div className="fixed top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-white border border-gray-300 rounded-lg shadow-xl p-6 z-50 min-w-96 max-w-md max-h-96 overflow-y-auto">
             <div className="flex justify-between items-start mb-2">
               <div>
                 <div className="font-bold text-sm capitalize">{transaction.type.replace('_', ' ')}</div>
@@ -323,8 +349,8 @@ export const TransactionMultiTrackTimeline: React.FC<TransactionMultiTrackTimeli
                 </div>
               </div>
               <button
-                onClick={onTogglePersistence}
-                className="text-gray-400 hover:text-gray-600"
+                onClick={onToggle}
+                className="text-gray-400 hover:text-gray-600 p-1"
               >
                 <X className="h-4 w-4" />
               </button>
@@ -374,9 +400,10 @@ export const TransactionMultiTrackTimeline: React.FC<TransactionMultiTrackTimeli
                 )}
               </div>
             )}
-          </div>
+            </div>
+          </>
         )}
-      </div>
+      </>
     );
   };
 
@@ -452,7 +479,7 @@ export const TransactionMultiTrackTimeline: React.FC<TransactionMultiTrackTimeli
     if (!track.visible) return null;
 
     return (
-      <div className="mb-6 border border-gray-200 rounded-lg bg-gray-50">
+      <div className="mb-8 border border-gray-200 rounded-lg bg-gray-50 shadow-sm">
         {/* Track header */}
         <div className="flex items-center justify-between p-3 bg-white border-b border-gray-200 rounded-t-lg">
           <div className="flex items-center space-x-2">
@@ -492,9 +519,9 @@ export const TransactionMultiTrackTimeline: React.FC<TransactionMultiTrackTimeli
 
         {/* Track timeline */}
         {!track.collapsed && (
-          <div className="relative p-4" style={{ height: '80px' }}>
+          <div className="relative p-6" style={{ height: '120px' }}>
             {/* Timeline line */}
-            <div className="absolute top-1/2 left-4 right-4 h-px bg-gray-300"></div>
+            <div className="absolute top-1/2 left-6 right-6 h-0.5 bg-gray-400 shadow-sm"></div>
             
             {/* Transaction markers */}
             {track.transactions.map((transaction) => (
@@ -502,8 +529,8 @@ export const TransactionMultiTrackTimeline: React.FC<TransactionMultiTrackTimeli
                 key={transaction.id}
                 transaction={transaction}
                 track={track}
-                isPersisted={persistedTransactions.has(transaction.id)}
-                onTogglePersistence={() => toggleTransactionPersistence(transaction.id)}
+                isOpen={openTransactionId === transaction.id}
+                onToggle={() => toggleTransactionDetails(transaction.id)}
               />
             ))}
             
@@ -565,17 +592,22 @@ export const TransactionMultiTrackTimeline: React.FC<TransactionMultiTrackTimeli
         </div>
       )}
 
-      {/* Time scale markers */}
+      {/* Enhanced Timeline Ruler */}
       {timeMarkers.length > 0 && (
-        <div className="relative mb-2 px-4" style={{ height: '30px' }}>
+        <div className="relative mb-6 mx-4 border-b border-gray-200 pb-2" style={{ height: '40px' }}>
+          {/* Ruler line */}
+          <div className="absolute bottom-0 left-0 right-0 h-px bg-gray-300"></div>
+          
           {timeMarkers.map((marker, index) => (
             <div
               key={index}
               className="absolute transform -translate-x-1/2"
-              style={{ left: `${marker.position}%`, top: '0px' }}
+              style={{ left: `${marker.position}%`, bottom: '0px' }}
             >
-              <div className="text-xs text-gray-600 font-medium">{marker.year}</div>
-              <div className="w-px h-2 bg-gray-400 mx-auto"></div>
+              <div className="text-sm text-gray-700 font-semibold mb-1 bg-white px-2 py-1 rounded shadow-sm border">
+                {marker.year}
+              </div>
+              <div className="w-0.5 h-3 bg-gray-500 mx-auto"></div>
             </div>
           ))}
         </div>
@@ -591,7 +623,7 @@ export const TransactionMultiTrackTimeline: React.FC<TransactionMultiTrackTimeli
         {hoveredAsset && (
           <svg
             className="absolute top-0 left-0 w-full h-full pointer-events-none z-10"
-            style={{ height: `${visibleTracks.length * 150}px` }}
+            style={{ height: `${visibleTracks.length * 180}px` }}
           >
             {assetConnections
               .filter(conn => conn.assetId === hoveredAsset)
@@ -601,13 +633,13 @@ export const TransactionMultiTrackTimeline: React.FC<TransactionMultiTrackTimeli
                     <line
                       key={`${idx1}-${idx2}`}
                       x1={`${pos1.position}%`}
-                      y1={`${pos1.trackIndex * 150 + 75}px`}
+                      y1={`${pos1.trackIndex * 180 + 90}px`}
                       x2={`${pos2.position}%`}
-                      y2={`${pos2.trackIndex * 150 + 75}px`}
+                      y2={`${pos2.trackIndex * 180 + 90}px`}
                       stroke="#3b82f6"
                       strokeWidth="2"
                       strokeDasharray="4,4"
-                      opacity="0.6"
+                      opacity="0.7"
                     />
                   ))
                 ).flat()
