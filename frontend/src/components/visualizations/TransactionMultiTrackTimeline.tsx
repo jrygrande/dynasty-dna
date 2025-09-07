@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useCallback } from 'react';
-import { Calendar, ArrowRight, Users, TrendingUp, Shuffle, UserPlus, X, Minus, Plus, Eye, EyeOff } from 'lucide-react';
+import { Users, TrendingUp, Shuffle, UserPlus, X, Minus, Plus, Eye, EyeOff, Target } from 'lucide-react';
 
 interface Asset {
   id: string;
@@ -380,6 +380,54 @@ export const TransactionMultiTrackTimeline: React.FC<TransactionMultiTrackTimeli
     );
   };
 
+  // Simple Draft Selection Marker - only shows when a draft pick was used
+  const DraftSelectionMarker: React.FC<{ track: Track }> = ({ track }) => {
+    // Only show for draft pick tracks that have been selected
+    if (!track.assetId || track.id === 'focal') return null;
+    
+    // Find if this track represents a draft pick that was used
+    const draftPickAsset = track.transactions
+      .flatMap(t => [...t.assetsReceived, ...t.assetsGiven])
+      .find(asset => asset.id === track.assetId && asset.type === 'draft_pick' && asset.playerSelectedName);
+    
+    if (!draftPickAsset) return null;
+
+    // Position the marker at the end of the timeline (when pick was used)
+    // We'll use the last transaction as a reference point, since draft selections
+    // happen after trades
+    const lastTransaction = track.transactions[track.transactions.length - 1];
+    if (!lastTransaction) return null;
+
+    const position = getTimePosition(lastTransaction.timestamp) + 5; // Offset slightly to the right
+
+    return (
+      <div
+        className="absolute transform -translate-x-1/2 z-30"
+        style={{ left: `${position}%` }}
+      >
+        <div className="relative group">
+          <div className="bg-green-500 text-white rounded-lg px-2 py-1 shadow-lg flex items-center space-x-1 transition-all duration-200 hover:scale-105">
+            <Target className="h-3 w-3" />
+            <span className="text-xs font-medium">Selected</span>
+          </div>
+          
+          {/* Tooltip */}
+          <div className="absolute top-8 left-1/2 transform -translate-x-1/2 bg-white border border-gray-300 rounded-lg shadow-lg p-3 z-40 min-w-48 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none">
+            <div className="font-bold text-sm text-green-700 mb-1">
+              🎯 Draft Selection
+            </div>
+            <div className="text-sm font-semibold mb-1">
+              {draftPickAsset.playerSelectedName}
+            </div>
+            <div className="text-xs text-gray-600">
+              {draftPickAsset.season} Round {draftPickAsset.round} Pick
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   // Track component
   const TrackRow: React.FC<{ track: Track; trackIndex: number }> = ({ track, trackIndex }) => {
     if (!track.visible) return null;
@@ -439,6 +487,9 @@ export const TransactionMultiTrackTimeline: React.FC<TransactionMultiTrackTimeli
                 onTogglePersistence={() => toggleTransactionPersistence(transaction.id)}
               />
             ))}
+            
+            {/* Draft selection marker - only for draft picks that were used */}
+            <DraftSelectionMarker track={track} />
           </div>
         )}
       </div>
