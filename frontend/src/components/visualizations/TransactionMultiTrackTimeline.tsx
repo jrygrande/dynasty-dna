@@ -400,16 +400,32 @@ export const TransactionMultiTrackTimeline: React.FC<TransactionMultiTrackTimeli
 
     const position = getTimePosition(lastTransaction.timestamp) + 5; // Offset slightly to the right
 
+    const handleAddSelectedPlayer = () => {
+      // Create an Asset object for the selected player
+      const selectedPlayerAsset: Asset = {
+        id: draftPickAsset.playerSelectedId || '', // Use playerSelectedId from draft pick
+        type: 'player',
+        name: draftPickAsset.playerSelectedName || '',
+        position: '', // Position not available in draft pick data
+        team: '' // Team not available in draft pick data
+      };
+      
+      addAssetTrack(selectedPlayerAsset);
+    };
+
     return (
       <div
         className="absolute transform -translate-x-1/2 z-30"
         style={{ left: `${position}%` }}
       >
         <div className="relative group">
-          <div className="bg-green-500 text-white rounded-lg px-2 py-1 shadow-lg flex items-center space-x-1 transition-all duration-200 hover:scale-105">
+          <button
+            onClick={handleAddSelectedPlayer}
+            className="bg-green-500 text-white rounded-lg px-2 py-1 shadow-lg flex items-center space-x-1 transition-all duration-200 hover:scale-105 hover:bg-green-600 cursor-pointer"
+          >
             <Target className="h-3 w-3" />
             <span className="text-xs font-medium">Selected</span>
-          </div>
+          </button>
           
           {/* Tooltip */}
           <div className="absolute top-8 left-1/2 transform -translate-x-1/2 bg-white border border-gray-300 rounded-lg shadow-lg p-3 z-40 min-w-48 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none">
@@ -419,8 +435,11 @@ export const TransactionMultiTrackTimeline: React.FC<TransactionMultiTrackTimeli
             <div className="text-sm font-semibold mb-1">
               {draftPickAsset.playerSelectedName}
             </div>
-            <div className="text-xs text-gray-600">
+            <div className="text-xs text-gray-600 mb-2">
               {draftPickAsset.season} Round {draftPickAsset.round} Pick
+            </div>
+            <div className="text-xs text-blue-600 font-medium">
+              Click to add {draftPickAsset.playerSelectedName} to timeline
             </div>
           </div>
         </div>
