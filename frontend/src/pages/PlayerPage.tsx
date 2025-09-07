@@ -8,53 +8,14 @@ import { TransactionMultiTrackTimeline } from '../components/visualizations/Tran
 import { transformTransactionGraphToD3, calculateOptimalSize } from '../utils/treeTransformers';
 import { TreeData, LayoutType } from '../types/visualization';
 
-interface PlayerNetworkData {
-  focalPlayer: {
-    id: string;
-    name: string;
-    position?: string;
-    team?: string;
-  };
-  network: {
-    nodes: Array<{
-      id: string;
-      type: 'player' | 'draft_pick';
-      name: string;
-      position?: string;
-      team?: string;
-      depth: number;
-      importance: number;
-    }>;
-    transactions: Array<{
-      id: string;
-      type: string;
-      description: string;
-      timestamp: string;
-      season: string;
-      assetsReceived: any[];
-      assetsGiven: any[];
-      managerFrom?: { id: string; username: string; displayName?: string; };
-      managerTo?: { id: string; username: string; displayName?: string; };
-    }>;
-    connections: Array<{
-      fromAsset: string;
-      toAsset: string;
-      transactionId: string;
-      depth: number;
-    }>;
-  };
-  stats: {
-    totalNodes: number;
-    totalTransactions: number;
-    depthDistribution: Record<number, number>;
-    transactionTypes: Record<string, number>;
-    buildTimeMs: number;
-  };
-}
 
 export function PlayerPage() {
   const { playerId } = useParams<{ playerId: string }>();
-  const [playerNetworkData, setPlayerNetworkData] = useState<PlayerNetworkData | null>(null);
+  const [playerData, setPlayerData] = useState<{
+    player: { id: string; name: string; position?: string; team?: string; };
+    transactions: any[];
+    totalTransactions: number;
+  } | null>(null);
   const [treeData, setTreeData] = useState<TreeData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -64,62 +25,105 @@ export function PlayerPage() {
   const TEST_LEAGUE_ID = '1191596293294166016';
 
   useEffect(() => {
-    const fetchPlayerNetworkData = async () => {
+    const fetchPlayerData = async () => {
       if (!playerId) return;
 
       setLoading(true);
       setError(null);
 
       try {
-        console.log(`🎯 Fetching player network for ${playerId}`);
+        console.log(`🎯 Fetching asset history for player ${playerId}`);
         
-        // Use the new optimized player network endpoint with fixed depth of 1 (direct transactions only)
-        const response = await api.getPlayerNetwork(TEST_LEAGUE_ID, playerId, {
-          depth: 1,
-          includeStats: true
-        });
+        // Use the simple asset-history endpoint that only returns direct transactions
+        const response = await api.getAssetHistory(playerId, TEST_LEAGUE_ID);
         
-        setPlayerNetworkData({
-          focalPlayer: response.focalPlayer,
-          network: response.network,
-          stats: response.stats
+        // Extract player info from the first transaction or create a basic one
+        const playerInfo = response.transactions.length > 0 
+          ? {
+              id: playerId,
+              name: response.transactions[0].assetsReceived.find((asset: any) => asset.id === playerId)?.name ||
+                    response.transactions[0].assetsGiven.find((asset: any) => asset.id === playerId)?.name ||
+                    'Unknown Player',
+              position: response.transactions[0].assetsReceived.find((asset: any) => asset.id === playerId)?.position ||
+                       response.transactions[0].assetsGiven.find((asset: any) => asset.id === playerId)?.position,
+              team: response.transactions[0].assetsReceived.find((asset: any) => asset.id === playerId)?.team ||
+                   response.transactions[0].assetsGiven.find((asset: any) => asset.id === playerId)?.team
+            }
+          : { id: playerId, name: 'Unknown Player' };
+
+        setPlayerData({
+          player: playerInfo,
+          transactions: response.transactions,
+          totalTransactions: response.totalTransactions
         });
 
-        // Convert to D3 format for visualization
-        const d3TreeData = transformPlayerNetworkToD3(response.network);
-        setTreeData(d3TreeData);
+        // Still create tree data for network view if needed
+        if (response.transactions.length > 0) {
+          const d3TreeData = transformPlayerDataToD3(response.transactions, playerId);
+          setTreeData(d3TreeData);
+        }
 
       } catch (err) {
-        console.error('Failed to fetch player network data:', err);
-        setError(err instanceof Error ? err.message : 'Failed to load player network data');
+        console.error('Failed to fetch player data:', err);
+        setError(err instanceof Error ? err.message : 'Failed to load player data');
       } finally {
         setLoading(false);
       }
     };
 
-    fetchPlayerNetworkData();
+    fetchPlayerData();
   }, [playerId]);
 
-  // Transform player network data to D3 format
-  const transformPlayerNetworkToD3 = (network: PlayerNetworkData['network']): TreeData => {
-    const nodes = network.nodes.map(node => ({
-      id: node.id,
-      name: node.name,
-      type: node.type,
-      depth: node.depth,
-      importance: node.importance,
-      position: node.position,
-      team: node.team
-    }));
+  // Transform player transaction data to D3 format (simplified for network view)
+  const transformPlayerDataToD3 = (transactions: any[], focalPlayerId: string): TreeData => {
+    const nodes = new Set<any>();
+    const links: any[] = [];
 
-    const links = network.connections.map(conn => ({
-      source: conn.fromAsset,
-      target: conn.toAsset,
-      transactionId: conn.transactionId,
-      depth: conn.depth
-    }));
+    // Add focal player node
+    const focalAsset = transactions[0]?.assetsReceived?.find((asset: any) => asset.id === focalPlayerId) ||
+                      transactions[0]?.assetsGiven?.find((asset: any) => asset.id === focalPlayerId);
+    
+    if (focalAsset) {
+      nodes.add({
+        id: focalAsset.id,
+        name: focalAsset.name,
+        type: focalAsset.type,
+        depth: 0,
+        importance: 1.0,
+        position: focalAsset.position,
+        team: focalAsset.team
+      });
+    }
 
-    return { nodes, links };
+    // Add assets from direct transactions
+    transactions.forEach(transaction => {
+      [...transaction.assetsReceived, ...transaction.assetsGiven].forEach(asset => {
+        if (asset.id !== focalPlayerId) {
+          nodes.add({
+            id: asset.id,
+            name: asset.name,
+            type: asset.type,
+            depth: 1,
+            importance: 0.8,
+            position: asset.position,
+            team: asset.team
+          });
+          
+          // Create link
+          links.push({
+            source: focalPlayerId,
+            target: asset.id,
+            transactionId: transaction.id,
+            depth: 1
+          });
+        }
+      });
+    });
+
+    return { 
+      nodes: Array.from(nodes), 
+      links 
+    };
   };
 
   const handleNodeClick = (node: any) => {
@@ -170,7 +174,7 @@ export function PlayerPage() {
           Player Transaction Network
         </h1>
         <p className="text-gray-600">
-          {playerNetworkData?.focalPlayer?.name || `Player ID: ${playerId}`}
+          {playerData?.player?.name || `Player ID: ${playerId}`}
         </p>
       </div>
 
@@ -180,7 +184,7 @@ export function PlayerPage() {
             <User className="h-8 w-8 text-blue-600 mr-3" />
             <div>
               <h3 className="text-lg font-semibold text-gray-900">Player Name</h3>
-              <p className="text-gray-600">{playerNetworkData?.focalPlayer?.name || '-'}</p>
+              <p className="text-gray-600">{playerData?.player?.name || '-'}</p>
             </div>
           </div>
         </div>
@@ -191,8 +195,8 @@ export function PlayerPage() {
             <div>
               <h3 className="text-lg font-semibold text-gray-900">Position & Team</h3>
               <p className="text-gray-600">
-                {playerNetworkData?.focalPlayer ? 
-                  `${playerNetworkData.focalPlayer.position || 'N/A'} - ${playerNetworkData.focalPlayer.team || 'N/A'}` : 
+                {playerData?.player ? 
+                  `${playerData.player.position || 'N/A'} - ${playerData.player.team || 'N/A'}` : 
                   '-'
                 }
               </p>
@@ -206,7 +210,7 @@ export function PlayerPage() {
             <div>
               <h3 className="text-lg font-semibold text-gray-900">Network Size</h3>
               <p className="text-gray-600">
-                {playerNetworkData?.stats?.totalTransactions || 0} transactions
+                {playerData?.totalTransactions || 0} transactions
               </p>
             </div>
           </div>
@@ -218,7 +222,7 @@ export function PlayerPage() {
             <div>
               <h3 className="text-lg font-semibold text-gray-900">Total Assets</h3>
               <p className="text-gray-600">
-                {playerNetworkData?.stats?.totalNodes || 0} assets
+                {treeData?.nodes.length || 0} assets
               </p>
             </div>
           </div>
@@ -226,42 +230,42 @@ export function PlayerPage() {
       </div>
 
       {/* Stats Panel */}
-      {playerNetworkData && (
+      {playerData && (
         <div className="card mb-8">
           <h4 className="text-lg font-semibold text-gray-900 mb-4">Player Statistics</h4>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="text-center">
               <div className="text-lg font-bold text-blue-600">
-                {playerNetworkData.stats.buildTimeMs}ms
+                {playerData.transactions.length}
               </div>
-              <div className="text-xs text-gray-500">Query Time</div>
+              <div className="text-xs text-gray-500">Direct Transactions</div>
             </div>
             
             <div className="text-center">
               <div className="text-lg font-bold text-blue-600">
-                {Object.keys(playerNetworkData.stats.transactionTypes).length}
+                {new Set(playerData.transactions.map(t => t.type)).size}
               </div>
               <div className="text-xs text-gray-500">Transaction Types</div>
             </div>
             
             <div className="text-center">
               <div className="text-lg font-bold text-blue-600">
-                {Object.values(playerNetworkData.stats.depthDistribution).reduce((a, b) => a + b, 0)}
+                {treeData?.nodes.length || 0}
               </div>
               <div className="text-xs text-gray-500">Connected Assets</div>
             </div>
             
             <div className="text-center">
               <div className="text-lg font-bold text-blue-600">
-                {playerNetworkData.stats.totalTransactions}
+                {new Set(playerData.transactions.map(t => t.season)).size}
               </div>
-              <div className="text-xs text-gray-500">Total Transactions</div>
+              <div className="text-xs text-gray-500">Seasons Active</div>
             </div>
           </div>
         </div>
       )}
 
-      {playerNetworkData && (
+      {playerData && (
         <div className="card">
           {/* View Toggle */}
           <div className="flex justify-between items-center mb-6">
@@ -304,16 +308,16 @@ export function PlayerPage() {
               </div>
             </div>
             <div className="text-sm text-gray-600">
-              {playerNetworkData.stats.totalTransactions} transactions
+              {playerData.totalTransactions} transactions
             </div>
           </div>
 
           {/* Multi-Track Timeline View */}
           {viewMode === 'multitrack' && (
             <TransactionMultiTrackTimeline
-              focalPlayerTransactions={playerNetworkData.network.transactions}
-              focalPlayerName={playerNetworkData.focalPlayer.name}
-              focalPlayerId={playerNetworkData.focalPlayer.id}
+              focalPlayerTransactions={playerData.transactions}
+              focalPlayerName={playerData.player.name}
+              focalPlayerId={playerData.player.id}
               onFetchAssetHistory={handleFetchAssetHistory}
               className="multi-track-timeline-view"
             />
@@ -322,7 +326,7 @@ export function PlayerPage() {
           {/* Simple Timeline View */}
           {viewMode === 'timeline' && (
             <TransactionTimeline
-              transactions={playerNetworkData.network.transactions}
+              transactions={playerData.transactions}
               className="transaction-timeline-view"
             />
           )}

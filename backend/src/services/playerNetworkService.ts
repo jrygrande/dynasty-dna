@@ -164,8 +164,11 @@ export class PlayerNetworkService {
                 importance
               });
 
-              // Add to queue for further exploration
-              queue.push([asset.id, nextDepth]);
+              // Only add to queue for further exploration if we want deeper network traversal
+              // For player timelines, we typically want depth=1 but without expanding to related asset transactions
+              if (nextDepth < maxDepth) {
+                queue.push([asset.id, nextDepth]);
+              }
 
               // Create connection
               connections.push({
@@ -229,8 +232,11 @@ export class PlayerNetworkService {
           some: {
             OR: [
               { playerId: assetId },
-              { draftPickId: assetId },
-              { draftPick: { playerSelectedId: assetId } }
+              { draftPickId: assetId }
+              // Removed: { draftPick: { playerSelectedId: assetId } }
+              // This was causing false positives by including transactions of draft picks
+              // that would later select a player, even though those transactions happened
+              // before the pick was used. Player timelines should only show direct involvement.
             ]
           }
         }
