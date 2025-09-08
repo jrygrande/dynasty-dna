@@ -224,7 +224,7 @@ model DraftPick {
   transactionItems  TransactionItem[]
   transactionDraftPicks TransactionDraftPick[]
   
-  @@unique([leagueId, season, round, pickInRound])
+  @@unique([leagueId, season, round, originalOwnerId])
   @@index([currentOwnerId])
   @@index([selectedPlayerId])
   @@map("draft_picks")

@@ -468,8 +468,10 @@ export class DataSyncService {
             leagueId: internalLeagueId,
             season: pick.season,
             round: pick.round,
+            pickInRound: 1, // Placeholder for future picks
             originalOwnerId: originalOwnerManager.id,
             currentOwnerId: currentOwnerManager.id,
+            traded: true
           }
         });
 
@@ -567,6 +569,7 @@ export class DataSyncService {
             previousOwnerId: previousOwner?.id,
             season: pick.season,
             round: pick.round,
+            pickInRound: 1, // Placeholder for future picks
             traded: pick.roster_id !== pick.owner_id
           }
         });
@@ -635,6 +638,7 @@ export class DataSyncService {
                 currentRosterId: roster.sleeperRosterId,
                 season: year.toString(),
                 round,
+                pickInRound: 1, // Placeholder for future picks
                 traded: false
               }
             });
@@ -646,92 +650,6 @@ export class DataSyncService {
     }
   }
 
-  /**
-   * Create all base draft picks using correct draft order logic (DEPRECATED)
-   * Use createCompleteDraftPickSet instead
-   */
-  private async createAllBaseDraftPicks(leagueId: string): Promise<void> {
-    console.log(`🎯 Creating all base draft picks for league: ${leagueId}`);
-    const internalLeagueId = await this.getInternalLeagueId(leagueId);
-    
-    // Get all drafts for this league
-    const drafts = await prisma.draft.findMany({
-      where: { leagueId: internalLeagueId },
-      orderBy: { season: 'asc' }
-    });
-    
-    for (const draft of drafts) {
-      console.log(`  📅 Creating draft picks for season ${draft.season}`);
-      
-      // Skip 2021 startup draft - it doesn't use tradeable picks
-      if (draft.season === '2021') {
-        console.log(`    ⏭️  Skipping 2021 startup draft`);
-        continue;
-      }
-      
-      // Parse draft order to understand slot -> user mapping
-      const draftOrder = JSON.parse(draft.draftOrder || '{}');
-      if (Object.keys(draftOrder).length === 0) {
-        console.warn(`    ⚠️  No draft order data for ${draft.season}, skipping`);
-        continue;
-      }
-      
-      const rounds = 4; // Dynasty leagues typically have 4-round drafts
-      const totalSlots = Object.keys(draftOrder).length;
-      
-      for (let round = 1; round <= rounds; round++) {
-        for (let draftSlot = 1; draftSlot <= totalSlots; draftSlot++) {
-          // Find the user who originally owned this draft slot
-          const originalUserId = Object.keys(draftOrder).find(
-            userId => draftOrder[userId] === draftSlot
-          );
-          
-          if (!originalUserId) {
-            console.warn(`    ⚠️  Could not find original owner for draft slot ${draftSlot} in ${draft.season}`);
-            continue;
-          }
-          
-          const originalOwner = await prisma.manager.findUnique({
-            where: { sleeperUserId: originalUserId }
-          });
-          
-          if (!originalOwner) {
-            console.warn(`    ⚠️  Could not find manager for user ${originalUserId} in ${draft.season}`);
-            continue;
-          }
-          
-          // Check if this draft pick already exists
-          const existingPick = await prisma.draftPick.findFirst({
-            where: {
-              leagueId: internalLeagueId,
-              season: draft.season,
-              round,
-              originalOwnerId: originalOwner.id
-            }
-          });
-          
-          if (!existingPick) {
-            await prisma.draftPick.create({
-              data: {
-                leagueId: internalLeagueId,
-                originalOwnerId: originalOwner.id,
-                originalOwnerName: originalOwner.displayName || originalOwner.username,
-                currentOwnerId: originalOwner.id, // Initially same as original  
-                currentOwnerName: originalOwner.displayName || originalOwner.username,
-                originalRosterId: await this.getRosterIdByManager(leagueId, originalOwner.id),
-                currentRosterId: await this.getRosterIdByManager(leagueId, originalOwner.id),
-                season: draft.season,
-                round,
-                traded: false
-              }
-            });
-            
-            console.log(`    📊 Created base draft pick: Season ${draft.season} R${round} Slot ${draftSlot} for ${originalOwner.username}`);
-          }
-        }
-      }
-    }
-  }
 
   /**
    * Sync drafts and create draft transactions
@@ -858,7 +776,7 @@ export class DataSyncService {
         successfulPicks++;
         console.log(`    ✅ Pick ${pick.pick_no}: ${player.fullName} to ${manager.displayName || manager.username}`);
         
-      } catch (error) {
+      } catch (error: any) {
         console.error(`    ❌ Error processing pick ${pick.pick_no}:`, error.message);
         errors++;
       }
@@ -917,7 +835,7 @@ export class DataSyncService {
             console.warn(`⚠️  Could not find manager for selection ${selection.player.fullName} (pickedBy: ${selection.pickedBy})`);
             skipped++;
           }
-        } catch (error) {
+        } catch (error: any) {
           console.warn(`❌ Failed to update draft pick for ${selection.player.fullName}:`, error);
           skipped++;
         }
@@ -1379,25 +1297,6 @@ export class DataSyncService {
     return prisma.manager.findFirst({
       where: { sleeperUserId: roster.owner_id }
     });
-  }
-
-  /**
-   * Get roster ID by manager ID
-   */
-  private async getRosterIdByManager(leagueId: string, managerId: string): Promise<number> {
-    const internalLeagueId = await this.getInternalLeagueId(leagueId);
-    const roster = await prisma.roster.findFirst({
-      where: {
-        leagueId: internalLeagueId,
-        managerId: managerId
-      }
-    });
-    
-    if (!roster) {
-      throw new Error(`No roster found for manager ${managerId} in league ${leagueId}`);
-    }
-    
-    return roster.sleeperRosterId;
   }
 
   /**

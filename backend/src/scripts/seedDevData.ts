@@ -68,6 +68,11 @@ async function seedDevData(options: SeedOptions = {}) {
     
     const { linkAllSelectionsToPicks } = await import('./linkAllSelectionsToPicks');
     await linkAllSelectionsToPicks();
+    
+    // Sync traded picks to ensure correct ownership
+    console.log('\n🔄 Syncing traded draft picks to update ownership...');
+    const { syncTradedPicks } = await import('./syncTradedPicks');
+    await syncTradedPicks(testLeagueId);
 
     // Get final statistics
     const [
