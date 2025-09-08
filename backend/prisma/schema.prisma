@@ -7,6 +7,18 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model DynastyLeague {
+  id                String   @id @default(cuid())
+  name              String   // e.g., "Dynasty Domination" 
+  foundedYear       String   // First season (e.g., "2021")
+  currentLeagueId   String   // Most recent season's Sleeper ID
+  leagues           League[] // All seasons in this dynasty
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  @@map("dynasty_leagues")
+}
+
 model League {
   id                String   @id @default(cuid())
   sleeperLeagueId   String   @unique
@@ -20,6 +32,8 @@ model League {
   scoringSettings   String   // JSON string of scoring configuration
   previousLeagueId  String?  // Links to previous season for dynasty continuity
   sleeperPreviousLeagueId String? // Previous league's Sleeper ID
+  dynastyLeagueId   String?
+  dynastyLeague     DynastyLeague? @relation(fields: [dynastyLeagueId], references: [id])
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
@@ -71,9 +85,10 @@ model Manager {
 
   rosters           Roster[]
   transactionItems  TransactionItem[]
-  originalDraftPicks DraftPick[] @relation("OriginalOwner")
-  currentDraftPicks  DraftPick[] @relation("CurrentOwner")  
-  previousDraftPicks DraftPick[] @relation("PreviousOwner")
+  originalDraftPicks DraftPick[] @relation("OriginalPickOwner")
+  currentDraftPicks  DraftPick[] @relation("CurrentPickOwner")  
+  previousDraftPicks DraftPick[] @relation("PreviousPickOwner")
+  selectedDraftPicks DraftPick[] @relation("SelectingOwner")
 
   @@map("managers")
 }
@@ -168,31 +183,50 @@ model RosterSlot {
 }
 
 model DraftPick {
-  id              String   @id @default(cuid())
-  leagueId        String
-  originalOwnerId String   // roster_id in Sleeper API - original owner
-  currentOwnerId  String   // owner_id in Sleeper API - current owner
-  previousOwnerId String?  // previous_owner_id in Sleeper API - who traded it most recently
-  season          String   // Store as string like API (e.g. "2025")
-  round           Int
-  draftSlot       Int?     // Position within round (1-12 for each round)
-  pickNumber      Int?     // Actual pick number when used
-  playerSelectedId String? // Player selected with this pick
-  traded          Boolean  @default(false)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-
-  league          League             @relation(fields: [leagueId], references: [id])
-  originalOwner   Manager            @relation("OriginalOwner", fields: [originalOwnerId], references: [id])
-  currentOwner    Manager            @relation("CurrentOwner", fields: [currentOwnerId], references: [id])
-  previousOwner   Manager?           @relation("PreviousOwner", fields: [previousOwnerId], references: [id])
-  playerSelected  Player?            @relation(fields: [playerSelectedId], references: [id])
-  transactionItems TransactionItem[]
+  id                String   @id @default(cuid())
+  leagueId          String
+  season            String   
+  round             Int
+  pickInRound       Int      // Position within the round (1-12 for regular, varies for startup)
+  
+  // Sleeper roster IDs for API compatibility (optional during migration)
+  originalRosterId  Int?      
+  currentRosterId   Int?      
+  previousRosterId  Int?     
+  
+  // Resolved manager information for clarity (optional during migration)
+  originalOwnerId   String?   
+  originalOwner     Manager?  @relation("OriginalPickOwner", fields: [originalOwnerId], references: [id])
+  originalOwnerName String?   // Denormalized: "John Smith"
+  
+  currentOwnerId    String?   
+  currentOwner      Manager?  @relation("CurrentPickOwner", fields: [currentOwnerId], references: [id])
+  currentOwnerName  String?   // Denormalized: "Jane Doe"
+  
+  previousOwnerId   String?  
+  previousOwner     Manager? @relation("PreviousPickOwner", fields: [previousOwnerId], references: [id])
+  previousOwnerName String?  // Denormalized: "Bob Johnson"
+  
+  // When pick is used in a draft
+  selectedPlayerId  String?  
+  selectedPlayer    Player?  @relation(fields: [selectedPlayerId], references: [id])
+  draftId           String?  
+  draft             Draft?   @relation(fields: [draftId], references: [id])
+  selectingOwnerId  String?  
+  selectingOwner    Manager? @relation("SelectingOwner", fields: [selectingOwnerId], references: [id])
+  selectingOwnerName String? // Who actually made the selection
+  
+  traded            Boolean  @default(false)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  league            League   @relation(fields: [leagueId], references: [id])
+  transactionItems  TransactionItem[]
   transactionDraftPicks TransactionDraftPick[]
-
-  @@unique([leagueId, season, round, originalOwnerId])
-  @@index([playerSelectedId])
-  @@index([leagueId])
+  
+  @@unique([leagueId, season, round, pickInRound])
+  @@index([currentOwnerId])
+  @@index([selectedPlayerId])
   @@map("draft_picks")
 }
 
@@ -216,6 +250,7 @@ model Draft {
 
   league        League   @relation(fields: [leagueId], references: [id])
   picks         DraftSelection[]
+  draftPicks    DraftPick[]  // Picks used in this draft
 
   @@map("drafts")
 }

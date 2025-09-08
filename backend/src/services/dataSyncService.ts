@@ -470,7 +470,6 @@ export class DataSyncService {
             round: pick.round,
             originalOwnerId: originalOwnerManager.id,
             currentOwnerId: currentOwnerManager.id,
-            pickNumber: null // Will be set during actual draft
           }
         });
 
@@ -532,8 +531,8 @@ export class DataSyncService {
   private async syncLeagueDraftPicks(leagueId: string): Promise<void> {
     const internalLeagueId = await this.getInternalLeagueId(leagueId);
     
-    // First, ensure all base draft picks exist for all seasons
-    await this.createAllBaseDraftPicks(leagueId);
+    // First, ensure complete draft pick set exists for all years
+    await this.createCompleteDraftPickSet(leagueId);
     
     // Then apply traded pick updates
     const tradedPicks = await sleeperClient.getLeagueTradedPicks(leagueId);
@@ -576,8 +575,80 @@ export class DataSyncService {
   }
 
   /**
-   * Create all base draft picks using correct draft order logic
-   * This ensures we have complete draft pick records, not just traded ones
+   * Create complete draft pick set for all years (current + future)
+   * This ensures we have 48 picks per year (12 teams × 4 rounds)
+   */
+  private async createCompleteDraftPickSet(leagueId: string): Promise<void> {
+    console.log(`🎯 Creating complete draft pick set for league: ${leagueId}`);
+    const internalLeagueId = await this.getInternalLeagueId(leagueId);
+    
+    // Get current season and all managers
+    const league = await prisma.league.findUnique({
+      where: { id: internalLeagueId },
+      include: {
+        rosters: {
+          include: { manager: true },
+          orderBy: { sleeperRosterId: 'asc' }
+        }
+      }
+    });
+    
+    if (!league || league.rosters.length === 0) {
+      console.warn(`⚠️  No rosters found for league ${leagueId}`);
+      return;
+    }
+    
+    const currentYear = parseInt(league.season);
+    const totalTeams = league.rosters.length;
+    const rounds = 4;
+    
+    // Create picks for current year (if draft exists) plus 3 future years
+    const yearsToCreate = [currentYear, currentYear + 1, currentYear + 2, currentYear + 3];
+    
+    for (const year of yearsToCreate) {
+      console.log(`  📅 Creating ${totalTeams * rounds} draft picks for ${year}`);
+      
+      for (let round = 1; round <= rounds; round++) {
+        for (let teamIndex = 0; teamIndex < totalTeams; teamIndex++) {
+          const roster = league.rosters[teamIndex];
+          const manager = roster.manager;
+          
+          // Check if this draft pick already exists
+          const existingPick = await prisma.draftPick.findFirst({
+            where: {
+              leagueId: internalLeagueId,
+              season: year.toString(),
+              round,
+              originalOwnerId: manager.id
+            }
+          });
+          
+          if (!existingPick) {
+            await prisma.draftPick.create({
+              data: {
+                leagueId: internalLeagueId,
+                originalOwnerId: manager.id,
+                originalOwnerName: manager.displayName || manager.username,
+                currentOwnerId: manager.id,
+                currentOwnerName: manager.displayName || manager.username,
+                originalRosterId: roster.sleeperRosterId,
+                currentRosterId: roster.sleeperRosterId,
+                season: year.toString(),
+                round,
+                traded: false
+              }
+            });
+          }
+        }
+      }
+      
+      console.log(`    ✅ Created draft picks for ${year}: ${totalTeams} teams × ${rounds} rounds = ${totalTeams * rounds} picks`);
+    }
+  }
+
+  /**
+   * Create all base draft picks using correct draft order logic (DEPRECATED)
+   * Use createCompleteDraftPickSet instead
    */
   private async createAllBaseDraftPicks(leagueId: string): Promise<void> {
     console.log(`🎯 Creating all base draft picks for league: ${leagueId}`);
@@ -644,10 +715,13 @@ export class DataSyncService {
               data: {
                 leagueId: internalLeagueId,
                 originalOwnerId: originalOwner.id,
-                currentOwnerId: originalOwner.id, // Initially same as original
+                originalOwnerName: originalOwner.displayName || originalOwner.username,
+                currentOwnerId: originalOwner.id, // Initially same as original  
+                currentOwnerName: originalOwner.displayName || originalOwner.username,
+                originalRosterId: await this.getRosterIdByManager(leagueId, originalOwner.id),
+                currentRosterId: await this.getRosterIdByManager(leagueId, originalOwner.id),
                 season: draft.season,
                 round,
-                draftSlot,
                 traded: false
               }
             });
@@ -704,24 +778,50 @@ export class DataSyncService {
       const picks = await sleeperClient.getDraftPicks(draftInfo.draft_id);
       console.log(`    📊 Processing ${picks.length} draft picks`);
       
+      let successfulPicks = 0;
+      let skippedPicks = 0;
+      let errors = 0;
+      
       for (const pick of picks) {
-        if (!pick.player_id) continue; // Skip empty picks
-        
-        // Find manager who made the pick
-        const manager = await this.getManagerByRosterId(leagueId, pick.roster_id);
-        if (!manager) {
-          console.warn(`Could not find manager for roster ${pick.roster_id} in draft pick`);
-          continue;
-        }
-        
-        // Find player
-        const player = await prisma.player.findFirst({
-          where: { sleeperId: pick.player_id }
-        });
-        if (!player) {
-          console.warn(`Could not find player ${pick.player_id} for draft pick`);
-          continue;
-        }
+        try {
+          if (!pick.player_id) {
+            console.warn(`    ⚠️  Skipping pick ${pick.pick_no}: no player_id`);
+            skippedPicks++;
+            continue;
+          }
+          
+          // Find manager who made the pick
+          const manager = await this.getManagerByRosterId(leagueId, pick.roster_id);
+          if (!manager) {
+            console.warn(`    ⚠️  Could not find manager for roster ${pick.roster_id} in pick ${pick.pick_no}`);
+            errors++;
+            continue;
+          }
+          
+          // Find or create player
+          let player = await prisma.player.findFirst({
+            where: { sleeperId: pick.player_id }
+          });
+          
+          if (!player) {
+            // Create player from draft pick metadata
+            const metadata = pick.metadata || {};
+            console.log(`    📝 Creating missing player ${pick.player_id} from metadata`);
+            
+            player = await prisma.player.create({
+              data: {
+                sleeperId: pick.player_id,
+                firstName: metadata.first_name || '',
+                lastName: metadata.last_name || '',
+                fullName: (metadata.first_name && metadata.last_name) 
+                  ? `${metadata.first_name} ${metadata.last_name}`
+                  : metadata.last_name || `Player ${pick.player_id}`,
+                position: metadata.position || 'Unknown',
+                team: metadata.team || null,
+                status: metadata.status || 'Unknown'
+              }
+            });
+          }
         
         // Create DraftSelection record
         const draftSelection = await prisma.draftSelection.upsert({
@@ -754,7 +854,17 @@ export class DataSyncService {
         
         // Create draft transaction
         await this.createDraftTransaction(draftSelection, dbDraft, player, manager, leagueId);
+        
+        successfulPicks++;
+        console.log(`    ✅ Pick ${pick.pick_no}: ${player.fullName} to ${manager.displayName || manager.username}`);
+        
+      } catch (error) {
+        console.error(`    ❌ Error processing pick ${pick.pick_no}:`, error.message);
+        errors++;
       }
+    }
+    
+    console.log(`    📋 Draft ${draftInfo.season} summary: ${successfulPicks} successful, ${skippedPicks} skipped, ${errors} errors`);
     }
   }
 
@@ -834,63 +944,40 @@ export class DataSyncService {
     managerId: string,
     pickNumber: number
   ): Promise<any | null> {
-    // Strategy 1: Try to find by draft slot (most accurate)
-    // Draft slot corresponds to original roster position and is now stored in our draft_picks
+    // Primary strategy: Match by league, season, round, and pickInRound (draftSlot)
+    // This provides the most precise match since pickInRound corresponds to draftSlot
     let draftPick = await prisma.draftPick.findFirst({
       where: {
         leagueId,
         season,
         round,
-        draftSlot,
-        currentOwnerId: managerId
+        pickInRound: draftSlot // draftSlot from selection maps to pickInRound in pick
       }
     });
     
     if (draftPick) {
-      console.log(`    ✅ Found draft pick by exact draftSlot match: R${round} Slot ${draftSlot}`);
+      console.log(`    ✅ Found draft pick by precise match: R${round}P${draftSlot}`);
       return draftPick;
     }
     
-    // Strategy 2: If manager has multiple picks in this round, prefer unused picks
-    const managerPicksInRound = await prisma.draftPick.findMany({
-      where: {
-        leagueId,
-        season,
-        round,
-        currentOwnerId: managerId
-      },
-      orderBy: { draftSlot: 'asc' } // Order by draft slot for consistency
-    });
-    
-    if (managerPicksInRound.length === 1) {
-      return managerPicksInRound[0];
-    }
-    
-    // Strategy 3: For multiple picks, prefer picks that haven't been used yet
-    const unusedPick = managerPicksInRound.find(pick => !pick.playerSelectedId);
-    if (unusedPick) {
-      console.log(`    📊 Found unused draft pick for ${managerId} R${round} P${pickNumber}`);
-      return unusedPick;
-    }
-    
-    // Strategy 4: Try to match by draft slot even if currentOwner doesn't match (traded pick scenario)
+    // Fallback: Try to find by season, round, and current owner (for traded picks)
     draftPick = await prisma.draftPick.findFirst({
       where: {
         leagueId,
         season,
         round,
-        draftSlot
+        currentOwnerId: managerId,
+        selectedPlayerId: null // Only match unused picks
       }
     });
     
-    if (draftPick && draftPick.currentOwnerId === managerId) {
-      console.log(`    📊 Found traded pick by draftSlot: R${round} Slot ${draftSlot}`);
+    if (draftPick) {
+      console.log(`    ⚠️  Found draft pick by owner fallback: R${round} Owner ${managerId} (pick may have been traded)`);
       return draftPick;
     }
     
-    // Fallback: return first available pick with warning
-    console.warn(`⚠️  Could not definitively identify correct draft pick for manager ${managerId} R${round} P${pickNumber} Slot ${draftSlot}. Using first available.`);
-    return managerPicksInRound[0] || null;
+    console.warn(`    ❌ Could not find draft pick for R${round}P${draftSlot} (pick ${pickNumber})`);
+    return null;
   }
 
   /**
@@ -920,9 +1007,7 @@ export class DataSyncService {
       await prisma.draftPick.update({
         where: { id: draftPick.id },
         data: {
-          pickNumber: selection.pickNumber,
-          playerSelectedId: player.id,
-          draftSlot: selection.draftSlot // Ensure draftSlot is populated
+          selectedPlayerId: player.id
         }
       });
       
@@ -1294,6 +1379,25 @@ export class DataSyncService {
     return prisma.manager.findFirst({
       where: { sleeperUserId: roster.owner_id }
     });
+  }
+
+  /**
+   * Get roster ID by manager ID
+   */
+  private async getRosterIdByManager(leagueId: string, managerId: string): Promise<number> {
+    const internalLeagueId = await this.getInternalLeagueId(leagueId);
+    const roster = await prisma.roster.findFirst({
+      where: {
+        leagueId: internalLeagueId,
+        managerId: managerId
+      }
+    });
+    
+    if (!roster) {
+      throw new Error(`No roster found for manager ${managerId} in league ${leagueId}`);
+    }
+    
+    return roster.sleeperRosterId;
   }
 
   /**

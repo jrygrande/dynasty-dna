@@ -61,6 +61,14 @@ async function seedDevData(options: SeedOptions = {}) {
       }
     }
 
+    // Ensure draft picks are created and linked
+    console.log('\n🔧 Fixing draft picks with correct snake order and linking selections...');
+    const { fixDraftPicksWithSnakeOrder } = await import('./fixDraftPicksWithSnakeOrder');
+    await fixDraftPicksWithSnakeOrder();
+    
+    const { linkAllSelectionsToPicks } = await import('./linkAllSelectionsToPicks');
+    await linkAllSelectionsToPicks();
+
     // Get final statistics
     const [
       leagueCount,

@@ -424,6 +424,134 @@ export class PlayerNetworkService {
   }
 
   /**
+   * Find the correct draft selection for a draft pick, handling cross-dynasty year lookups
+   */
+  private async findCorrectDraftSelection(draftPick: any): Promise<{ playerSelectedId: string | null; playerSelectedName: string | null }> {
+    // If the pick season matches the league season, use the existing data
+    const currentLeague = await this.prisma.league.findUnique({
+      where: { id: draftPick.leagueId }
+    });
+    
+    if (currentLeague && draftPick.season === currentLeague.season) {
+      return {
+        playerSelectedId: draftPick.playerSelectedId,
+        playerSelectedName: draftPick.playerSelected?.fullName || null
+      };
+    }
+
+    if (!currentLeague) {
+      console.warn(`Could not find current league with ID: ${draftPick.leagueId}`);
+      return { playerSelectedId: null, playerSelectedName: null };
+    }
+
+    // Find the correct league for this draft season in the dynasty chain
+    const dynastyChain = await historicalLeagueService.getLeagueHistory(currentLeague.sleeperLeagueId);
+    const targetLeague = dynastyChain.leagues.find(l => l.season === draftPick.season && l.inDatabase);
+    
+    if (!targetLeague) {
+      console.warn(`Could not find league for draft season ${draftPick.season}`);
+      return { playerSelectedId: null, playerSelectedName: null };
+    }
+
+    const targetInternalLeague = await this.prisma.league.findUnique({
+      where: { sleeperLeagueId: targetLeague.sleeperLeagueId }
+    });
+
+    if (!targetInternalLeague) {
+      console.warn(`Could not find internal league for Sleeper league ${targetLeague.sleeperLeagueId}`);
+      return { playerSelectedId: null, playerSelectedName: null };
+    }
+
+    // For traded picks, we need to find which draft selection corresponds to this pick
+    // The approach: find the draft pick in the target league that was originally owned by the same manager
+    try {
+      // First, try to find a matching draft pick in the target league by original owner and round
+      const targetLeagueDraftPick = await this.prisma.draftPick.findFirst({
+        where: {
+          leagueId: targetInternalLeague.id,
+          season: draftPick.season,
+          round: draftPick.round,
+          originalOwnerId: draftPick.originalOwnerId
+        }
+      });
+
+      if (targetLeagueDraftPick) {
+        // Now find the draft selection that used this pick
+        const draftSelection = await this.prisma.draftSelection.findFirst({
+          where: {
+            draft: {
+              leagueId: targetInternalLeague.id,
+              season: draftPick.season
+            },
+            round: draftPick.round,
+            draftSlot: targetLeagueDraftPick.pickNumber || targetLeagueDraftPick.round
+          },
+          include: {
+            player: true
+          }
+        });
+
+        if (draftSelection) {
+          return {
+            playerSelectedId: draftSelection.playerId,
+            playerSelectedName: draftSelection.player.fullName
+          };
+        }
+      }
+
+      // If the above doesn't work, try to find by current owner
+      // (in case the pick was traded but the currentOwnerId is updated correctly)
+      const currentOwnerDraftPick = await this.prisma.draftPick.findFirst({
+        where: {
+          leagueId: targetInternalLeague.id,
+          season: draftPick.season,
+          round: draftPick.round,
+          currentOwnerId: draftPick.currentOwnerId
+        }
+      });
+
+      if (currentOwnerDraftPick) {
+        const draftSelection = await this.prisma.draftSelection.findFirst({
+          where: {
+            draft: {
+              leagueId: targetInternalLeague.id,
+              season: draftPick.season
+            },
+            round: draftPick.round,
+            draftSlot: currentOwnerDraftPick.pickNumber
+          },
+          include: {
+            player: true
+          }
+        });
+
+        if (draftSelection) {
+          return {
+            playerSelectedId: draftSelection.playerId,
+            playerSelectedName: draftSelection.player.fullName
+          };
+        }
+      }
+
+      console.warn(`Could not find draft selection for ${draftPick.season} Round ${draftPick.round} Pick from ${draftPick.originalOwnerId} to ${draftPick.currentOwnerId}`);
+      console.log('Debug - Draft Pick Details:', JSON.stringify({
+        id: draftPick.id,
+        season: draftPick.season,
+        round: draftPick.round,
+        originalOwnerId: draftPick.originalOwnerId,
+        currentOwnerId: draftPick.currentOwnerId,
+        leagueId: draftPick.leagueId
+      }, null, 2));
+      console.log('Debug - Target League ID:', targetInternalLeague.id);
+      return { playerSelectedId: null, playerSelectedName: null };
+      
+    } catch (error) {
+      console.error('Error finding draft selection:', error);
+      return { playerSelectedId: null, playerSelectedName: null };
+    }
+  }
+
+  /**
    * Build asset node from transaction item
    */
   private async buildAssetNodeFromItem(item: any): Promise<AssetNode> {
@@ -437,6 +565,9 @@ export class PlayerNetworkService {
         team: item.player.team
       };
     } else if (item.draftPick) {
+      // Find the correct draft selection for this pick
+      const correctSelection = await this.findCorrectDraftSelection(item.draftPick);
+      
       return {
         id: item.draftPick.id,
         type: 'draft_pick',
@@ -445,9 +576,9 @@ export class PlayerNetworkService {
         originalOwnerId: item.draftPick.originalOwnerId,
         currentOwnerId: item.draftPick.currentOwnerId,
         pickNumber: item.draftPick.pickNumber,
-        playerSelectedId: item.draftPick.playerSelectedId,
+        playerSelectedId: correctSelection.playerSelectedId,
         originalOwnerName: item.draftPick.originalOwner?.displayName || item.draftPick.originalOwner?.username,
-        playerSelectedName: item.draftPick.playerSelected?.fullName,
+        playerSelectedName: correctSelection.playerSelectedName,
         name: `${item.draftPick.season} Round ${item.draftPick.round} Pick`
       };
     }
