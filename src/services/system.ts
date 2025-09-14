@@ -1,6 +1,6 @@
 import { Sleeper } from '@/lib/sleeper';
 import { upsertPlayersBulk } from '@/repositories/players';
-import { upsertNFLState } from '@/repositories/state';
+import { upsertNFLState, upsertNFLSeasons } from '@/repositories/state';
 
 export async function syncPlayers(): Promise<{ upserted: number }> {
   const dict = await Sleeper.getPlayers();
@@ -23,3 +23,12 @@ export async function syncNFLState(): Promise<{ season: string; week: number }> 
   return { season, week };
 }
 
+export async function seedNFLSeasonsRange(fromSeason: number, toSeason: number, opts?: { maxWeek?: number }) {
+  const rows: { season: string; maxWeek: number }[] = [];
+  const maxWeek = Number(opts?.maxWeek ?? 18);
+  for (let s = fromSeason; s <= toSeason; s++) {
+    rows.push({ season: String(s), maxWeek });
+  }
+  const upserted = await upsertNFLSeasons(rows);
+  return { upserted };
+}

@@ -77,6 +77,14 @@ export const nflState = pgTable('nfl_state', {
   fetchedAt: timestamp('fetched_at', { withTimezone: false }).defaultNow().notNull(),
 });
 
+export const nflSeasons = pgTable('nfl_seasons', {
+  season: text('season').primaryKey(),
+  maxWeek: integer('max_week').notNull(),
+  note: text('note'),
+  createdAt: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
+});
+
 export const metricSnapshots = pgTable(
   'metric_snapshots',
   {

@@ -157,6 +157,14 @@ async function ensureSchema(db: ReturnType<typeof drizzle>) {
     week integer NOT NULL,
     fetched_at timestamp NOT NULL DEFAULT now()
   );`);
+  // nfl_seasons
+  await db.execute(sql`CREATE TABLE IF NOT EXISTS nfl_seasons (
+    season text PRIMARY KEY,
+    max_week integer NOT NULL,
+    note text,
+    created_at timestamp NOT NULL DEFAULT now(),
+    updated_at timestamp NOT NULL DEFAULT now()
+  );`);
   // metric_snapshots
   await db.execute(sql`CREATE TABLE IF NOT EXISTS metric_snapshots (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
