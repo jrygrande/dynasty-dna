@@ -68,8 +68,10 @@ async function ensureSchema(db: ReturnType<typeof drizzle>) {
     name text NOT NULL,
     position text,
     team text,
-    status text
+    status text,
+    updated_at timestamp NOT NULL DEFAULT now()
   );`);
+  await db.execute(sql`ALTER TABLE players ADD COLUMN IF NOT EXISTS updated_at timestamp NOT NULL DEFAULT now();`);
   // transactions
   await db.execute(sql`CREATE TABLE IF NOT EXISTS transactions (
     id text PRIMARY KEY,
@@ -148,6 +150,13 @@ async function ensureSchema(db: ReturnType<typeof drizzle>) {
   await db.execute(sql`CREATE INDEX IF NOT EXISTS asset_events_player_idx ON asset_events (asset_kind, player_id);`);
   await db.execute(sql`CREATE INDEX IF NOT EXISTS asset_events_pick_idx ON asset_events (asset_kind, pick_season, pick_round, pick_original_roster_id);`);
   await db.execute(sql`CREATE INDEX IF NOT EXISTS asset_events_time_idx ON asset_events (season, week, event_time);`);
+  // nfl_state
+  await db.execute(sql`CREATE TABLE IF NOT EXISTS nfl_state (
+    id text PRIMARY KEY,
+    season text NOT NULL,
+    week integer NOT NULL,
+    fetched_at timestamp NOT NULL DEFAULT now()
+  );`);
   // metric_snapshots
   await db.execute(sql`CREATE TABLE IF NOT EXISTS metric_snapshots (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

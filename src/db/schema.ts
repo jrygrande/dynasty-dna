@@ -51,6 +51,7 @@ export const players = pgTable('players', {
   position: text('position'),
   team: text('team'),
   status: text('status'),
+  updatedAt: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
 });
 
 export const transactions = pgTable(
@@ -68,6 +69,13 @@ export const transactions = pgTable(
     typeIdx: index('transactions_type_idx').on(t.type),
   })
 );
+
+export const nflState = pgTable('nfl_state', {
+  id: text('id').primaryKey(), // constant 'nfl'
+  season: text('season').notNull(),
+  week: integer('week').notNull(),
+  fetchedAt: timestamp('fetched_at', { withTimezone: false }).defaultNow().notNull(),
+});
 
 export const metricSnapshots = pgTable(
   'metric_snapshots',
