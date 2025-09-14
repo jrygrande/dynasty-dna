@@ -107,7 +107,18 @@ export async function rebuildAssetEventsForLeagueFamily(rootLeagueId: string) {
     const rosterMap = rosterOwnerMaps.get(t.leagueId) || new Map<number, string>();
     const payload: any = t.payload || {};
     const week = t.week ?? null;
-    const eventTime = payload?.status_updated ? new Date(payload.status_updated * 1000) : payload?.created ? new Date(payload.created * 1000) : null;
+    const toSafeDate = (v: any): Date | null => {
+      const n = Number(v);
+      if (!Number.isFinite(n) || n <= 0) return null;
+      // Accept either seconds or milliseconds epoch
+      const ms = n > 1e12 ? n : n * 1000;
+      // guard plausible range: 2000-01-01 .. 2100-01-01
+      const min = Date.UTC(2000, 0, 1);
+      const max = Date.UTC(2100, 0, 1);
+      if (ms < min || ms > max) return null;
+      return new Date(ms);
+    };
+    const eventTime = toSafeDate(payload?.status_updated) || toSafeDate(payload?.created) || null;
     // Adds and drops
     const adds = payload.adds || {};
     const drops = payload.drops || {};

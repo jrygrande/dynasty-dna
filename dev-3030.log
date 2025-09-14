@@ -1,0 +1,12 @@
+
+> dynasty-dna@0.0.0 dev
+> next dev -p 3030
+
+  ▲ Next.js 14.2.32
+  - Local:        http://localhost:3030
+  - Environments: .env
+  - Experiments (use with caution):
+    · typedRoutes
+
+ ✓ Starting...
+ ✓ Ready in 1019ms
