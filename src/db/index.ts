@@ -99,9 +99,11 @@ async function ensureSchema(db: ReturnType<typeof drizzle>) {
     id text PRIMARY KEY,
     league_id text NOT NULL,
     season text NOT NULL,
+    start_time timestamp,
     settings jsonb
   );`);
   await db.execute(sql`CREATE INDEX IF NOT EXISTS drafts_league_idx ON drafts (league_id);`);
+  await db.execute(sql`ALTER TABLE drafts ADD COLUMN IF NOT EXISTS start_time timestamp;`);
   // draft_picks
   await db.execute(sql`CREATE TABLE IF NOT EXISTS draft_picks (
     draft_id text NOT NULL,

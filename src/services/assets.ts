@@ -53,6 +53,11 @@ export async function rebuildAssetEventsForLeagueFamily(rootLeagueId: string) {
 
   const events: NewAssetEvent[] = [];
 
+  // League seasons map for backfilling season on events
+  const leaguesRows = await db.select().from(leagues).where(inArray(leagues.id, leagueIds));
+  const leagueSeasonById = new Map<string, string>();
+  for (const lg of leaguesRows) leagueSeasonById.set(lg.id, String(lg.season));
+
   // Draft selections → player draft events + pick consumed events
   const draftsRows = await db.select().from(drafts).where(inArray(drafts.leagueId, leagueIds));
   for (const d of draftsRows) {
@@ -64,8 +69,8 @@ export async function rebuildAssetEventsForLeagueFamily(rootLeagueId: string) {
         events.push({
           leagueId: d.leagueId,
           season: String(d.season),
-          week: null,
-          eventTime: null,
+          week: 0,
+          eventTime: d.startTime ?? null,
           eventType: 'draft_selected',
           assetKind: 'player',
           playerId: p.playerId,
@@ -83,8 +88,8 @@ export async function rebuildAssetEventsForLeagueFamily(rootLeagueId: string) {
         events.push({
           leagueId: d.leagueId,
           season: String(d.season),
-          week: null,
-          eventTime: null,
+          week: 0,
+          eventTime: d.startTime ?? null,
           eventType: 'pick_selected',
           assetKind: 'pick',
           pickSeason: String(d.season),
@@ -105,6 +110,7 @@ export async function rebuildAssetEventsForLeagueFamily(rootLeagueId: string) {
   const txs = await db.select().from(transactions).where(inArray(transactions.leagueId, leagueIds));
   for (const t of txs) {
     const rosterMap = rosterOwnerMaps.get(t.leagueId) || new Map<number, string>();
+    const seasonForLeague = leagueSeasonById.get(t.leagueId) || null;
     const payload: any = t.payload || {};
     const week = t.week ?? null;
     const toSafeDate = (v: any): Date | null => {
@@ -126,7 +132,7 @@ export async function rebuildAssetEventsForLeagueFamily(rootLeagueId: string) {
       const toRosterId = Number(rosterIdRaw);
       events.push({
         leagueId: t.leagueId,
-        season: null,
+        season: seasonForLeague,
         week,
         eventTime,
         eventType: t.type === 'waiver' ? 'waiver_add' : t.type === 'free_agent' ? 'free_agent_add' : 'add',
@@ -144,7 +150,7 @@ export async function rebuildAssetEventsForLeagueFamily(rootLeagueId: string) {
       const fromRosterId = Number(rosterIdRaw);
       events.push({
         leagueId: t.leagueId,
-        season: null,
+        season: seasonForLeague,
         week,
         eventTime,
         eventType: t.type === 'waiver' ? 'waiver_drop' : t.type === 'free_agent' ? 'free_agent_drop' : 'drop',
@@ -168,7 +174,7 @@ export async function rebuildAssetEventsForLeagueFamily(rootLeagueId: string) {
         const fromRosterId = drops[pid] != null ? Number(drops[pid]) : null;
         events.push({
           leagueId: t.leagueId,
-          season: null,
+          season: seasonForLeague,
           week,
           eventTime,
           eventType: 'trade',

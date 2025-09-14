@@ -99,11 +99,21 @@ export async function syncLeague(leagueId: string, opts?: { season?: string; wee
 
   // Drafts and Draft Picks (non-week scoped)
   const leagueDrafts = await Sleeper.getDrafts(leagueId);
+  const toSafeDate = (v: any): Date | null => {
+    const n = Number(v);
+    if (!Number.isFinite(n) || n <= 0) return null;
+    const ms = n > 1e12 ? n : n * 1000;
+    const min = Date.UTC(2000, 0, 1);
+    const max = Date.UTC(2100, 0, 1);
+    if (ms < min || ms > max) return null;
+    return new Date(ms);
+  };
   if (Array.isArray(leagueDrafts) && leagueDrafts.length) {
     const draftRows = leagueDrafts.map((d: any) => ({
       id: String(d.draft_id ?? d.id ?? ''),
       leagueId,
       season: String(d.season ?? league.season ?? ''),
+      startTime: toSafeDate(d.start_time ?? d.start ?? null),
       settings: {
         type: d.type ?? null,
         status: d.status ?? null,

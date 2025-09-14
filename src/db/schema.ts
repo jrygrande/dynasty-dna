@@ -129,6 +129,7 @@ export const drafts = pgTable(
     id: text('id').primaryKey(),
     leagueId: text('league_id').notNull(),
     season: text('season').notNull(),
+    startTime: timestamp('start_time', { withTimezone: false }),
     settings: jsonb('settings'),
   },
   (t) => ({

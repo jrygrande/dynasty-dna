@@ -6,6 +6,7 @@ export type NewDraft = {
   id: string;
   leagueId: string;
   season: string;
+  startTime?: Date | null;
   settings?: unknown;
 };
 
@@ -16,6 +17,7 @@ export async function upsertDrafts(rows: NewDraft[]) {
     id: d.id,
     leagueId: d.leagueId,
     season: d.season,
+    startTime: d.startTime ?? null,
     settings: (d.settings ?? null) as any,
   }));
   await db
@@ -26,6 +28,7 @@ export async function upsertDrafts(rows: NewDraft[]) {
       set: {
         leagueId: sql`excluded.league_id`,
         season: sql`excluded.season`,
+        startTime: sql`excluded.start_time`,
         settings: sql`excluded.settings`,
       },
     });
