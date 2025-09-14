@@ -1,0 +1,18 @@
+version: '3.9'
+services:
+  db:
+    image: postgres:16
+    container_name: dynasty_dna_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: dynasty_dna
+    ports:
+      - '5432:5432'
+    volumes:
+      - db_data:/var/lib/postgresql/data
+      - ./sql/init.sql:/docker-entrypoint-initdb.d/00-init.sql:ro
+volumes:
+  db_data:
+
