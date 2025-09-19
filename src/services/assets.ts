@@ -225,3 +225,94 @@ export async function rebuildAssetEventsForLeagueFamily(rootLeagueId: string) {
   await replaceAssetEventsForLeagues(leagueIds, events);
   return { leagues: leagueIds.length, events: events.length };
 }
+
+export async function getPlayerInfo(playerId: string) {
+  const { getPlayer } = await import('@/repositories/players');
+  const player = await getPlayer(playerId);
+
+  if (player) {
+    return {
+      id: player.id,
+      name: player.name,
+      position: player.position,
+      team: player.team,
+      status: player.status,
+    };
+  }
+
+  // Fallback to mock data if not found in database
+  return {
+    id: playerId,
+    name: `Player ${playerId}`,
+    position: null,
+    team: null,
+    status: null,
+  };
+}
+
+async function batchFetchUsers(userIds: string[]): Promise<Map<string, any>> {
+  if (!userIds.length) return new Map();
+
+  const { getUserById } = await import('@/repositories/users');
+  const users = new Map<string, any>();
+
+  // Batch fetch users from database
+  const userPromises = userIds.map(async (userId) => {
+    const user = await getUserById(userId);
+    return { userId, user };
+  });
+
+  const results = await Promise.all(userPromises);
+
+  for (const { userId, user } of results) {
+    if (user) {
+      users.set(userId, {
+        id: user.id,
+        username: user.username,
+        displayName: user.displayName || user.username,
+      });
+    } else {
+      // Fallback for users not in database
+      users.set(userId, {
+        id: userId,
+        username: null,
+        displayName: `User ${userId}`,
+      });
+    }
+  }
+
+  return users;
+}
+
+export async function buildTimelineFromEvents(events: any[]) {
+  const db = await getDb();
+
+  // Get user information for roster owners
+  const userIds = new Set<string>();
+  for (const event of events) {
+    if (event.fromUserId) userIds.add(event.fromUserId);
+    if (event.toUserId) userIds.add(event.toUserId);
+  }
+
+  // Batch fetch real user data
+  const users = await batchFetchUsers(Array.from(userIds));
+
+  // Transform events to timeline format
+  const timeline = events.map(event => ({
+    id: event.id,
+    leagueId: event.leagueId,
+    season: event.season,
+    week: event.week,
+    eventTime: event.eventTime,
+    eventType: event.eventType,
+    fromRosterId: event.fromRosterId,
+    toRosterId: event.toRosterId,
+    fromUser: event.fromUserId ? users.get(event.fromUserId) || null : null,
+    toUser: event.toUserId ? users.get(event.toUserId) || null : null,
+    details: event.details,
+    transactionId: event.transactionId,
+    assetsInTransaction: [], // TODO: populate with related assets
+  }));
+
+  return timeline;
+}
