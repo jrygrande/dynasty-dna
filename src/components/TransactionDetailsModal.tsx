@@ -11,6 +11,7 @@ import { Separator } from '@/components/ui/separator';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Calendar, Clock, Users, ArrowRight } from 'lucide-react';
 import type { TimelineEvent } from '@/lib/api/assets';
+import { groupAssetsByRecipient, formatAssetName, getUserDisplayName } from '@/lib/utils/transactions';
 
 interface TransactionDetailsModalProps {
   event: TimelineEvent | null;
@@ -188,10 +189,33 @@ export default function TransactionDetailsModal({
                 <CardTitle className="text-lg">Assets Involved</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-sm text-gray-500">
-                  {event.assetsInTransaction.length} asset(s) in this transaction
+                <div className="space-y-4">
+                  {groupAssetsByRecipient(
+                    event.assetsInTransaction,
+                    event.fromUser,
+                    event.toUser,
+                    event.fromRosterId,
+                    event.toRosterId
+                  ).map(({ userId, user, assets: userAssets }) => {
+                    const userName = getUserDisplayName(user);
+                    const assetNames = userAssets.map(formatAssetName);
+
+                    return (
+                      <div key={userId} className="bg-blue-50 p-4 rounded-lg">
+                        <div className="font-medium text-blue-800 mb-2">
+                          {userName} received:
+                        </div>
+                        <div className="space-y-1">
+                          {assetNames.map((assetName, index) => (
+                            <Badge key={index} variant="outline" className="mr-2 mb-1">
+                              {assetName}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
-                {/* TODO: Render asset details here */}
               </CardContent>
             </Card>
           )}
