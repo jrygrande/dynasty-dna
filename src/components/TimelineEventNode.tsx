@@ -82,7 +82,7 @@ export default function TimelineEventNode({ event, onClick }: TimelineEventNodeP
   const handleClick = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    console.log('🔥 TimelineEventNode clicked:', event.eventType);
+    console.log('TimelineEventNode clicked:', event.eventType);
     onClick(event);
   };
 

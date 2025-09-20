@@ -80,20 +80,31 @@ const TradeDetailsSummary = ({ assets, mainUser, eventFromUser, eventToUser }: {
     }
   }
 
-  // If we still don't have proper user mapping, create a simplified view
+  // Enhanced fallback: analyze asset direction based on the main event context
   if (userAssets.size === 0 || Array.from(userAssets.values()).every(u => u.received.length === 0)) {
-    // Fallback: create a simple description based on what we know
     const picks = assets.filter(a => a.assetKind === 'pick');
     const players = assets.filter(a => a.assetKind === 'player');
 
+    // Try to determine direction from the main event
+    const fromUser = eventFromUser?.displayName || 'Unknown';
+    const toUser = eventToUser?.displayName || 'Unknown';
+
     return (
-      <div className="text-sm">
-        <strong>Trade involving:</strong><br/>
-        {players.map(p => formatAsset(p)).join(', ')}
-        {players.length > 0 && picks.length > 0 && ', '}
-        {picks.map(p => formatAsset(p)).join(', ')}
-        <br/>
-        <span className="text-gray-600 text-xs">Between {eventFromUser?.displayName || 'Unknown'} and {eventToUser?.displayName || 'Unknown'}</span>
+      <div className="text-xs space-y-2">
+        <div className="bg-green-50 p-2 rounded">
+          <div className="font-medium text-green-800">{toUser} received:</div>
+          <div className="text-green-700">
+            {players.map(p => formatAsset(p)).join(', ')}
+            {players.length > 0 && picks.length > 0 && ', '}
+            {picks.filter(p => p.eventType === 'trade').map(p => formatAsset(p)).join(', ')}
+          </div>
+        </div>
+        <div className="bg-red-50 p-2 rounded">
+          <div className="font-medium text-red-800">{fromUser} received:</div>
+          <div className="text-red-700">
+            {picks.filter(p => p.eventType === 'pick_trade').map(p => formatAsset(p)).join(', ') || 'Assets not fully tracked'}
+          </div>
+        </div>
       </div>
     );
   }
@@ -153,7 +164,7 @@ export default function PlayerTimelineClient({ data, conflicts, onAssetClick }: 
   const [modalEvents, setModalEvents] = useState<Map<string, TimelineEvent>>(new Map());
 
   const handleEventClick = (event: TimelineEvent) => {
-    console.log('Event clicked:', event);
+    console.log('Event clicked:', event.eventType);
     const modalId = `${event.eventType}-${event.transactionId || event.id}`;
     setOpenModals(prev => new Set(prev).add(modalId));
     setModalEvents(prev => new Map(prev).set(modalId, event));
@@ -225,9 +236,19 @@ export default function PlayerTimelineClient({ data, conflicts, onAssetClick }: 
         const event = modalEvents.get(modalId);
         if (!event) return null;
 
-        const zIndex = 50 + index * 10; // Stagger z-index for multiple modals
-        const offsetX = index * 30; // Slight horizontal offset
-        const offsetY = index * 30; // Slight vertical offset
+        const zIndex = 50 + index; // Simple z-index increment
+
+        // Arrange modals in a grid pattern to avoid overlap
+        const modalWidth = 350;
+        const modalHeight = 400;
+        const gap = 20;
+        const modalsPerRow = 3;
+
+        const row = Math.floor(index / modalsPerRow);
+        const col = index % modalsPerRow;
+
+        const left = 50 + col * (modalWidth + gap);
+        const top = 50 + row * (modalHeight + gap);
 
         return (
           <div
@@ -235,71 +256,53 @@ export default function PlayerTimelineClient({ data, conflicts, onAssetClick }: 
             className="fixed"
             style={{
               zIndex,
-              left: `calc(50% + ${offsetX}px)`,
-              top: `calc(50% + ${offsetY}px)`,
-              transform: 'translate(-50%, -50%)'
+              left: `${left}px`,
+              top: `${top}px`,
             }}
           >
-            <div className="bg-white p-6 rounded-lg max-w-2xl w-full shadow-2xl border-2 border-gray-300"
+            <div className="bg-white p-4 rounded-lg shadow-2xl border-2 border-gray-300"
               style={{
-                maxHeight: '80vh',
-                overflowY: 'auto',
-                minWidth: '500px'
+                width: `${modalWidth}px`,
+                height: `${modalHeight}px`,
+                overflowY: 'auto'
               }}
             >
-              <div className="flex justify-between items-center mb-4">
-                <h2 className="text-xl font-bold">Transaction Details</h2>
+              <div className="flex justify-between items-center mb-3">
+                <h3 className="text-lg font-bold">Trade Details</h3>
                 <button
                   onClick={() => handleCloseModal(modalId)}
-                  className="text-gray-500 hover:text-gray-700 text-2xl font-bold"
+                  className="text-gray-500 hover:text-gray-700 text-xl font-bold"
                 >
                   ×
                 </button>
               </div>
 
-              <div className="space-y-3">
-                <p><strong>Event Type:</strong> {event.eventType}</p>
-                <p><strong>Season:</strong> {event.season}</p>
-                <p><strong>Week:</strong> {event.week}</p>
-                <p><strong>From:</strong> {event.fromUser?.displayName || 'N/A'}</p>
-                <p><strong>To:</strong> {event.toUser?.displayName || 'N/A'}</p>
+              <div className="space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Season:</span>
+                  <span>{event.season} W{event.week}</span>
+                </div>
+                <div className="border-t pt-2">
+                  <div className="text-xs text-gray-500 mb-1">Trade Partners</div>
+                  <div className="font-medium">{event.fromUser?.displayName || 'Unknown'}</div>
+                  <div className="text-center text-gray-400 text-xs">↕</div>
+                  <div className="font-medium">{event.toUser?.displayName || 'Unknown'}</div>
+                </div>
 
                 {/* Enhanced Trade Summary */}
-                {event.assetsInTransaction && event.assetsInTransaction.length > 0 && (
-                  <div>
-                    <strong>Complete Trade Details:</strong>
-                    <div className="mt-2 p-3 bg-blue-50 rounded-lg">
-                      <TradeDetailsSummary
-                        assets={event.assetsInTransaction}
-                        mainUser={event.toUser}
-                        eventFromUser={event.fromUser}
-                        eventToUser={event.toUser}
-                      />
-                    </div>
-
-                    <details className="mt-3">
-                      <summary className="cursor-pointer text-sm font-medium text-gray-600">Show All Assets</summary>
-                      <ul className="mt-2 space-y-1 text-sm">
-                        {event.assetsInTransaction.map((asset: any, idx: number) => (
-                          <li key={idx} className="bg-gray-50 p-2 rounded">
-                            <div className="flex justify-between">
-                              <span>
-                                {asset.assetKind === 'player' ? (
-                                  `Player: ${asset.playerId}`
-                                ) : (
-                                  `${asset.pickSeason} Round ${asset.pickRound} Pick`
-                                )}
-                              </span>
-                              <span className="text-gray-500">
-                                {asset.eventType === 'trade' && asset.fromUserId && asset.toUserId
-                                  ? `${asset.fromUserId} → ${asset.toUserId}`
-                                  : asset.eventType}
-                              </span>
-                            </div>
-                          </li>
-                        ))}
-                      </ul>
-                    </details>
+                {event.assetsInTransaction && event.assetsInTransaction.length > 0 ? (
+                  <div className="border-t pt-2">
+                    <div className="text-xs text-gray-500 mb-2">Trade Details</div>
+                    <TradeDetailsSummary
+                      assets={event.assetsInTransaction}
+                      mainUser={event.toUser}
+                      eventFromUser={event.fromUser}
+                      eventToUser={event.toUser}
+                    />
+                  </div>
+                ) : (
+                  <div className="border-t pt-2">
+                    <div className="text-xs text-gray-500">No detailed asset information available</div>
                   </div>
                 )}
               </div>
