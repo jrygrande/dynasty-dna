@@ -43,19 +43,26 @@ const getPlayerName = async (event: TimelineEvent, currentPlayerId?: string): Pr
     playerId = currentPlayerId;
   }
 
-  // If we have a player ID, fetch the actual player data
+  // If we have a player ID, fetch the actual player data via API
   if (playerId) {
     try {
-      const { getPlayer } = await import('@/repositories/players');
-      const player = await getPlayer(playerId);
-      if (player) {
-        return player.name;
+      console.log('Fetching player via API:', playerId);
+      const response = await fetch(`/api/players/${playerId}`);
+      if (response.ok) {
+        const player = await response.json();
+        console.log('Player data from API:', player);
+        if (player && player.name) {
+          return player.name;
+        }
+      } else {
+        console.error('API request failed:', response.status, response.statusText);
       }
     } catch (error) {
-      console.error('Failed to fetch player:', error);
+      console.error('Failed to fetch player via API:', error);
     }
 
-    // Fallback to formatted asset name if database fetch fails
+    // Fallback to formatted asset name if API fetch fails
+    console.log('Falling back to formatAssetName for player:', playerId);
     return formatAssetName({ assetKind: 'player', playerId });
   }
 
