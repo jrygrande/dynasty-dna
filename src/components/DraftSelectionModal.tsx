@@ -14,6 +14,7 @@ interface DraftSelectionModalProps {
   event: TimelineEvent;
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
+  playerId?: string; // Current player context for the timeline
 }
 
 const formatDate = (dateString: string | null): string => {
@@ -26,7 +27,7 @@ const formatDate = (dateString: string | null): string => {
   });
 };
 
-const getPlayerName = (event: TimelineEvent): string => {
+const getPlayerName = (event: TimelineEvent, currentPlayerId?: string): string => {
   // For draft events, the player being drafted is represented by the event details
   // We can derive the player ID from the context of which player timeline we're viewing
 
@@ -38,14 +39,18 @@ const getPlayerName = (event: TimelineEvent): string => {
     }
   }
 
-  // For the Brandon Aiyuk timeline (player 6803), we know this is his draft
-  // In a real implementation, you'd pass the current player context or query the player
-  return formatAssetName({ assetKind: 'player', playerId: '6803' });
+  // Use the current player context from the timeline
+  if (currentPlayerId) {
+    return formatAssetName({ assetKind: 'player', playerId: currentPlayerId });
+  }
+
+  // Fallback to unknown player
+  return 'Unknown Player';
 };
 
-export default function DraftSelectionModal({ event, isOpen, onOpenChange }: DraftSelectionModalProps) {
+export default function DraftSelectionModal({ event, isOpen, onOpenChange, playerId }: DraftSelectionModalProps) {
   const managerName = getUserDisplayName(event.toUser);
-  const playerName = getPlayerName(event);
+  const playerName = getPlayerName(event, playerId);
 
   // Extract draft details
   const details = (event.details || {}) as any;

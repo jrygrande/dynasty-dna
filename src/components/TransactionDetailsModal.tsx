@@ -7,12 +7,14 @@ interface TransactionDetailsModalProps {
   event: TimelineEvent | null;
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
+  playerId?: string; // Current player context for the timeline
 }
 
 export default function TransactionDetailsModal({
   event,
   isOpen,
-  onOpenChange
+  onOpenChange,
+  playerId
 }: TransactionDetailsModalProps) {
   if (!event) return null;
 
@@ -36,6 +38,7 @@ export default function TransactionDetailsModal({
         event={event}
         isOpen={isOpen}
         onOpenChange={onOpenChange}
+        playerId={playerId}
       />
     );
   }

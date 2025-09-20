@@ -75,10 +75,6 @@ export function groupAssetsByRecipient(assets: any[], fromUser?: any, toUser?: a
 
 export function formatAssetName(asset: any): string {
   if (asset.assetKind === 'player') {
-    // Special case for known players
-    if (asset.playerId === '6803') {
-      return 'Brandon Aiyuk';
-    }
     // Use playerName if available, otherwise fall back to playerId
     return asset.playerName || `Player ${asset.playerId || asset.id}`;
   } else if (asset.assetKind === 'pick') {

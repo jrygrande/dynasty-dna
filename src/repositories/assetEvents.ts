@@ -135,5 +135,20 @@ export async function getAssetsInTransaction(transactionId: string) {
     .where(eq(assetEvents.transactionId, transactionId))
     .orderBy(assetEvents.assetKind, assetEvents.playerId, assetEvents.pickSeason, assetEvents.pickRound);
 
-  return rows;
+  // Get player names for player assets
+  const { getPlayersByIds } = await import('@/repositories/players');
+  const playerIds = rows
+    .filter(row => row.assetKind === 'player' && row.playerId)
+    .map(row => row.playerId as string);
+
+  const players = playerIds.length > 0 ? await getPlayersByIds(playerIds) : [];
+  const playerMap = new Map(players.map(p => [p.id, p]));
+
+  // Enhance rows with player information
+  return rows.map(row => ({
+    ...row,
+    playerName: row.assetKind === 'player' && row.playerId ? playerMap.get(row.playerId)?.name || null : null,
+    playerPosition: row.assetKind === 'player' && row.playerId ? playerMap.get(row.playerId)?.position || null : null,
+    playerTeam: row.assetKind === 'player' && row.playerId ? playerMap.get(row.playerId)?.team || null : null,
+  }));
 }

@@ -145,6 +145,7 @@ export default function PlayerTimelineClient({ data, conflicts, onAssetClick }: 
         event={selectedEvent}
         isOpen={isModalOpen}
         onOpenChange={setIsModalOpen}
+        playerId={data.player.id}
       />
     </div>
   );

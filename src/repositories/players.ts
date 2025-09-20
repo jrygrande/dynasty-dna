@@ -1,6 +1,6 @@
 import { getDb, persistDb } from '@/db/index';
 import { players } from '@/db/schema';
-import { eq, sql } from 'drizzle-orm';
+import { eq, sql, inArray } from 'drizzle-orm';
 
 export async function upsertPlayer(p: { id: string; name: string; position?: string | null; team?: string | null; status?: string | null }) {
   const db = await getDb();
@@ -15,6 +15,13 @@ export async function getPlayer(id: string) {
   const db = await getDb();
   const [row] = await db.select().from(players).where(eq(players.id, id)).limit(1);
   return row ?? null;
+}
+
+export async function getPlayersByIds(ids: string[]) {
+  if (!ids.length) return [];
+  const db = await getDb();
+  const rows = await db.select().from(players).where(inArray(players.id, ids));
+  return rows;
 }
 
 export type PlayerUpsert = {
