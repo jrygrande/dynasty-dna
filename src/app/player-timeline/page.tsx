@@ -43,7 +43,7 @@ export default async function PlayerTimelinePage({ searchParams }: PageProps) {
 
   try {
     data = await fetchPlayerTimeline({
-      baseUrl: process.env.NODE_ENV === 'development' ? 'http://localhost:3002' : undefined,
+      baseUrl: process.env.NODE_ENV === 'development' ? 'http://localhost:3005' : undefined,
       leagueId,
       playerId,
       playerName
