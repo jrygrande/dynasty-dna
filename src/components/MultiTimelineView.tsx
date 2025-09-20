@@ -27,6 +27,26 @@ interface MultiTimelineViewProps {
 }
 
 export default function MultiTimelineView({ initialTimeline, leagueId }: MultiTimelineViewProps) {
+  const [timelines, setTimelines] = useState<Timeline[]>([
+    {
+      id: 'initial',
+      title: initialTimeline.data.player.name,
+      data: initialTimeline.data,
+      loading: false,
+      error: null,
+      asset: {
+        id: initialTimeline.data.player.id,
+        assetKind: 'player',
+        eventType: '',
+        playerName: initialTimeline.data.player.name,
+        playerPosition: initialTimeline.data.player.position,
+        playerTeam: initialTimeline.data.player.team,
+        playerId: initialTimeline.data.player.id,
+      }
+    }
+  ]);
+  const [activeTab, setActiveTab] = useState('initial');
+
   const loadTimelineForAsset = useCallback(async (asset: TimelineAsset): Promise<PlayerTimelineResponse> => {
     if (asset.assetKind === 'player') {
       const url = new URL('/api/assets/timeline/player', window.location.origin);
@@ -65,25 +85,6 @@ export default function MultiTimelineView({ initialTimeline, leagueId }: MultiTi
       return data;
     }
   }, [leagueId]);
-  const [timelines, setTimelines] = useState<Timeline[]>([
-    {
-      id: 'initial',
-      title: initialTimeline.data.player.name,
-      data: initialTimeline.data,
-      loading: false,
-      error: null,
-      asset: {
-        id: initialTimeline.data.player.id,
-        assetKind: 'player',
-        eventType: '',
-        playerName: initialTimeline.data.player.name,
-        playerPosition: initialTimeline.data.player.position,
-        playerTeam: initialTimeline.data.player.team,
-        playerId: initialTimeline.data.player.id,
-      }
-    }
-  ]);
-  const [activeTab, setActiveTab] = useState('initial');
 
   const handleAssetClick = useCallback(async (asset: TimelineAsset) => {
     const timelineId = `${asset.assetKind}-${asset.id}`;

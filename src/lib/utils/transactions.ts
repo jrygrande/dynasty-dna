@@ -10,7 +10,7 @@ export interface AssetsByUser {
   assets: TimelineAsset[];
 }
 
-export function groupAssetsByRecipient(assets: any[], fromUser?: any, toUser?: any, fromRosterId?: number, toRosterId?: number): AssetsByUser[] {
+export function groupAssetsByRecipient(assets: any[], fromUser?: any, toUser?: any, fromRosterId?: number | null, toRosterId?: number | null): AssetsByUser[] {
   const userMap = new Map<string, AssetsByUser>();
 
   // Create a mapping from roster IDs to users
