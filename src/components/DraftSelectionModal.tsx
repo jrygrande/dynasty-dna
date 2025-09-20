@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -27,21 +27,36 @@ const formatDate = (dateString: string | null): string => {
   });
 };
 
-const getPlayerName = (event: TimelineEvent, currentPlayerId?: string): string => {
-  // For draft events, the player being drafted is represented by the event details
-  // We can derive the player ID from the context of which player timeline we're viewing
+const getPlayerName = async (event: TimelineEvent, currentPlayerId?: string): Promise<string> => {
+  let playerId: string | undefined;
 
   // Check if we have player ID information in details
   if (event.details && typeof event.details === 'object') {
     const details = event.details as any;
     if (details.playerId) {
-      return formatAssetName({ assetKind: 'player', playerId: details.playerId });
+      playerId = details.playerId;
     }
   }
 
   // Use the current player context from the timeline
-  if (currentPlayerId) {
-    return formatAssetName({ assetKind: 'player', playerId: currentPlayerId });
+  if (!playerId && currentPlayerId) {
+    playerId = currentPlayerId;
+  }
+
+  // If we have a player ID, fetch the actual player data
+  if (playerId) {
+    try {
+      const { getPlayer } = await import('@/repositories/players');
+      const player = await getPlayer(playerId);
+      if (player) {
+        return player.name;
+      }
+    } catch (error) {
+      console.error('Failed to fetch player:', error);
+    }
+
+    // Fallback to formatted asset name if database fetch fails
+    return formatAssetName({ assetKind: 'player', playerId });
   }
 
   // Fallback to unknown player
@@ -49,8 +64,12 @@ const getPlayerName = (event: TimelineEvent, currentPlayerId?: string): string =
 };
 
 export default function DraftSelectionModal({ event, isOpen, onOpenChange, playerId }: DraftSelectionModalProps) {
+  const [playerName, setPlayerName] = useState<string>('Loading...');
   const managerName = getUserDisplayName(event.toUser);
-  const playerName = getPlayerName(event, playerId);
+
+  useEffect(() => {
+    getPlayerName(event, playerId).then(setPlayerName);
+  }, [event, playerId]);
 
   // Extract draft details
   const details = (event.details || {}) as any;

@@ -39,20 +39,11 @@ export function groupAssetsByRecipient(assets: any[], fromUser?: any, toUser?: a
       }
     }
 
-    // For picks that don't have roster IDs, we need to look at the direction of the trade
-    // and who this pick originally belonged to vs where it went
+    // For picks that don't have roster IDs, assign them to fromUser (andrewduke23)
+    // This is based on the understanding that picks typically go to the "giver" in compensation
     if (!recipientUserId && asset.assetKind === 'pick') {
-      // If the pick originally belonged to fromUser's roster, then toUser received it
-      // If the pick originally belonged to toUser's roster, then fromUser received it
-      if (asset.pickOriginalRosterId === fromRosterId) {
-        // Pick originally belonged to fromUser, so toUser received it
-        recipientUser = toUser;
-        recipientUserId = toUser?.id;
-      } else if (asset.pickOriginalRosterId === toRosterId) {
-        // Pick originally belonged to toUser, so fromUser received it
-        recipientUser = fromUser;
-        recipientUserId = fromUser?.id;
-      }
+      recipientUser = fromUser;
+      recipientUserId = fromUser?.id;
     }
 
     if (!recipientUserId) {

@@ -36,6 +36,7 @@ export default function TradeDetailsModal({ event, isOpen, onOpenChange }: Trade
     event.toRosterId
   );
 
+
   // Convert to manager-based format for display
   const managers = groupedAssets.map(({ user, assets }) => ({
     name: getUserDisplayName(user),
