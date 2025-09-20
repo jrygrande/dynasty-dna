@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getLeagueFamily } from '@/services/assets';
+import { getLeagueFamily, buildTimelineFromEvents, getPlayerInfo } from '@/services/assets';
 import { getPlayerTimeline } from '@/repositories/assetEvents';
 
 export async function GET(req: NextRequest) {
@@ -10,9 +10,25 @@ export async function GET(req: NextRequest) {
     if (!leagueId || !playerId) {
       return NextResponse.json({ ok: false, error: 'leagueId and playerId required' }, { status: 400 });
     }
+
+    console.log(`Fetching timeline for player ${playerId} in league ${leagueId}`);
     const family = await getLeagueFamily(leagueId);
+    console.log(`League family: ${family.length} leagues`);
+
     const events = await getPlayerTimeline(family, playerId);
-    return NextResponse.json({ ok: true, events, family });
+    console.log(`Found ${events.length} events for player ${playerId}`);
+
+    const timeline = await buildTimelineFromEvents(events);
+    const player = await getPlayerInfo(playerId);
+
+    // Always return success, even if no events found
+    return NextResponse.json({
+      ok: true,
+      events: events || [],
+      family,
+      player,
+      timeline: timeline || []
+    });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message || 'timeline failed' }, { status: 500 });
   }

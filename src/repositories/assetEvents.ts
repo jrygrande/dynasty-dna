@@ -124,3 +124,16 @@ export async function topPicksByEventCount(leagueIds: string[], limit = 5) {
     .limit(limit);
   return rows;
 }
+
+export async function getAssetsInTransaction(transactionId: string) {
+  if (!transactionId) return [];
+
+  const db = await getDb();
+  const rows = await db
+    .select()
+    .from(assetEvents)
+    .where(eq(assetEvents.transactionId, transactionId))
+    .orderBy(assetEvents.assetKind, assetEvents.playerId, assetEvents.pickSeason, assetEvents.pickRound);
+
+  return rows;
+}

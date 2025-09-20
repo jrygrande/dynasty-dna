@@ -297,6 +297,24 @@ export async function buildTimelineFromEvents(events: any[]) {
   // Batch fetch real user data
   const users = await batchFetchUsers(Array.from(userIds));
 
+  // Get transaction assets with simplified approach
+  const { getAssetsInTransaction } = await import('@/repositories/assetEvents');
+  const transactionIds = Array.from(new Set(events.map(e => e.transactionId).filter(Boolean)));
+  const transactionAssetsMap = new Map<string, any[]>();
+
+  // Only fetch assets for the first few transactions to avoid performance issues
+  const limitedTransactionIds = transactionIds.slice(0, 5);
+
+  for (const transactionId of limitedTransactionIds) {
+    try {
+      const assets = await getAssetsInTransaction(transactionId);
+      transactionAssetsMap.set(transactionId, assets);
+    } catch (error) {
+      console.error(`Failed to fetch assets for transaction ${transactionId}:`, error);
+      transactionAssetsMap.set(transactionId, []);
+    }
+  }
+
   // Transform events to timeline format
   const timeline = events.map(event => ({
     id: event.id,
@@ -311,7 +329,7 @@ export async function buildTimelineFromEvents(events: any[]) {
     toUser: event.toUserId ? users.get(event.toUserId) || null : null,
     details: event.details,
     transactionId: event.transactionId,
-    assetsInTransaction: [], // TODO: populate with related assets
+    assetsInTransaction: event.transactionId ? (transactionAssetsMap.get(event.transactionId) || []) : [],
   }));
 
   return timeline;

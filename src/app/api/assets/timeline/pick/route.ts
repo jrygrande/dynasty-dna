@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getLeagueFamily } from '@/services/assets';
+import { getLeagueFamily, buildTimelineFromEvents } from '@/services/assets';
 import { getPickTimeline } from '@/repositories/assetEvents';
 
 export async function GET(req: NextRequest) {
@@ -16,7 +16,24 @@ export async function GET(req: NextRequest) {
     const originalRosterId = Number(originalRosterIdStr);
     const family = await getLeagueFamily(leagueId);
     const events = await getPickTimeline(family, season, round, originalRosterId);
-    return NextResponse.json({ ok: true, events, family });
+    const timeline = await buildTimelineFromEvents(events);
+
+    // Create a synthetic player object for the pick
+    const pickPlayer = {
+      id: `pick-${season}-${round}-${originalRosterId}`,
+      name: `${season} Round ${round} Pick`,
+      position: null,
+      team: null,
+      status: null,
+    };
+
+    return NextResponse.json({
+      ok: true,
+      events,
+      family,
+      player: pickPlayer,
+      timeline
+    });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message || 'timeline failed' }, { status: 500 });
   }

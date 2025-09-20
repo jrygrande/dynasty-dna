@@ -1,0 +1,23 @@
+
+> dynasty-dna@0.0.0 dev
+> next dev
+
+ ⨯ Failed to start server
+Error: listen EPERM: operation not permitted 0.0.0.0:3002
+    at Server.setupListenHandle [as _listen2] (node:net:1918:21)
+    at listenInCluster (node:net:1997:12)
+    at Server.listen (node:net:2102:7)
+    at /Users/ryan/projects/dynasty-dna/node_modules/next/dist/server/lib/start-server.js:280:16
+    at new Promise (<anonymous>)
+    at startServer (/Users/ryan/projects/dynasty-dna/node_modules/next/dist/server/lib/start-server.js:191:11)
+    at /Users/ryan/projects/dynasty-dna/node_modules/next/dist/server/lib/start-server.js:310:52
+    at Span.traceAsyncFn (/Users/ryan/projects/dynasty-dna/node_modules/next/dist/trace/trace.js:154:26)
+    at process.<anonymous> (/Users/ryan/projects/dynasty-dna/node_modules/next/dist/server/lib/start-server.js:310:35)
+    at process.emit (node:events:508:28) {
+  code: 'EPERM',
+  errno: -1,
+  syscall: 'listen',
+  address: '0.0.0.0',
+  port: 3002
+}
+[?25h
