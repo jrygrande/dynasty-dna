@@ -32,6 +32,14 @@ export const timelineAssetSchema = z.object({
   details: z.unknown().optional(),
 });
 
+export const performanceMetricsSchema = z.object({
+  startingPercentage: z.number(),
+  ppg: z.number(),
+  startingPpg: z.number(),
+  weekCount: z.number(),
+  season: z.string(),
+});
+
 export const timelineEventSchema = z.object({
   id: z.string(),
   leagueId: z.string(),
@@ -46,6 +54,7 @@ export const timelineEventSchema = z.object({
   details: z.unknown().nullable(),
   transactionId: z.string().nullable(),
   assetsInTransaction: z.array(timelineAssetSchema).optional(),
+  performanceMetrics: z.array(performanceMetricsSchema).optional(),
 });
 
 export const playerSummarySchema = z.object({
@@ -68,6 +77,7 @@ export type TimelineAsset = z.infer<typeof timelineAssetSchema>;
 export type TimelineEvent = z.infer<typeof timelineEventSchema>;
 export type PlayerSummary = z.infer<typeof playerSummarySchema>;
 export type PlayerTimelineResponse = z.infer<typeof playerTimelineResponseSchema>;
+export type PerformanceMetrics = z.infer<typeof performanceMetricsSchema>;
 
 const errorMatchSchema = z.object({
   id: z.string(),

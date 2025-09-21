@@ -10,7 +10,7 @@ import type {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import SimpleTimeline from '@/components/SimpleTimeline';
+import PerformanceTimeline from '@/components/PerformanceTimeline';
 import TransactionDetailsModal from '@/components/TransactionDetailsModal';
 import { groupAssetsByRecipient, formatAssetName, getUserDisplayName } from '@/lib/utils/transactions';
 
@@ -129,8 +129,8 @@ export default function PlayerTimelineClient({ data, conflicts, onAssetClick }: 
           </div>
         </CardHeader>
         <CardContent>
-          {/* Timeline Visualization */}
-          <SimpleTimeline
+          {/* Timeline Visualization with Performance Metrics */}
+          <PerformanceTimeline
             events={data.timeline}
             onEventClick={handleEventClick}
           />
