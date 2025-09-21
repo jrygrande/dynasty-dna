@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getLeagueFamily, buildTimelineFromEvents, getPlayerInfo } from '@/services/assets';
 import { getPlayerTimeline } from '@/repositories/assetEvents';
+import { getPlayerPerformancePeriods } from '@/services/playerPerformance';
 
 export async function GET(req: NextRequest) {
   try {
@@ -21,13 +22,17 @@ export async function GET(req: NextRequest) {
     const timeline = await buildTimelineFromEvents(events);
     const player = await getPlayerInfo(playerId);
 
+    // Get performance data for each period between transactions
+    const performance = await getPlayerPerformancePeriods(timeline, family, playerId);
+
     // Always return success, even if no events found
     return NextResponse.json({
       ok: true,
       events: events || [],
       family,
       player,
-      timeline: timeline || []
+      timeline: timeline || [],
+      performance: performance || []
     });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message || 'timeline failed' }, { status: 500 });

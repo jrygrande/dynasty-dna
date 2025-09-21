@@ -1,6 +1,6 @@
 import { getDb, persistDb } from '@/db/index';
 import { playerScores } from '@/db/schema';
-import { eq, sql, and } from 'drizzle-orm';
+import { eq, sql, and, gte, lte } from 'drizzle-orm';
 
 export type PlayerScoreUpsert = {
   leagueId: string;
@@ -86,4 +86,26 @@ export async function upsertPlayerScoresBulk(rows: PlayerScoreUpsert[]) {
 
   await persistDb();
   return total;
+}
+
+export async function getPlayerScoresForPeriod(params: {
+  leagueId: string;
+  playerId: string;
+  rosterId: number;
+  startWeek: number;
+  endWeek: number | null; // null means through end of season
+}) {
+  const db = await getDb();
+  const conditions = [
+    eq(playerScores.leagueId, params.leagueId),
+    eq(playerScores.playerId, params.playerId),
+    eq(playerScores.rosterId, params.rosterId),
+    gte(playerScores.week, params.startWeek)
+  ];
+
+  if (params.endWeek !== null) {
+    conditions.push(lte(playerScores.week, params.endWeek));
+  }
+
+  return await db.select().from(playerScores).where(and(...conditions));
 }
