@@ -1,6 +1,6 @@
 import { getDb, persistDb } from '@/db/index';
 import { playerScores } from '@/db/schema';
-import { eq, sql, and, gte, lte, inArray } from 'drizzle-orm';
+import { eq, sql, and, gte, lte, inArray, ne } from 'drizzle-orm';
 
 export type PlayerScoreUpsert = {
   leagueId: string;
@@ -95,6 +95,7 @@ export async function getPlayerScoresForPeriod(params: {
   startWeek: number;
   endWeek: number | null; // null means through end of season
   currentWeek?: { season: string; week: number }; // for filtering future weeks
+  excludeByeWeek?: boolean; // if true, detect and exclude bye week
 }) {
   const db = await getDb();
   const conditions = [
@@ -120,6 +121,22 @@ export async function getPlayerScoresForPeriod(params: {
 
     if (leagueSeason === params.currentWeek.season) {
       conditions.push(lte(playerScores.week, Math.min(params.currentWeek.week, 17)));
+    }
+  }
+
+  // If bye week exclusion is requested, detect and exclude bye week
+  if (params.excludeByeWeek) {
+    const { getLeagueSeasonMap } = await import('@/repositories/leagues');
+    const { detectByeWeek } = await import('@/services/byeWeekDetection');
+
+    const seasonMap = await getLeagueSeasonMap([params.leagueId]);
+    const leagueSeason = seasonMap.get(params.leagueId);
+
+    if (leagueSeason) {
+      const byeWeek = await detectByeWeek(params.leagueId, params.playerId, leagueSeason);
+      if (byeWeek !== null) {
+        conditions.push(ne(playerScores.week, byeWeek));
+      }
     }
   }
 

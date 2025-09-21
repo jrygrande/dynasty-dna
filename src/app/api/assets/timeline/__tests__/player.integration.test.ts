@@ -90,9 +90,9 @@ describe('Player Timeline API Integration', () => {
       expect(period.metrics.starterPct).toBeLessThanOrEqual(100);
     }
 
-    // Verify all seasons exclude week 18 (playoffs) - max 17 games
+    // Verify all seasons exclude week 18 (playoffs) and bye weeks - max 16 games
     for (const period of data.performance) {
-      expect(period.metrics.gamesPlayed).toBeLessThanOrEqual(17); // Max 17 games (no week 18)
+      expect(period.metrics.gamesPlayed).toBeLessThanOrEqual(16); // Max 16 games (no week 18, no bye week)
       expect(period.metrics.gamesStarted).toBeLessThanOrEqual(period.metrics.gamesPlayed);
     }
 

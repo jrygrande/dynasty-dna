@@ -191,7 +191,8 @@ export async function getPlayerPerformancePeriods(
       rosterId: period.rosterId,
       startWeek: period.startWeek,
       endWeek: period.endWeek,
-      currentWeek
+      currentWeek,
+      excludeByeWeek: true
     });
 
     // Calculate metrics using the scores data structure
