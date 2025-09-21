@@ -5,6 +5,7 @@ import { upsertUser } from '@/repositories/users';
 import { upsertTransactions } from '@/repositories/transactions';
 import { upsertMatchups } from '@/repositories/matchups';
 import { upsertDrafts, upsertDraftPicks, replaceTradedPicks } from '@/repositories/drafts';
+import { upsertPlayerScoresBulk } from '@/repositories/playerScores';
 
 export type SyncResult = {
   leagueId: string;
@@ -12,6 +13,7 @@ export type SyncResult = {
   rosters: number;
   transactions: number;
   matchups: number;
+  playerScores: number;
   drafts: number;
   draftPicks: number;
   tradedPicks: number;
@@ -64,6 +66,7 @@ export async function syncLeague(leagueId: string, opts?: { season?: string; wee
 
   let txCount = 0;
   let matchupCount = 0;
+  let playerScoresCount = 0;
   let draftsCount = 0;
   let draftPicksCount = 0;
   let tradedPicksCount = 0;
@@ -94,6 +97,56 @@ export async function syncLeague(leagueId: string, opts?: { season?: string; wee
       points: m.points ?? 0,
     }));
     matchupCount += await upsertMatchups(muRows);
+
+    // Player Scores - extract from matchup data
+    const playerScoreRows: Array<{
+      leagueId: string;
+      week: number;
+      rosterId: number;
+      playerId: string;
+      points: number;
+      isStarter: boolean;
+    }> = [];
+
+    for (const m of mus) {
+      const rosterId = Number(m.roster_id);
+      const starters = Array.isArray(m.starters) ? m.starters : [];
+      const startersPoints = Array.isArray(m.starters_points) ? m.starters_points : [];
+      const playersPoints = m.players_points && typeof m.players_points === 'object' ? m.players_points : {};
+
+      // Add starter scores
+      starters.forEach((playerId: string, index: number) => {
+        if (playerId && startersPoints[index] !== undefined) {
+          playerScoreRows.push({
+            leagueId,
+            week,
+            rosterId,
+            playerId: String(playerId),
+            points: Number(startersPoints[index]) || 0,
+            isStarter: true,
+          });
+        }
+      });
+
+      // Add bench player scores
+      Object.entries(playersPoints).forEach(([playerId, points]) => {
+        if (playerId && !starters.includes(playerId)) {
+          playerScoreRows.push({
+            leagueId,
+            week,
+            rosterId,
+            playerId: String(playerId),
+            points: Number(points) || 0,
+            isStarter: false,
+          });
+        }
+      });
+    }
+
+    if (playerScoreRows.length > 0) {
+      playerScoresCount += await upsertPlayerScoresBulk(playerScoreRows);
+    }
+
     await updateJobProgress(jobId, week);
   }
 
@@ -178,6 +231,7 @@ export async function syncLeague(leagueId: string, opts?: { season?: string; wee
     rosters: leagueRosters.length,
     transactions: txCount,
     matchups: matchupCount,
+    playerScores: playerScoresCount,
     drafts: draftsCount,
     draftPicks: draftPicksCount,
     tradedPicks: tradedPicksCount,

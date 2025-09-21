@@ -179,6 +179,18 @@ async function ensureSchema(db: ReturnType<typeof drizzle>) {
     created_at timestamp NOT NULL DEFAULT now()
   );`);
   await db.execute(sql`CREATE UNIQUE INDEX IF NOT EXISTS metric_snapshots_unique ON metric_snapshots (league_id, manager_id, metric, scope);`);
+  // player_scores
+  await db.execute(sql`CREATE TABLE IF NOT EXISTS player_scores (
+    league_id text NOT NULL,
+    week integer NOT NULL,
+    roster_id integer NOT NULL,
+    player_id text NOT NULL,
+    points numeric(10,2) NOT NULL DEFAULT 0,
+    is_starter boolean NOT NULL DEFAULT false,
+    CONSTRAINT player_scores_pk PRIMARY KEY (league_id, week, roster_id, player_id)
+  );`);
+  await db.execute(sql`CREATE INDEX IF NOT EXISTS player_scores_league_week_idx ON player_scores (league_id, week);`);
+  await db.execute(sql`CREATE INDEX IF NOT EXISTS player_scores_player_idx ON player_scores (player_id);`);
   // job_runs
   await db.execute(sql`CREATE TABLE IF NOT EXISTS job_runs (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

@@ -112,3 +112,16 @@ CREATE TABLE IF NOT EXISTS metric_snapshots (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS metric_snapshots_unique ON metric_snapshots (league_id, manager_id, metric, scope);
 
+-- player_scores
+CREATE TABLE IF NOT EXISTS player_scores (
+  league_id text NOT NULL,
+  week integer NOT NULL,
+  roster_id integer NOT NULL,
+  player_id text NOT NULL,
+  points numeric(10,2) NOT NULL DEFAULT 0,
+  is_starter boolean NOT NULL DEFAULT false,
+  CONSTRAINT player_scores_pk PRIMARY KEY (league_id, week, roster_id, player_id)
+);
+CREATE INDEX IF NOT EXISTS player_scores_league_week_idx ON player_scores (league_id, week);
+CREATE INDEX IF NOT EXISTS player_scores_player_idx ON player_scores (player_id);
+

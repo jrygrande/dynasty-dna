@@ -171,6 +171,23 @@ export const tradedPicks = pgTable(
 );
 
 // Normalized events for asset timelines (players and future picks)
+export const playerScores = pgTable(
+  'player_scores',
+  {
+    leagueId: text('league_id').notNull(),
+    week: integer('week').notNull(),
+    rosterId: integer('roster_id').notNull(),
+    playerId: text('player_id').notNull(),
+    points: numeric('points', { precision: 10, scale: 2 }).notNull().default('0'),
+    isStarter: boolean('is_starter').notNull().default(false),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.leagueId, t.week, t.rosterId, t.playerId], name: 'player_scores_pk' }),
+    leagueWeekIdx: index('player_scores_league_week_idx').on(t.leagueId, t.week),
+    playerIdx: index('player_scores_player_idx').on(t.playerId),
+  })
+);
+
 export const assetEvents = pgTable(
   'asset_events',
   {
