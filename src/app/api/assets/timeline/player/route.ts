@@ -26,8 +26,46 @@ export async function GET(req: NextRequest) {
     // Get performance data for each period between transactions
     const performance = await getPlayerPerformancePeriods(timeline, family, playerId);
 
-    // Attach performance metrics to timeline events
-    const timelineWithPerformance = timeline.map((event, index) => {
+    // Create a comprehensive timeline that includes both transaction events and continuation periods
+    const allTimelineEvents = [...timeline];
+
+    // Add virtual events for continuation periods that don't have corresponding timeline events
+    const continuationPeriods = performance.filter(p => p.fromEvent.startsWith('continuation-'));
+
+    for (const period of continuationPeriods) {
+      // Create a virtual "season continuation" event
+      const virtualEvent = {
+        id: period.fromEvent,
+        leagueId: period.leagueId,
+        season: period.season,
+        week: 1, // Start of season
+        eventTime: `${period.season}-01-01T00:00:00.000Z`, // Approximate start of season
+        eventType: 'season_continuation',
+        fromRosterId: null,
+        toRosterId: period.rosterId,
+        fromUser: null,
+        toUser: null, // We don't have user info for continuation periods
+        details: { isContinuation: true },
+        transactionId: null,
+        assetsInTransaction: []
+      };
+
+      allTimelineEvents.push(virtualEvent);
+    }
+
+    // Sort all events chronologically
+    allTimelineEvents.sort((a, b) => {
+      const seasonA = parseInt(a.season || '0');
+      const seasonB = parseInt(b.season || '0');
+      if (seasonA !== seasonB) return seasonA - seasonB;
+
+      const weekA = a.week || 0;
+      const weekB = b.week || 0;
+      return weekA - weekB;
+    });
+
+    // Attach performance metrics to all timeline events
+    const timelineWithPerformance = allTimelineEvents.map((event, index) => {
       // Find performance periods that correspond to this event
       const eventPerformancePeriods = performance.filter(p => p.fromEvent === event.id);
 

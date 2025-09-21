@@ -25,6 +25,8 @@ const getEventColor = (eventType: string): string => {
       return 'bg-red-500 hover:bg-red-600';
     case 'pick_selected':
       return 'bg-purple-500 hover:bg-purple-600';
+    case 'season_continuation':
+      return 'bg-indigo-500 hover:bg-indigo-600';
     default:
       return 'bg-gray-500 hover:bg-gray-600';
   }
@@ -51,6 +53,8 @@ const getEventIcon = (eventType: string): string => {
       return '⬇️';
     case 'pick_selected':
       return '🎯';
+    case 'season_continuation':
+      return '📅';
     default:
       return '📌';
   }
