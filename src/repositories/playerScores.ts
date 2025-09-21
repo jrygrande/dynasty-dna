@@ -94,6 +94,7 @@ export async function getPlayerScoresForPeriod(params: {
   rosterId: number;
   startWeek: number;
   endWeek: number | null; // null means through end of season
+  currentWeek?: { season: string; week: number }; // for filtering future weeks
 }) {
   const db = await getDb();
   const conditions = [
@@ -105,6 +106,21 @@ export async function getPlayerScoresForPeriod(params: {
 
   if (params.endWeek !== null) {
     conditions.push(lte(playerScores.week, params.endWeek));
+  }
+
+  // Always exclude week 18 (playoffs) from performance metrics
+  conditions.push(lte(playerScores.week, 17));
+
+  // If current week is provided and this league is in the current season,
+  // exclude weeks beyond the current week
+  if (params.currentWeek) {
+    const { getLeagueSeasonMap } = await import('@/repositories/leagues');
+    const seasonMap = await getLeagueSeasonMap([params.leagueId]);
+    const leagueSeason = seasonMap.get(params.leagueId);
+
+    if (leagueSeason === params.currentWeek.season) {
+      conditions.push(lte(playerScores.week, Math.min(params.currentWeek.week, 17)));
+    }
   }
 
   return await db.select().from(playerScores).where(and(...conditions));

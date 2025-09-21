@@ -89,5 +89,17 @@ describe('Player Timeline API Integration', () => {
       expect(period.metrics.starterPct).toBeGreaterThanOrEqual(0);
       expect(period.metrics.starterPct).toBeLessThanOrEqual(100);
     }
+
+    // Verify all seasons exclude week 18 (playoffs) - max 17 games
+    for (const period of data.performance) {
+      expect(period.metrics.gamesPlayed).toBeLessThanOrEqual(17); // Max 17 games (no week 18)
+      expect(period.metrics.gamesStarted).toBeLessThanOrEqual(period.metrics.gamesPlayed);
+    }
+
+    // Verify current season (2025) shows reasonable game counts for current week
+    const currentSeasonPeriod = data.performance.find((p: any) => p.season === '2025');
+    if (currentSeasonPeriod) {
+      expect(currentSeasonPeriod.metrics.gamesPlayed).toBeLessThanOrEqual(3); // Should be around current week
+    }
   });
 });

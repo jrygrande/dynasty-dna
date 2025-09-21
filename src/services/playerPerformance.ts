@@ -161,6 +161,11 @@ export async function getPlayerPerformancePeriods(
   // Import repository functions
   const { getLeagueSeasonMap } = await import('@/repositories/leagues');
   const { getPlayerScoresForPeriod } = await import('@/repositories/playerScores');
+  const { getNFLState } = await import('@/repositories/state');
+
+  // Get current NFL state to filter out future weeks
+  const currentNFLState = await getNFLState();
+  const currentWeek = currentNFLState ? { season: currentNFLState.season, week: currentNFLState.week } : undefined;
 
   // Get league->season mapping
   const seasonMap = await getLeagueSeasonMap(leagueFamily);
@@ -185,7 +190,8 @@ export async function getPlayerPerformancePeriods(
       playerId,
       rosterId: period.rosterId,
       startWeek: period.startWeek,
-      endWeek: period.endWeek
+      endWeek: period.endWeek,
+      currentWeek
     });
 
     // Calculate metrics using the scores data structure
