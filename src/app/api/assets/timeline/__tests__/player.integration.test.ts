@@ -59,4 +59,35 @@ describe('Player Timeline API Integration', () => {
     const responseTime = endTime - startTime;
     expect(responseTime).toBeLessThan(2000); // Should complete in under 2 seconds
   });
+
+  test('includes performance data for all seasons player was active', async () => {
+    const response = await fetch('http://localhost:3005/api/assets/timeline/player?leagueId=1191596293294166016&playerId=4866');
+    const data = await response.json();
+
+    expect(response.ok).toBe(true);
+    expect(data.performance).toBeDefined();
+    expect(Array.isArray(data.performance)).toBe(true);
+
+    // Should have performance data for all seasons (2021-2025)
+    const seasons = data.performance.map((p: any) => p.season).sort();
+    expect(seasons).toEqual(['2021', '2021', '2022', '2023', '2024', '2025']);
+
+    // Check continuation flags are correct
+    const continuationPeriods = data.performance.filter((p: any) => p.isContinuation);
+    expect(continuationPeriods.length).toBeGreaterThan(0); // Should have continuation periods
+
+    // Verify continuation periods are for seasons after 2021
+    for (const period of continuationPeriods) {
+      expect(period.season).not.toBe('2021'); // 2021 had actual transactions
+      expect(period.isContinuation).toBe(true);
+    }
+
+    // Verify metrics are reasonable for continuation periods
+    for (const period of continuationPeriods) {
+      expect(period.metrics.ppg).toBeGreaterThan(0);
+      expect(period.metrics.gamesPlayed).toBeGreaterThan(0);
+      expect(period.metrics.starterPct).toBeGreaterThanOrEqual(0);
+      expect(period.metrics.starterPct).toBeLessThanOrEqual(100);
+    }
+  });
 });

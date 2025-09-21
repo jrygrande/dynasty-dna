@@ -17,6 +17,7 @@ export interface PerformancePeriod {
   startWeek: number;
   endWeek: number | null;
   metrics: PerformanceMetrics;
+  isContinuation?: boolean; // true if this period continues from previous season without transaction
   bySeasons?: Array<{
     season: string;
     leagueId: string;

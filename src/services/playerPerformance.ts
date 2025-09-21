@@ -82,6 +82,77 @@ export function extractOwnershipPeriods(events: TimelineEvent[]): OwnershipPerio
   return periods;
 }
 
+export async function fillSeasonGaps(
+  ownershipPeriods: OwnershipPeriod[],
+  leagueFamily: string[],
+  seasonMap: Map<string, string>,
+  playerId: string
+): Promise<OwnershipPeriod[]> {
+  // Import repository function
+  const { getPlayerActivityByLeague } = await import('@/repositories/playerScores');
+
+  // Get all player activity across league family
+  const playerActivity = await getPlayerActivityByLeague(leagueFamily, playerId);
+
+  // Group activity by season and determine roster ownership
+  const activityBySeason = new Map<string, { leagueId: string; rosterId: number; minWeek: number; maxWeek: number; weekCount: number }>();
+  for (const activity of playerActivity) {
+    const season = seasonMap.get(activity.leagueId);
+    if (season) {
+      activityBySeason.set(season, {
+        leagueId: activity.leagueId,
+        rosterId: activity.rosterId,
+        minWeek: activity.minWeek,
+        maxWeek: activity.maxWeek,
+        weekCount: activity.weekCount
+      });
+    }
+  }
+
+  // Create a set of covered season/league combinations from existing ownership periods
+  const coveredSeasons = new Set<string>();
+  for (const period of ownershipPeriods) {
+    coveredSeasons.add(`${period.season}-${period.leagueId}`);
+  }
+
+  // Add periods for uncovered seasons where player was active
+  const allPeriods = [...ownershipPeriods];
+
+  for (const [season, activity] of activityBySeason) {
+    const seasonKey = `${season}-${activity.leagueId}`;
+
+    if (!coveredSeasons.has(seasonKey)) {
+      // Find the most recent ownership to determine user
+      const lastKnownPeriod = ownershipPeriods
+        .filter(p => p.rosterId === activity.rosterId)
+        .sort((a, b) => (a.season || '').localeCompare(b.season || ''))
+        .pop();
+
+      // Create a continuation period for this season
+      allPeriods.push({
+        fromEventId: `continuation-${season}-${activity.leagueId}`,
+        toEventId: null,
+        leagueId: activity.leagueId,
+        season,
+        rosterId: activity.rosterId,
+        ownerUserId: lastKnownPeriod?.ownerUserId || 'unknown',
+        startWeek: activity.minWeek,
+        endWeek: activity.maxWeek
+      });
+    }
+  }
+
+  // Sort periods chronologically
+  return allPeriods.sort((a, b) => {
+    const seasonA = a.season || '';
+    const seasonB = b.season || '';
+    if (seasonA !== seasonB) {
+      return seasonA.localeCompare(seasonB);
+    }
+    return a.startWeek - b.startWeek;
+  });
+}
+
 export async function getPlayerPerformancePeriods(
   timeline: TimelineEvent[],
   leagueFamily: string[],
@@ -97,9 +168,12 @@ export async function getPlayerPerformancePeriods(
   // Extract ownership periods from timeline
   const ownershipPeriods = extractOwnershipPeriods(timeline);
 
+  // Fill in gaps for seasons where player continued on same roster
+  const allOwnershipPeriods = await fillSeasonGaps(ownershipPeriods, leagueFamily, seasonMap, playerId);
+
   const performancePeriods: PerformancePeriod[] = [];
 
-  for (const period of ownershipPeriods) {
+  for (const period of allOwnershipPeriods) {
     // Skip if startWeek > endWeek (same week trade situation)
     if (period.endWeek !== null && period.startWeek > period.endWeek) {
       continue;
@@ -129,6 +203,9 @@ export async function getPlayerPerformancePeriods(
     // Use season from mapping, or fall back to period season
     const season = seasonMap.get(period.leagueId) || period.season;
 
+    // Determine if this is a continuation period (generated to fill season gap)
+    const isContinuation = period.fromEventId.startsWith('continuation-');
+
     performancePeriods.push({
       fromEvent: period.fromEventId,
       toEvent: period.toEventId,
@@ -138,7 +215,8 @@ export async function getPlayerPerformancePeriods(
       ownerUserId: period.ownerUserId,
       startWeek: period.startWeek,
       endWeek: period.endWeek,
-      metrics
+      metrics,
+      isContinuation: isContinuation || undefined // only include if true
     });
   }
 

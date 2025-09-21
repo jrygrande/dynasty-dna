@@ -1,6 +1,6 @@
 import { getDb, persistDb } from '@/db/index';
 import { playerScores } from '@/db/schema';
-import { eq, sql, and, gte, lte } from 'drizzle-orm';
+import { eq, sql, and, gte, lte, inArray } from 'drizzle-orm';
 
 export type PlayerScoreUpsert = {
   leagueId: string;
@@ -108,4 +108,37 @@ export async function getPlayerScoresForPeriod(params: {
   }
 
   return await db.select().from(playerScores).where(and(...conditions));
+}
+
+export async function getPlayerActivityByLeague(
+  leagueIds: string[],
+  playerId: string
+): Promise<Array<{
+  leagueId: string;
+  rosterId: number;
+  weekCount: number;
+  minWeek: number;
+  maxWeek: number;
+}>> {
+  if (!leagueIds.length) return [];
+
+  const db = await getDb();
+  const rows = await db
+    .select({
+      leagueId: playerScores.leagueId,
+      rosterId: playerScores.rosterId,
+      weekCount: sql<number>`count(*)`,
+      minWeek: sql<number>`min(week)`,
+      maxWeek: sql<number>`max(week)`
+    })
+    .from(playerScores)
+    .where(
+      and(
+        inArray(playerScores.leagueId, leagueIds),
+        eq(playerScores.playerId, playerId)
+      )
+    )
+    .groupBy(playerScores.leagueId, playerScores.rosterId);
+
+  return rows;
 }
