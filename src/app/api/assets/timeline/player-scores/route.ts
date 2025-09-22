@@ -145,10 +145,21 @@ export async function GET(req: NextRequest) {
 
     // Map enriched transaction events to their continuous positions with complete data
     const transactionsWithPositions = enrichedTimeline.map(event => {
-      // Find the position for this transaction based on season and week
-      const matchingScore = scoresWithPositions.find(s =>
-        s.season === event.season && s.week === event.week
-      );
+      let position: number | null = null;
+
+      if (event.week === 0) {
+        // Draft events (week 0) - position at the start of their season
+        const seasonBoundary = seasonBoundaries.get(event.season || '');
+        if (seasonBoundary) {
+          position = seasonBoundary.start - 0.5; // Position slightly before the season starts
+        }
+      } else {
+        // Regular season events - find matching score position
+        const matchingScore = scoresWithPositions.find(s =>
+          s.season === event.season && s.week === event.week
+        );
+        position = matchingScore ? matchingScore.position : null;
+      }
 
       // Use enriched timeline data with complete asset and user information
       return {
@@ -165,7 +176,7 @@ export async function GET(req: NextRequest) {
         details: event.details,
         transactionId: event.transactionId,
         assetsInTransaction: event.assetsInTransaction || [], // Full enriched assets
-        position: matchingScore ? matchingScore.position : null
+        position
       };
     }).filter(t => t.position !== null);
 
