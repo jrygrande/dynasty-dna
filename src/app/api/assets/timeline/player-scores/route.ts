@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getLeagueFamily, getPlayerInfo } from '@/services/assets';
+import { getLeagueFamily, getPlayerInfo, buildTimelineFromEvents } from '@/services/assets';
 import { getPlayerTimeline } from '@/repositories/assetEvents';
 import { getPlayerScores } from '@/repositories/playerScores';
 import { getLeagueSeasonMap } from '@/repositories/leagues';
@@ -76,7 +76,20 @@ export async function GET(req: NextRequest) {
     }
 
     // Get transaction events for timeline markers
-    const events = await getPlayerTimeline(family, playerId);
+    let events = [];
+    let enrichedTimeline = [];
+    try {
+      events = await getPlayerTimeline(family, playerId);
+      console.log(`Found ${events.length} events for player ${playerId}`);
+
+      // Build enriched timeline with full asset and user details for modal functionality
+      enrichedTimeline = await buildTimelineFromEvents(events);
+      console.log(`Enriched ${enrichedTimeline.length} timeline events`);
+    } catch (error) {
+      console.error('Error fetching player timeline:', error);
+      events = []; // Continue with empty events array
+      enrichedTimeline = [];
+    }
 
     // Create ordered seasons from league family (oldest to newest)
     const seasons = Array.from(new Set(allScores.map(s => s.season)))
@@ -128,13 +141,14 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Map transactions to their continuous positions
-    const transactionsWithPositions = events.map(event => {
+    // Map enriched transaction events to their continuous positions with complete data
+    const transactionsWithPositions = enrichedTimeline.map(event => {
       // Find the position for this transaction based on season and week
       const matchingScore = scoresWithPositions.find(s =>
         s.season === event.season && s.week === event.week
       );
 
+      // Use enriched timeline data with complete asset and user information
       return {
         id: event.id,
         leagueId: event.leagueId,
@@ -142,8 +156,13 @@ export async function GET(req: NextRequest) {
         week: event.week,
         eventTime: event.eventTime,
         eventType: event.eventType,
+        fromRosterId: event.fromRosterId,
+        toRosterId: event.toRosterId,
+        fromUser: event.fromUser || null,
+        toUser: event.toUser || null,
         details: event.details,
         transactionId: event.transactionId,
+        assetsInTransaction: event.assetsInTransaction || [], // Full enriched assets
         position: matchingScore ? matchingScore.position : null
       };
     }).filter(t => t.position !== null);

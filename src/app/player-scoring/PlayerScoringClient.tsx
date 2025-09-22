@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import ScoringBarChart from '@/components/ScoringBarChart';
 import TransactionDetailsModal from '@/components/TransactionDetailsModal';
+import type { TimelineEvent } from '@/lib/api/assets';
 
 interface PlayerScoringResponse {
   ok: boolean;
@@ -29,15 +30,7 @@ interface PlayerScoringResponse {
       ownerName: string;
       ownerId?: string;
     }>;
-    transactions: Array<{
-      id: string;
-      leagueId: string;
-      season: string | null;
-      week: number | null;
-      eventTime: string | null;
-      eventType: string;
-      details: any;
-      transactionId: string | null;
+    transactions: Array<TimelineEvent & {
       position: number;
     }>;
     seasonBoundaries: Array<{
@@ -64,7 +57,7 @@ export default function PlayerScoringClient({ leagueId, playerId, playerName }: 
   const [data, setData] = useState<PlayerScoringResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedTransaction, setSelectedTransaction] = useState<any>(null);
+  const [selectedTransaction, setSelectedTransaction] = useState<TimelineEvent | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   useEffect(() => {
@@ -105,7 +98,7 @@ export default function PlayerScoringClient({ leagueId, playerId, playerName }: 
     }
   }, [leagueId, playerId, playerName]);
 
-  const handleTransactionClick = (transaction: any) => {
+  const handleTransactionClick = (transaction: TimelineEvent) => {
     setSelectedTransaction(transaction);
     setIsModalOpen(true);
   };

@@ -1,6 +1,7 @@
 'use client';
 
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Cell, LabelList } from 'recharts';
+import type { TimelineEvent } from '@/lib/api/assets';
 
 interface Score {
   leagueId: string;
@@ -14,15 +15,7 @@ interface Score {
   ownerId?: string;
 }
 
-interface Transaction {
-  id: string;
-  leagueId: string;
-  season: string | null;
-  week: number | null;
-  eventTime: string | null;
-  eventType: string;
-  details: any;
-  transactionId: string | null;
+interface TransactionWithPosition extends TimelineEvent {
   position: number;
 }
 
@@ -40,10 +33,10 @@ interface RosterLegendItem {
 
 interface ScoringBarChartProps {
   scores: Score[];
-  transactions: Transaction[];
+  transactions: TransactionWithPosition[];
   seasonBoundaries: SeasonBoundary[];
   rosterLegend: RosterLegendItem[];
-  onTransactionClick?: (transaction: Transaction) => void;
+  onTransactionClick?: (transaction: TimelineEvent) => void;
 }
 
 interface ChartDataPoint {
@@ -56,7 +49,7 @@ interface ChartDataPoint {
   ownerName: string;
   ownerId?: string;
   hasTransaction: boolean;
-  transactions: Transaction[];
+  transactions: TransactionWithPosition[];
   fill: string;
 }
 
@@ -79,7 +72,7 @@ export default function ScoringBarChart({ scores, transactions, seasonBoundaries
   };
 
   // Create a map of transactions by position for quick lookup
-  const transactionsByPosition = new Map<number, Transaction[]>();
+  const transactionsByPosition = new Map<number, TransactionWithPosition[]>();
   transactions.forEach(transaction => {
     const existing = transactionsByPosition.get(transaction.position) || [];
     existing.push(transaction);
@@ -138,7 +131,10 @@ export default function ScoringBarChart({ scores, transactions, seasonBoundaries
     if (point.hasTransaction && onTransactionClick) {
       // For simplicity, just click on the first transaction
       // Could be enhanced to show a list if multiple transactions
-      onTransactionClick(point.transactions[0]);
+      const transaction = point.transactions[0];
+      // Remove the position property to pass clean TimelineEvent
+      const { position, ...timelineEvent } = transaction;
+      onTransactionClick(timelineEvent);
     }
   };
 
@@ -217,18 +213,26 @@ export default function ScoringBarChart({ scores, transactions, seasonBoundaries
               <LabelList
                 dataKey="hasTransaction"
                 content={({ x, y, width, value, payload }) => {
-                  if (!value) return null;
+                  if (!value || !payload) return null;
                   const data = payload as ChartDataPoint;
+                  if (!data.hasTransaction) return null;
                   return (
                     <text
                       x={Number(x) + Number(width) / 2}
-                      y={Number(y) - 5}
+                      y={Number(y) - 8}
                       textAnchor="middle"
                       fill="#dc2626"
-                      fontSize="12"
+                      fontSize="14"
                       fontWeight="bold"
                       style={{ cursor: 'pointer' }}
-                      onClick={() => handleBarClick(data)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (data.hasTransaction && onTransactionClick && data.transactions?.length > 0) {
+                          const transaction = data.transactions[0];
+                          const { position, ...timelineEvent } = transaction;
+                          onTransactionClick(timelineEvent);
+                        }
+                      }}
                     >
                       ●
                     </text>
