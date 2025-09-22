@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Cell } from 'recharts';
+import { ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Cell } from 'recharts';
 import type { TimelineEvent } from '@/lib/api/assets';
 import TransactionTimeline from './TransactionTimeline';
 
@@ -64,6 +64,8 @@ interface ChartDataPoint {
   hasTransaction: boolean;
   transactions: TransactionWithPosition[];
   fill: string;
+  median?: number;
+  topDecile?: number;
 }
 
 export default function ScoringBarChart({ scores, transactions, seasonBoundaries, rosterLegend, benchmarks = [], playerPosition, onTransactionClick }: ScoringBarChartProps) {
@@ -93,10 +95,20 @@ export default function ScoringBarChart({ scores, transactions, seasonBoundaries
     transactionsByPosition.set(transaction.position, existing);
   });
 
-  // Prepare chart data with roster-based coloring
+  // Create a map of benchmarks by position for quick lookup
+  const benchmarksByPosition = new Map<number, { median: number; topDecile: number }>();
+  benchmarks.forEach(benchmark => {
+    benchmarksByPosition.set(benchmark.position, {
+      median: benchmark.median,
+      topDecile: benchmark.topDecile
+    });
+  });
+
+  // Prepare chart data with roster-based coloring and benchmark data
   const chartData: ChartDataPoint[] = scores.map(score => {
     const positionTransactions = transactionsByPosition.get(score.position) || [];
     const hasTransaction = positionTransactions.length > 0;
+    const benchmarkData = benchmarksByPosition.get(score.position);
 
     return {
       position: score.position,
@@ -112,7 +124,9 @@ export default function ScoringBarChart({ scores, transactions, seasonBoundaries
       // Use roster-based colors: grey for bench, roster color for starters
       fill: score.isStarter
         ? generateRosterColor(score.rosterId)
-        : 'rgba(107, 114, 128, 0.4)' // Grey for bench
+        : 'rgba(107, 114, 128, 0.4)', // Grey for bench
+      median: benchmarkData?.median,
+      topDecile: benchmarkData?.topDecile
     };
   });
 
@@ -193,15 +207,15 @@ export default function ScoringBarChart({ scores, transactions, seasonBoundaries
         {benchmarks.length > 0 && playerPosition && (
           <div className="flex flex-wrap gap-4 text-sm border-t pt-2">
             <div className="font-medium text-gray-700 mr-2">
-              {playerPosition} Benchmarks:
+              {playerPosition} Weekly Benchmarks:
             </div>
             <div className="flex items-center gap-2">
-              <div className="w-6 h-0.5 bg-amber-500" style={{ borderTop: '2px dashed #f59e0b' }}></div>
-              <span>Position Median</span>
+              <div className="w-6 h-0.5 bg-amber-500"></div>
+              <span>Weekly Position Median</span>
             </div>
             <div className="flex items-center gap-2">
-              <div className="w-6 h-0.5 bg-emerald-500" style={{ borderTop: '2px dashed #10b981', borderStyle: 'dashed' }}></div>
-              <span>Elite (Top 10%)</span>
+              <div className="w-6 h-0.5 bg-emerald-500"></div>
+              <span>Weekly Elite (Top 10%)</span>
             </div>
           </div>
         )}
@@ -209,7 +223,7 @@ export default function ScoringBarChart({ scores, transactions, seasonBoundaries
 
       <div ref={chartContainerRef} className="w-full h-96">
         <ResponsiveContainer width="100%" height="100%">
-          <BarChart
+          <ComposedChart
             data={chartData}
             margin={{ top: 20, right: 30, left: 20, bottom: 60 }}
           >
@@ -246,35 +260,23 @@ export default function ScoringBarChart({ scores, transactions, seasonBoundaries
               ))}
             </Bar>
 
-            {/* Add benchmark reference lines */}
-            {benchmarks.length > 0 && (
-              <React.Fragment>
-                {/* Calculate overall median and elite averages for horizontal lines */}
-                {(() => {
-                  const medianAvg = benchmarks.reduce((sum, b) => sum + b.median, 0) / benchmarks.length;
-                  const eliteAvg = benchmarks.reduce((sum, b) => sum + b.topDecile, 0) / benchmarks.length;
-
-                  return (
-                    <React.Fragment>
-                      {/* Horizontal median line */}
-                      <ReferenceLine
-                        y={medianAvg}
-                        stroke="#f59e0b"
-                        strokeWidth={2}
-                        strokeDasharray="5 5"
-                      />
-                      {/* Horizontal elite line */}
-                      <ReferenceLine
-                        y={eliteAvg}
-                        stroke="#10b981"
-                        strokeWidth={2}
-                        strokeDasharray="3 6"
-                      />
-                    </React.Fragment>
-                  );
-                })()}
-              </React.Fragment>
-            )}
+            {/* Add smooth benchmark lines */}
+            <Line
+              type="monotone"
+              dataKey="median"
+              stroke="#f59e0b"
+              strokeWidth={2}
+              dot={false}
+              connectNulls={false}
+            />
+            <Line
+              type="monotone"
+              dataKey="topDecile"
+              stroke="#10b981"
+              strokeWidth={2}
+              dot={false}
+              connectNulls={false}
+            />
 
             {/* Add season boundary lines */}
             {seasonBoundaries.map(boundary => (
@@ -286,7 +288,7 @@ export default function ScoringBarChart({ scores, transactions, seasonBoundaries
                 strokeDasharray="2 2"
               />
             ))}
-          </BarChart>
+          </ComposedChart>
         </ResponsiveContainer>
       </div>
 
