@@ -27,6 +27,7 @@ export function groupAssetsByRecipient(assets: any[], fromUser?: any, toUser?: a
     let recipientUser = null;
     let recipientUserId = null;
 
+    // First try roster-based assignment (for players)
     if (asset.toRosterId && rosterToUser.has(asset.toRosterId)) {
       recipientUser = rosterToUser.get(asset.toRosterId);
       recipientUserId = recipientUser.id;
@@ -39,11 +40,15 @@ export function groupAssetsByRecipient(assets: any[], fromUser?: any, toUser?: a
       }
     }
 
-    // For picks that don't have roster IDs, assign them to fromUser (andrewduke23)
-    // This is based on the understanding that picks typically go to the "giver" in compensation
-    if (!recipientUserId && asset.assetKind === 'pick') {
-      recipientUser = fromUser;
-      recipientUserId = fromUser?.id;
+    // If no roster-based assignment found, try direct user ID assignment (for picks)
+    if (!recipientUserId && asset.toUserId) {
+      if (asset.toUserId === fromUser?.id) {
+        recipientUser = fromUser;
+        recipientUserId = fromUser.id;
+      } else if (asset.toUserId === toUser?.id) {
+        recipientUser = toUser;
+        recipientUserId = toUser.id;
+      }
     }
 
     if (!recipientUserId) {
