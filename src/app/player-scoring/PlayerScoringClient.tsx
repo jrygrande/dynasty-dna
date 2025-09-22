@@ -43,6 +43,14 @@ interface PlayerScoringResponse {
       ownerName: string;
       ownerId?: string;
     }>;
+    benchmarks?: Array<{
+      season: string;
+      week: number;
+      position: number;
+      median: number;
+      topDecile: number;
+      sampleSize: number;
+    }>;
   };
   error?: string;
 }
@@ -181,6 +189,8 @@ export default function PlayerScoringClient({ leagueId, playerId, playerName }: 
             transactions={data.timeline.transactions}
             seasonBoundaries={data.timeline.seasonBoundaries}
             rosterLegend={data.timeline.rosterLegend}
+            benchmarks={data.timeline.benchmarks}
+            playerPosition={data.player.position || undefined}
             onTransactionClick={handleTransactionClick}
           />
         </CardContent>

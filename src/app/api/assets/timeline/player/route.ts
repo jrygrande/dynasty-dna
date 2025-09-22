@@ -75,7 +75,7 @@ export async function GET(req: NextRequest) {
         eventPerformancePeriods.forEach(period => {
           // If period has bySeasons data (spans multiple seasons), use that
           if (period.bySeasons && period.bySeasons.length > 0) {
-            period.bySeasons.forEach(seasonData => {
+            period.bySeasons.forEach((seasonData: any) => {
               performanceMetrics.push({
                 startingPercentage: Math.round(seasonData.metrics.starterPct * 10) / 10,
                 ppg: Math.round(seasonData.metrics.ppg * 100) / 100,

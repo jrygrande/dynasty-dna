@@ -3,6 +3,7 @@ import { getLeagueFamily, getPlayerInfo, buildTimelineFromEvents } from '@/servi
 import { getPlayerTimeline } from '@/repositories/assetEvents';
 import { getPlayerScores } from '@/repositories/playerScores';
 import { getLeagueSeasonMap } from '@/repositories/leagues';
+import { calculatePositionalBenchmarks } from '@/services/positionalBenchmarks';
 import { getDb } from '@/db/index';
 import { rosters, users } from '@/db/schema';
 import { and, inArray, eq } from 'drizzle-orm';
@@ -76,8 +77,8 @@ export async function GET(req: NextRequest) {
     }
 
     // Get transaction events for timeline markers
-    let events = [];
-    let enrichedTimeline = [];
+    let events: any[] = [];
+    let enrichedTimeline: any[] = [];
     try {
       events = await getPlayerTimeline(family, playerId);
       console.log(`Found ${events.length} events for player ${playerId}`);
@@ -167,6 +168,31 @@ export async function GET(req: NextRequest) {
       };
     }).filter(t => t.position !== null);
 
+    // Calculate positional benchmarks if player position is available
+    let benchmarks: any[] = [];
+    if (player?.position && scoresWithPositions.length > 0) {
+      console.log(`Calculating benchmarks for ${player.position} position`);
+
+      try {
+        const playerScoreWeeks = scoresWithPositions.map(score => ({
+          season: score.season,
+          week: score.week,
+          position: score.position
+        }));
+
+        benchmarks = await calculatePositionalBenchmarks(
+          family,
+          player.position,
+          playerScoreWeeks
+        );
+
+        console.log(`Calculated ${benchmarks.length} benchmark weeks for ${player.position}`);
+      } catch (error) {
+        console.error('Error calculating positional benchmarks:', error);
+        benchmarks = [];
+      }
+    }
+
     // Create roster legend mapping
     const rosterLegend = Array.from(
       new Set(scoresWithPositions.map(s => s.rosterId))
@@ -188,7 +214,8 @@ export async function GET(req: NextRequest) {
         start: boundary.start,
         end: boundary.end
       })),
-      rosterLegend
+      rosterLegend,
+      benchmarks
     };
 
     return NextResponse.json({

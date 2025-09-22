@@ -33,11 +33,22 @@ interface RosterLegendItem {
   ownerId?: string;
 }
 
+interface WeeklyBenchmark {
+  season: string;
+  week: number;
+  position: number;
+  median: number;
+  topDecile: number;
+  sampleSize: number;
+}
+
 interface ScoringBarChartProps {
   scores: Score[];
   transactions: TransactionWithPosition[];
   seasonBoundaries: SeasonBoundary[];
   rosterLegend: RosterLegendItem[];
+  benchmarks?: WeeklyBenchmark[];
+  playerPosition?: string;
   onTransactionClick?: (transaction: TimelineEvent) => void;
 }
 
@@ -55,7 +66,7 @@ interface ChartDataPoint {
   fill: string;
 }
 
-export default function ScoringBarChart({ scores, transactions, seasonBoundaries, rosterLegend, onTransactionClick }: ScoringBarChartProps) {
+export default function ScoringBarChart({ scores, transactions, seasonBoundaries, rosterLegend, benchmarks = [], playerPosition, onTransactionClick }: ScoringBarChartProps) {
   const chartContainerRef = React.useRef<HTMLDivElement>(null);
   // Create a color palette for different roster IDs
   const generateRosterColor = (rosterId: number): string => {
@@ -160,20 +171,40 @@ export default function ScoringBarChart({ scores, transactions, seasonBoundaries
 
   return (
     <div className="w-full">
-      <div className="mb-4 flex flex-wrap gap-4 text-sm">
-        <div className="flex items-center gap-2">
-          <div className="w-4 h-4 bg-gray-500 opacity-40 rounded"></div>
-          <span>Bench</span>
-        </div>
-        {rosterLegend.map((roster) => (
-          <div key={roster.rosterId} className="flex items-center gap-2">
-            <div
-              className="w-4 h-4 rounded"
-              style={{ backgroundColor: generateRosterColor(roster.rosterId) }}
-            ></div>
-            <span>{roster.ownerName}</span>
+      <div className="mb-4 space-y-2">
+        {/* Player/Team Legend */}
+        <div className="flex flex-wrap gap-4 text-sm">
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 bg-gray-500 opacity-40 rounded"></div>
+            <span>Bench</span>
           </div>
-        ))}
+          {rosterLegend.map((roster) => (
+            <div key={roster.rosterId} className="flex items-center gap-2">
+              <div
+                className="w-4 h-4 rounded"
+                style={{ backgroundColor: generateRosterColor(roster.rosterId) }}
+              ></div>
+              <span>{roster.ownerName}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* Benchmark Legend */}
+        {benchmarks.length > 0 && playerPosition && (
+          <div className="flex flex-wrap gap-4 text-sm border-t pt-2">
+            <div className="font-medium text-gray-700 mr-2">
+              {playerPosition} Benchmarks:
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-6 h-0.5 bg-amber-500" style={{ borderTop: '2px dashed #f59e0b' }}></div>
+              <span>Position Median</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-6 h-0.5 bg-emerald-500" style={{ borderTop: '2px dashed #10b981', borderStyle: 'dashed' }}></div>
+              <span>Elite (Top 10%)</span>
+            </div>
+          </div>
+        )}
       </div>
 
       <div ref={chartContainerRef} className="w-full h-96">
@@ -214,6 +245,36 @@ export default function ScoringBarChart({ scores, transactions, seasonBoundaries
                 <Cell key={`cell-${index}`} fill={entry.fill} />
               ))}
             </Bar>
+
+            {/* Add benchmark reference lines */}
+            {benchmarks.length > 0 && (
+              <React.Fragment>
+                {/* Calculate overall median and elite averages for horizontal lines */}
+                {(() => {
+                  const medianAvg = benchmarks.reduce((sum, b) => sum + b.median, 0) / benchmarks.length;
+                  const eliteAvg = benchmarks.reduce((sum, b) => sum + b.topDecile, 0) / benchmarks.length;
+
+                  return (
+                    <React.Fragment>
+                      {/* Horizontal median line */}
+                      <ReferenceLine
+                        y={medianAvg}
+                        stroke="#f59e0b"
+                        strokeWidth={2}
+                        strokeDasharray="5 5"
+                      />
+                      {/* Horizontal elite line */}
+                      <ReferenceLine
+                        y={eliteAvg}
+                        stroke="#10b981"
+                        strokeWidth={2}
+                        strokeDasharray="3 6"
+                      />
+                    </React.Fragment>
+                  );
+                })()}
+              </React.Fragment>
+            )}
 
             {/* Add season boundary lines */}
             {seasonBoundaries.map(boundary => (
