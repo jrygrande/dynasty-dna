@@ -144,7 +144,8 @@ export default function TransactionTimeline({
     const chartAreaWidth = chartWidth - chartMargin.left - chartMargin.right;
     const positionRange = maxPosition - minPosition;
     const relativePosition = (position - minPosition) / positionRange;
-    return chartMargin.left + (relativePosition * chartAreaWidth);
+    // Add offset to better align with Recharts bar positioning
+    return chartMargin.left + (relativePosition * chartAreaWidth) + 32;
   };
 
   return (

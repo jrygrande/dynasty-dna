@@ -70,6 +70,31 @@ interface ChartDataPoint {
 
 export default function ScoringBarChart({ scores, transactions, seasonBoundaries, rosterLegend, benchmarks = [], playerPosition, onTransactionClick }: ScoringBarChartProps) {
   const chartContainerRef = React.useRef<HTMLDivElement>(null);
+  const [chartDimensions, setChartDimensions] = React.useState({ width: 800, height: 384 });
+
+  // Track chart container size changes for timeline alignment
+  React.useEffect(() => {
+    const container = chartContainerRef.current;
+    if (!container) return;
+
+    const resizeObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const { width, height } = entry.contentRect;
+        setChartDimensions({ width, height });
+      }
+    });
+
+    resizeObserver.observe(container);
+
+    // Set initial dimensions
+    const rect = container.getBoundingClientRect();
+    setChartDimensions({ width: rect.width, height: rect.height });
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, []);
+
   // Create a color palette for different roster IDs
   const generateRosterColor = (rosterId: number): string => {
     const colors = [
@@ -295,7 +320,7 @@ export default function ScoringBarChart({ scores, transactions, seasonBoundaries
       {/* Transaction Timeline */}
       <TransactionTimeline
         transactions={transactions}
-        chartWidth={chartContainerRef.current?.clientWidth || 800}
+        chartWidth={chartDimensions.width}
         chartMargin={{ left: 20, right: 30 }}
         maxPosition={Math.max(...chartData.map(d => d.position))}
         minPosition={Math.min(...chartData.map(d => d.position))}
