@@ -26,6 +26,8 @@ interface PlayerScoringResponse {
       isStarter: boolean;
       rosterId: number;
       position: number;
+      ownerName: string;
+      ownerId?: string;
     }>;
     transactions: Array<{
       id: string;
@@ -42,6 +44,11 @@ interface PlayerScoringResponse {
       season: string;
       start: number;
       end: number;
+    }>;
+    rosterLegend: Array<{
+      rosterId: number;
+      ownerName: string;
+      ownerId?: string;
     }>;
   };
   error?: string;
@@ -180,6 +187,7 @@ export default function PlayerScoringClient({ leagueId, playerId, playerName }: 
             scores={data.timeline.scores}
             transactions={data.timeline.transactions}
             seasonBoundaries={data.timeline.seasonBoundaries}
+            rosterLegend={data.timeline.rosterLegend}
             onTransactionClick={handleTransactionClick}
           />
         </CardContent>

@@ -1,6 +1,6 @@
 'use client';
 
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Cell } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Cell, LabelList } from 'recharts';
 
 interface Score {
   leagueId: string;
@@ -10,6 +10,8 @@ interface Score {
   isStarter: boolean;
   rosterId: number;
   position: number;
+  ownerName: string;
+  ownerId?: string;
 }
 
 interface Transaction {
@@ -30,10 +32,17 @@ interface SeasonBoundary {
   end: number;
 }
 
+interface RosterLegendItem {
+  rosterId: number;
+  ownerName: string;
+  ownerId?: string;
+}
+
 interface ScoringBarChartProps {
   scores: Score[];
   transactions: Transaction[];
   seasonBoundaries: SeasonBoundary[];
+  rosterLegend: RosterLegendItem[];
   onTransactionClick?: (transaction: Transaction) => void;
 }
 
@@ -43,12 +52,32 @@ interface ChartDataPoint {
   week: number;
   points: number;
   isStarter: boolean;
+  rosterId: number;
+  ownerName: string;
+  ownerId?: string;
   hasTransaction: boolean;
   transactions: Transaction[];
   fill: string;
 }
 
-export default function ScoringBarChart({ scores, transactions, seasonBoundaries, onTransactionClick }: ScoringBarChartProps) {
+export default function ScoringBarChart({ scores, transactions, seasonBoundaries, rosterLegend, onTransactionClick }: ScoringBarChartProps) {
+  // Create a color palette for different roster IDs
+  const generateRosterColor = (rosterId: number): string => {
+    const colors = [
+      '#3b82f6', // Blue
+      '#10b981', // Emerald
+      '#f59e0b', // Amber
+      '#ef4444', // Red
+      '#8b5cf6', // Violet
+      '#06b6d4', // Cyan
+      '#84cc16', // Lime
+      '#f97316', // Orange
+      '#ec4899', // Pink
+      '#6366f1', // Indigo
+    ];
+    return colors[rosterId % colors.length];
+  };
+
   // Create a map of transactions by position for quick lookup
   const transactionsByPosition = new Map<number, Transaction[]>();
   transactions.forEach(transaction => {
@@ -57,7 +86,7 @@ export default function ScoringBarChart({ scores, transactions, seasonBoundaries
     transactionsByPosition.set(transaction.position, existing);
   });
 
-  // Prepare chart data with continuous positioning
+  // Prepare chart data with roster-based coloring
   const chartData: ChartDataPoint[] = scores.map(score => {
     const positionTransactions = transactionsByPosition.get(score.position) || [];
     const hasTransaction = positionTransactions.length > 0;
@@ -68,14 +97,15 @@ export default function ScoringBarChart({ scores, transactions, seasonBoundaries
       week: score.week,
       points: score.points,
       isStarter: score.isStarter,
+      rosterId: score.rosterId,
+      ownerName: score.ownerName,
+      ownerId: score.ownerId,
       hasTransaction,
       transactions: positionTransactions,
-      // Use more subtle colors for background effect
-      fill: hasTransaction
-        ? '#dc2626' // Red for transaction weeks
-        : score.isStarter
-          ? 'rgba(34, 197, 94, 0.6)' // Semi-transparent green for starters
-          : 'rgba(107, 114, 128, 0.4)' // Semi-transparent gray for bench
+      // Use roster-based colors: grey for bench, roster color for starters
+      fill: score.isStarter
+        ? generateRosterColor(score.rosterId)
+        : 'rgba(107, 114, 128, 0.4)' // Grey for bench
     };
   });
 
@@ -85,7 +115,7 @@ export default function ScoringBarChart({ scores, transactions, seasonBoundaries
       return (
         <div className="bg-white p-3 border rounded shadow-lg">
           <p className="font-medium">{data.season} Season - Week {data.week}</p>
-          <p className="text-sm text-gray-600">Position: {data.position}</p>
+          <p className="text-sm text-gray-600">Team: {data.ownerName}</p>
           <p className="text-sm">
             <span className="font-medium">{data.points.toFixed(1)} points</span>
             <span className="ml-2 text-xs">
@@ -133,17 +163,18 @@ export default function ScoringBarChart({ scores, transactions, seasonBoundaries
     <div className="w-full">
       <div className="mb-4 flex flex-wrap gap-4 text-sm">
         <div className="flex items-center gap-2">
-          <div className="w-4 h-4 bg-green-500 opacity-60 rounded"></div>
-          <span>Starter</span>
-        </div>
-        <div className="flex items-center gap-2">
           <div className="w-4 h-4 bg-gray-500 opacity-40 rounded"></div>
           <span>Bench</span>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="w-4 h-4 bg-red-600 rounded"></div>
-          <span>Transaction Week</span>
-        </div>
+        {rosterLegend.map((roster) => (
+          <div key={roster.rosterId} className="flex items-center gap-2">
+            <div
+              className="w-4 h-4 rounded"
+              style={{ backgroundColor: generateRosterColor(roster.rosterId) }}
+            ></div>
+            <span>{roster.ownerName}</span>
+          </div>
+        ))}
       </div>
 
       <div className="w-full h-96">
@@ -183,6 +214,27 @@ export default function ScoringBarChart({ scores, transactions, seasonBoundaries
               {chartData.map((entry, index) => (
                 <Cell key={`cell-${index}`} fill={entry.fill} />
               ))}
+              <LabelList
+                dataKey="hasTransaction"
+                content={({ x, y, width, value, payload }) => {
+                  if (!value) return null;
+                  const data = payload as ChartDataPoint;
+                  return (
+                    <text
+                      x={Number(x) + Number(width) / 2}
+                      y={Number(y) - 5}
+                      textAnchor="middle"
+                      fill="#dc2626"
+                      fontSize="12"
+                      fontWeight="bold"
+                      style={{ cursor: 'pointer' }}
+                      onClick={() => handleBarClick(data)}
+                    >
+                      ●
+                    </text>
+                  );
+                }}
+              />
             </Bar>
 
             {/* Add season boundary lines */}
@@ -195,18 +247,6 @@ export default function ScoringBarChart({ scores, transactions, seasonBoundaries
                 strokeDasharray="2 2"
               />
             ))}
-
-            {/* Add transaction markers as bold reference lines */}
-            {chartData
-              .filter(d => d.hasTransaction)
-              .map(d => (
-                <ReferenceLine
-                  key={`transaction-${d.position}`}
-                  x={d.position}
-                  stroke="#dc2626"
-                  strokeWidth={3}
-                />
-              ))}
           </BarChart>
         </ResponsiveContainer>
       </div>

@@ -3,7 +3,9 @@ import { getLeagueFamily, getPlayerInfo } from '@/services/assets';
 import { getPlayerTimeline } from '@/repositories/assetEvents';
 import { getPlayerScores } from '@/repositories/playerScores';
 import { getLeagueSeasonMap } from '@/repositories/leagues';
-import { and, inArray } from 'drizzle-orm';
+import { getDb } from '@/db/index';
+import { rosters, users } from '@/db/schema';
+import { and, inArray, eq } from 'drizzle-orm';
 
 export async function GET(req: NextRequest) {
   try {
@@ -27,6 +29,30 @@ export async function GET(req: NextRequest) {
     // Get season information for each league
     const leagueSeasonMap = await getLeagueSeasonMap(family);
 
+    // Get roster-to-owner mapping for all leagues in family
+    const db = await getDb();
+    const rosterOwnerMap = new Map<string, { ownerId: string; ownerName: string }>();
+
+    const rosterData = await db
+      .select({
+        rosterId: rosters.rosterId,
+        leagueId: rosters.leagueId,
+        ownerId: rosters.ownerId,
+        ownerName: users.displayName,
+        ownerUsername: users.username
+      })
+      .from(rosters)
+      .leftJoin(users, eq(rosters.ownerId, users.id))
+      .where(inArray(rosters.leagueId, family));
+
+    rosterData.forEach(row => {
+      const key = `${row.leagueId}-${row.rosterId}`;
+      rosterOwnerMap.set(key, {
+        ownerId: row.ownerId,
+        ownerName: row.ownerName || row.ownerUsername || `Team ${row.rosterId}`
+      });
+    });
+
     // Get all player scores across league family
     const allScores = [];
     for (const familyLeagueId of family) {
@@ -35,11 +61,18 @@ export async function GET(req: NextRequest) {
         playerId
       });
       const season = leagueSeasonMap.get(familyLeagueId) || 'Unknown';
-      allScores.push(...scores.map(score => ({
-        ...score,
-        leagueId: familyLeagueId,
-        season
-      })));
+      allScores.push(...scores.map(score => {
+        const rosterKey = `${familyLeagueId}-${score.rosterId}`;
+        const ownerInfo = rosterOwnerMap.get(rosterKey);
+
+        return {
+          ...score,
+          leagueId: familyLeagueId,
+          season,
+          ownerName: ownerInfo?.ownerName || `Team ${score.rosterId}`,
+          ownerId: ownerInfo?.ownerId
+        };
+      }));
     }
 
     // Get transaction events for timeline markers
@@ -65,13 +98,15 @@ export async function GET(req: NextRequest) {
           week: score.week,
           points: parseFloat(score.points as string),
           isStarter: score.isStarter,
-          rosterId: score.rosterId
+          rosterId: score.rosterId,
+          ownerName: score.ownerName,
+          ownerId: score.ownerId
         });
       }
     });
 
     // Assign continuous positions
-    const scoresWithPositions = [];
+    const scoresWithPositions: any[] = [];
     for (const season of seasons) {
       const seasonStart = continuousPosition;
       const seasonScores = Array.from(scoresBySeasonWeek.values())
@@ -113,6 +148,18 @@ export async function GET(req: NextRequest) {
       };
     }).filter(t => t.position !== null);
 
+    // Create roster legend mapping
+    const rosterLegend = Array.from(
+      new Set(scoresWithPositions.map(s => s.rosterId))
+    ).map(rosterId => {
+      const sampleScore = scoresWithPositions.find(s => s.rosterId === rosterId);
+      return {
+        rosterId,
+        ownerName: sampleScore?.ownerName || `Team ${rosterId}`,
+        ownerId: sampleScore?.ownerId
+      };
+    });
+
     // Create timeline data with continuous positioning
     const timelineData = {
       scores: scoresWithPositions,
@@ -121,7 +168,8 @@ export async function GET(req: NextRequest) {
         season,
         start: boundary.start,
         end: boundary.end
-      }))
+      })),
+      rosterLegend
     };
 
     return NextResponse.json({
