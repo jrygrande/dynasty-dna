@@ -31,9 +31,10 @@ export async function calculatePositionalBenchmarks(
   const db = await getDb();
   const benchmarks: WeeklyBenchmarks[] = [];
 
-  // Get all unique season-week combinations where the player has scores
+  // Get all unique season-week combinations where the player has scores (exclude week 18)
   const weeklyData = new Map<string, { season: string; week: number; position: number }>();
   for (const score of playerScoreWeeks) {
+    if (score.week === 18) continue; // Exclude week 18
     const key = `${score.season}-${score.week}`;
     weeklyData.set(key, score);
   }
@@ -41,19 +42,22 @@ export async function calculatePositionalBenchmarks(
   // For each week, calculate benchmarks
   for (const [key, weekData] of weeklyData) {
     try {
-      // Query all starter scores for players of the same position in this week
+      // Query all starter scores for players of the same position in this specific season-week
       const starterScores = await db
         .select({
           points: playerScores.points,
         })
         .from(playerScores)
         .innerJoin(players, eq(playerScores.playerId, players.id))
+        .innerJoin(leagues, eq(playerScores.leagueId, leagues.id))
         .where(
           and(
             inArray(playerScores.leagueId, leagueIds),
             eq(playerScores.week, weekData.week),
+            eq(leagues.season, weekData.season), // Filter by specific season
             eq(playerScores.isStarter, true),
-            eq(players.position, playerPosition)
+            eq(players.position, playerPosition),
+            sql`${playerScores.week} != 18` // Exclude week 18 as safety measure
           )
         );
 

@@ -101,9 +101,10 @@ export async function GET(req: NextRequest) {
     let continuousPosition = 1;
     const seasonBoundaries = new Map<string, { start: number; end: number }>();
 
-    // Group scores by season and week
+    // Group scores by season and week (exclude week 18)
     const scoresBySeasonWeek = new Map();
     allScores.forEach(score => {
+      if (score.week === 18) return; // Exclude week 18
       const key = `${score.season}-${score.week}`;
       if (!scoresBySeasonWeek.has(key)) {
         scoresBySeasonWeek.set(key, {
