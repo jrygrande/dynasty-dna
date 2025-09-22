@@ -1,0 +1,141 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { getLeagueFamily, getPlayerInfo } from '@/services/assets';
+import { getPlayerTimeline } from '@/repositories/assetEvents';
+import { getPlayerScores } from '@/repositories/playerScores';
+import { getLeagueSeasonMap } from '@/repositories/leagues';
+import { and, inArray } from 'drizzle-orm';
+
+export async function GET(req: NextRequest) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const leagueId = searchParams.get('leagueId') || searchParams.get('league_id');
+    const playerId = searchParams.get('playerId') || searchParams.get('player_id');
+
+    if (!leagueId || !playerId) {
+      return NextResponse.json({ ok: false, error: 'leagueId and playerId required' }, { status: 400 });
+    }
+
+    console.log(`Fetching player scores for player ${playerId} in league ${leagueId}`);
+
+    // Get league family
+    const family = await getLeagueFamily(leagueId);
+    console.log(`League family: ${family.length} leagues`);
+
+    // Get player info
+    const player = await getPlayerInfo(playerId);
+
+    // Get season information for each league
+    const leagueSeasonMap = await getLeagueSeasonMap(family);
+
+    // Get all player scores across league family
+    const allScores = [];
+    for (const familyLeagueId of family) {
+      const scores = await getPlayerScores({
+        leagueId: familyLeagueId,
+        playerId
+      });
+      const season = leagueSeasonMap.get(familyLeagueId) || 'Unknown';
+      allScores.push(...scores.map(score => ({
+        ...score,
+        leagueId: familyLeagueId,
+        season
+      })));
+    }
+
+    // Get transaction events for timeline markers
+    const events = await getPlayerTimeline(family, playerId);
+
+    // Create ordered seasons from league family (oldest to newest)
+    const seasons = Array.from(new Set(allScores.map(s => s.season)))
+      .filter(s => s !== 'Unknown')
+      .sort((a, b) => parseInt(a) - parseInt(b));
+
+    // Create continuous positioning for scores
+    let continuousPosition = 1;
+    const seasonBoundaries = new Map<string, { start: number; end: number }>();
+
+    // Group scores by season and week
+    const scoresBySeasonWeek = new Map();
+    allScores.forEach(score => {
+      const key = `${score.season}-${score.week}`;
+      if (!scoresBySeasonWeek.has(key)) {
+        scoresBySeasonWeek.set(key, {
+          leagueId: score.leagueId,
+          season: score.season,
+          week: score.week,
+          points: parseFloat(score.points as string),
+          isStarter: score.isStarter,
+          rosterId: score.rosterId
+        });
+      }
+    });
+
+    // Assign continuous positions
+    const scoresWithPositions = [];
+    for (const season of seasons) {
+      const seasonStart = continuousPosition;
+      const seasonScores = Array.from(scoresBySeasonWeek.values())
+        .filter(s => s.season === season)
+        .sort((a, b) => a.week - b.week);
+
+      for (const score of seasonScores) {
+        scoresWithPositions.push({
+          ...score,
+          position: continuousPosition++
+        });
+      }
+
+      if (seasonScores.length > 0) {
+        seasonBoundaries.set(season, {
+          start: seasonStart,
+          end: continuousPosition - 1
+        });
+      }
+    }
+
+    // Map transactions to their continuous positions
+    const transactionsWithPositions = events.map(event => {
+      // Find the position for this transaction based on season and week
+      const matchingScore = scoresWithPositions.find(s =>
+        s.season === event.season && s.week === event.week
+      );
+
+      return {
+        id: event.id,
+        leagueId: event.leagueId,
+        season: event.season,
+        week: event.week,
+        eventTime: event.eventTime,
+        eventType: event.eventType,
+        details: event.details,
+        transactionId: event.transactionId,
+        position: matchingScore ? matchingScore.position : null
+      };
+    }).filter(t => t.position !== null);
+
+    // Create timeline data with continuous positioning
+    const timelineData = {
+      scores: scoresWithPositions,
+      transactions: transactionsWithPositions,
+      seasonBoundaries: Array.from(seasonBoundaries.entries()).map(([season, boundary]) => ({
+        season,
+        start: boundary.start,
+        end: boundary.end
+      }))
+    };
+
+    return NextResponse.json({
+      ok: true,
+      player,
+      family,
+      timeline: timelineData
+    });
+
+  } catch (e: any) {
+    console.error('Player scores API error:', e);
+    return NextResponse.json({
+      ok: false,
+      error: e?.message || 'Failed to fetch player scores'
+    }, { status: 500 });
+  }
+}
