@@ -1,7 +1,9 @@
 'use client';
 
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Cell, LabelList } from 'recharts';
+import React from 'react';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Cell } from 'recharts';
 import type { TimelineEvent } from '@/lib/api/assets';
+import TransactionTimeline from './TransactionTimeline';
 
 interface Score {
   leagueId: string;
@@ -54,6 +56,7 @@ interface ChartDataPoint {
 }
 
 export default function ScoringBarChart({ scores, transactions, seasonBoundaries, rosterLegend, onTransactionClick }: ScoringBarChartProps) {
+  const chartContainerRef = React.useRef<HTMLDivElement>(null);
   // Create a color palette for different roster IDs
   const generateRosterColor = (rosterId: number): string => {
     const colors = [
@@ -173,7 +176,7 @@ export default function ScoringBarChart({ scores, transactions, seasonBoundaries
         ))}
       </div>
 
-      <div className="w-full h-96">
+      <div ref={chartContainerRef} className="w-full h-96">
         <ResponsiveContainer width="100%" height="100%">
           <BarChart
             data={chartData}
@@ -210,35 +213,6 @@ export default function ScoringBarChart({ scores, transactions, seasonBoundaries
               {chartData.map((entry, index) => (
                 <Cell key={`cell-${index}`} fill={entry.fill} />
               ))}
-              <LabelList
-                dataKey="hasTransaction"
-                content={({ x, y, width, value, payload }) => {
-                  if (!value || !payload) return null;
-                  const data = payload as ChartDataPoint;
-                  if (!data.hasTransaction) return null;
-                  return (
-                    <text
-                      x={Number(x) + Number(width) / 2}
-                      y={Number(y) - 8}
-                      textAnchor="middle"
-                      fill="#dc2626"
-                      fontSize="14"
-                      fontWeight="bold"
-                      style={{ cursor: 'pointer' }}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (data.hasTransaction && onTransactionClick && data.transactions?.length > 0) {
-                          const transaction = data.transactions[0];
-                          const { position, ...timelineEvent } = transaction;
-                          onTransactionClick(timelineEvent);
-                        }
-                      }}
-                    >
-                      ●
-                    </text>
-                  );
-                }}
-              />
             </Bar>
 
             {/* Add season boundary lines */}
@@ -254,6 +228,16 @@ export default function ScoringBarChart({ scores, transactions, seasonBoundaries
           </BarChart>
         </ResponsiveContainer>
       </div>
+
+      {/* Transaction Timeline */}
+      <TransactionTimeline
+        transactions={transactions}
+        chartWidth={chartContainerRef.current?.clientWidth || 800}
+        chartMargin={{ left: 20, right: 30 }}
+        maxPosition={Math.max(...chartData.map(d => d.position))}
+        minPosition={Math.min(...chartData.map(d => d.position))}
+        onTransactionClick={onTransactionClick}
+      />
     </div>
   );
 }
