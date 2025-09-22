@@ -5,7 +5,7 @@ import { getPlayerScores } from '@/repositories/playerScores';
 import { getLeagueSeasonMap } from '@/repositories/leagues';
 import { calculatePositionalBenchmarks } from '@/services/positionalBenchmarks';
 import { getDb } from '@/db/index';
-import { rosters, users } from '@/db/schema';
+import { rosters, users, leagues } from '@/db/schema';
 import { and, inArray, eq } from 'drizzle-orm';
 
 export async function GET(req: NextRequest) {
@@ -20,6 +20,9 @@ export async function GET(req: NextRequest) {
 
     console.log(`Fetching player scores for player ${playerId} in league ${leagueId}`);
 
+    // Get database connection
+    const db = await getDb();
+
     // Get league family
     const family = await getLeagueFamily(leagueId);
     console.log(`League family: ${family.length} leagues`);
@@ -27,11 +30,21 @@ export async function GET(req: NextRequest) {
     // Get player info
     const player = await getPlayerInfo(playerId);
 
+    // Get league name for the primary league
+    const leagueInfo = await db
+      .select({
+        name: leagues.name
+      })
+      .from(leagues)
+      .where(eq(leagues.id, leagueId))
+      .limit(1);
+
+    const leagueName = leagueInfo[0]?.name || 'Unknown League';
+
     // Get season information for each league
     const leagueSeasonMap = await getLeagueSeasonMap(family);
 
     // Get roster-to-owner mapping for all leagues in family
-    const db = await getDb();
     const rosterOwnerMap = new Map<string, { ownerId: string; ownerName: string }>();
 
     const rosterData = await db
@@ -234,6 +247,7 @@ export async function GET(req: NextRequest) {
       ok: true,
       player,
       family,
+      leagueName,
       timeline: timelineData
     });
 

@@ -18,6 +18,7 @@ interface PlayerScoringResponse {
     status: string | null;
   };
   family: string[];
+  leagueName: string;
   timeline: {
     scores: Array<{
       leagueId: string;
@@ -154,10 +155,17 @@ export default function PlayerScoringClient({ leagueId, playerId, playerName }: 
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-6 py-8">
-      {/* Player Header */}
+      {/* League Header */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-3xl">{data.player.name} - Scoring Timeline</CardTitle>
+          <CardTitle className="text-3xl">{data.leagueName}</CardTitle>
+        </CardHeader>
+      </Card>
+
+      {/* Player Information and Chart */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-2xl">{data.player.name}</CardTitle>
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant="secondary">
               {data.player.position ?? '—'} · {data.player.team ?? 'FA'}
@@ -166,20 +174,6 @@ export default function PlayerScoringClient({ leagueId, playerId, playerName }: 
               <Badge variant="outline">{data.player.status}</Badge>
             )}
             <span className="text-xs text-muted-foreground">ID: {data.player.id}</span>
-          </div>
-        </CardHeader>
-      </Card>
-
-      {/* League Family */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg">League Family Scoring History</CardTitle>
-          <div className="flex flex-wrap gap-2">
-            {data.family.map((league) => (
-              <Badge key={league} variant="outline" className="text-xs">
-                {league}
-              </Badge>
-            ))}
           </div>
         </CardHeader>
         <CardContent>
