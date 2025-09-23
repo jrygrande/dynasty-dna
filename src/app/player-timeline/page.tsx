@@ -5,6 +5,7 @@ import {
   PlayerTimelineFetchError,
   PlayerTimelineResponse,
   fetchPlayerTimeline,
+  fetchPickTimeline,
 } from '@/lib/api/assets';
 
 const coerceParam = (value: string | string[] | undefined): string | undefined => {
@@ -21,18 +22,32 @@ export default async function PlayerTimelinePage({ searchParams }: PageProps) {
   const playerId = coerceParam(searchParams.playerId);
   const playerName = coerceParam(searchParams.playerName);
 
-  if (!leagueId || (!playerId && !playerName)) {
+  // Pick parameters
+  const season = coerceParam(searchParams.season);
+  const roundStr = coerceParam(searchParams.round);
+  const originalRosterIdStr = coerceParam(searchParams.originalRosterId);
+
+  const round = roundStr ? parseInt(roundStr, 10) : undefined;
+  const originalRosterId = originalRosterIdStr ? parseInt(originalRosterIdStr, 10) : undefined;
+
+  const isPlayerRequest = playerId || playerName;
+  const isPickRequest = season && round !== undefined && originalRosterId !== undefined;
+
+  if (!leagueId || (!isPlayerRequest && !isPickRequest)) {
     return (
       <main className="mx-auto flex min-h-screen w-full max-w-3xl flex-col justify-center gap-4 px-6 text-center text-slate-700">
-        <h1 className="text-3xl font-semibold text-slate-900">Player Timeline</h1>
+        <h1 className="text-3xl font-semibold text-slate-900">Asset Timeline</h1>
         <p className="text-sm text-slate-600">
-          Provide a <code className="rounded bg-slate-100 px-1 py-0.5 text-xs">leagueId</code> and either a{' '}
-          <code className="rounded bg-slate-100 px-1 py-0.5 text-xs">playerId</code> or{' '}
-          <code className="rounded bg-slate-100 px-1 py-0.5 text-xs">playerName</code> in the query string to load a timeline.
+          Provide a <code className="rounded bg-slate-100 px-1 py-0.5 text-xs">leagueId</code> and either:
         </p>
-        <p className="text-xs text-slate-500">
-          Example: <code className="rounded bg-slate-100 px-1 py-0.5 text-xs">/player-timeline?leagueId=123&playerName=Saquon%20Barkley</code>
-        </p>
+        <div className="text-sm text-slate-600 space-y-2">
+          <p>For a player: <code className="rounded bg-slate-100 px-1 py-0.5 text-xs">playerId</code> or <code className="rounded bg-slate-100 px-1 py-0.5 text-xs">playerName</code></p>
+          <p>For a pick: <code className="rounded bg-slate-100 px-1 py-0.5 text-xs">season</code>, <code className="rounded bg-slate-100 px-1 py-0.5 text-xs">round</code>, and <code className="rounded bg-slate-100 px-1 py-0.5 text-xs">originalRosterId</code></p>
+        </div>
+        <div className="text-xs text-slate-500 space-y-1">
+          <p>Player example: <code className="rounded bg-slate-100 px-1 py-0.5 text-xs">/player-timeline?leagueId=123&playerName=Saquon%20Barkley</code></p>
+          <p>Pick example: <code className="rounded bg-slate-100 px-1 py-0.5 text-xs">/player-timeline?leagueId=123&season=2026&round=1&originalRosterId=3</code></p>
+        </div>
       </main>
     );
   }
@@ -42,12 +57,22 @@ export default async function PlayerTimelinePage({ searchParams }: PageProps) {
   let errorMessage: string | null = null;
 
   try {
-    data = await fetchPlayerTimeline({
-      baseUrl: process.env.NODE_ENV === 'development' ? 'http://localhost:3005' : undefined,
-      leagueId,
-      playerId,
-      playerName
-    });
+    if (isPlayerRequest) {
+      data = await fetchPlayerTimeline({
+        baseUrl: process.env.NODE_ENV === 'development' ? 'http://localhost:3000' : undefined,
+        leagueId,
+        playerId,
+        playerName
+      });
+    } else if (isPickRequest) {
+      data = await fetchPickTimeline({
+        baseUrl: process.env.NODE_ENV === 'development' ? 'http://localhost:3000' : undefined,
+        leagueId,
+        season: season!,
+        round: round!,
+        originalRosterId: originalRosterId!
+      });
+    }
   } catch (error) {
     if (error instanceof PlayerTimelineFetchError) {
       errorMessage = error.message;
@@ -61,7 +86,7 @@ export default async function PlayerTimelinePage({ searchParams }: PageProps) {
     return (
       <main className="mx-auto flex min-h-screen w-full max-w-3xl flex-col gap-6 px-6 py-12 text-slate-700">
         <div>
-          <h1 className="text-3xl font-semibold text-slate-900">Player Timeline</h1>
+          <h1 className="text-3xl font-semibold text-slate-900">Asset Timeline</h1>
           <p className="mt-2 text-sm text-slate-600">We could not load the requested timeline.</p>
         </div>
         <div className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">

@@ -81,6 +81,10 @@ export default function RosterClient({ leagueId, rosterId }: RosterClientProps) 
     window.location.href = `/player-scoring?leagueId=${leagueId}&playerId=${playerId}&playerName=${encodeURIComponent(playerName)}`;
   };
 
+  const handlePickClick = (season: string, round: number, originalRosterId: number) => {
+    window.location.href = `/player-timeline?leagueId=${leagueId}&season=${season}&round=${round}&originalRosterId=${originalRosterId}`;
+  };
+
   const sortPlayers = (players: RosterPlayer[], sortOption: SortOption): RosterPlayer[] => {
     return [...players].sort((a, b) => {
       let primarySort = 0;
@@ -192,7 +196,11 @@ export default function RosterClient({ leagueId, rosterId }: RosterClientProps) 
                       <h3 className="text-xl font-semibold mb-3">{season} Draft ({seasonPicks.length} picks)</h3>
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
                         {seasonPicks.map((pick, index) => (
-                          <Card key={index} className="p-4">
+                          <Card
+                            key={index}
+                            className={`p-4 ${pick.acquisitionType !== 'original' ? 'hover:bg-muted/50 cursor-pointer transition-all duration-200 hover:shadow-md' : ''}`}
+                            onClick={() => pick.acquisitionType !== 'original' && handlePickClick(pick.season, pick.round, pick.originalRosterId)}
+                          >
                             <div className="space-y-2">
                               <div className="flex items-center justify-between">
                                 <div className="font-semibold text-lg">Round {pick.round}</div>
@@ -203,7 +211,7 @@ export default function RosterClient({ leagueId, rosterId }: RosterClientProps) 
                               </div>
                               {pick.acquisitionType !== 'original' && (
                                 <div className="text-xs text-muted-foreground">
-                                  Acquired via trade
+                                  Acquired via trade • Click to view timeline
                                 </div>
                               )}
                             </div>
