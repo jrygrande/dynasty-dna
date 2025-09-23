@@ -8,6 +8,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { PlayerCard } from '@/components/roster/PlayerCard';
 import { AcquisitionTypeBadge } from '@/components/roster/AcquisitionTypeBadge';
+import { AcquisitionPieChart } from '@/components/charts/AcquisitionPieChart';
+import { WeeklyStackedBarChart } from '@/components/charts/WeeklyStackedBarChart';
 import type { RosterResponse, RosterPlayer } from '@/services/roster';
 
 interface RosterClientProps {
@@ -75,7 +77,7 @@ export default function RosterClient({ leagueId, rosterId }: RosterClientProps) 
     );
   }
 
-  const { manager, currentAssets } = rosterData;
+  const { manager, currentAssets, analytics } = rosterData;
 
   const handlePlayerClick = (playerId: string, playerName: string) => {
     window.location.href = `/player-scoring?leagueId=${leagueId}&playerId=${playerId}&playerName=${encodeURIComponent(playerName)}`;
@@ -227,6 +229,12 @@ export default function RosterClient({ leagueId, rosterId }: RosterClientProps) 
         </TabsContent>
 
         <TabsContent value="analytics" className="space-y-4">
+          {/* Charts Section */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+            <AcquisitionPieChart data={analytics?.acquisitionTypeStats || {}} />
+            <WeeklyStackedBarChart data={analytics?.weeklyScoresByType || []} />
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
             {/* Position Distribution */}
             <Card>

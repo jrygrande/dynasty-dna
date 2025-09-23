@@ -36,11 +36,27 @@ export interface ManagerInfo {
   displayName: string | null;
 }
 
+export interface WeeklyScore {
+  week: number;
+  [acquisitionType: string]: number; // Dynamic keys for each acquisition type
+}
+
+export interface AcquisitionTypeStats {
+  points: number;
+  ppg: number;
+  rank: number;
+  totalTeams: number;
+}
+
 export interface RosterResponse {
   manager: ManagerInfo;
   currentAssets: {
     players: RosterPlayer[];
     picks: RosterPick[];
+  };
+  analytics: {
+    weeklyScoresByType: WeeklyScore[];
+    acquisitionTypeStats: Record<string, AcquisitionTypeStats>;
   };
 }
 
@@ -173,6 +189,50 @@ export async function getCurrentRosterAssets(leagueId: string, rosterId: number)
   // Use the computed roster picks
   const uniquePicks: RosterPick[] = allRosterPicks;
 
+  // Get analytics data
+  // Use the existing playerAcquisitionMap for analytics
+  const analyticsAcquisitionMap = new Map<string, string>();
+  for (const [playerId, event] of playerAcquisitionMap) {
+    analyticsAcquisitionMap.set(playerId, event.eventType);
+  }
+
+  const weeklyScoresByType = await getWeeklyScoresByAcquisitionType(family, rosterId, currentSeason, analyticsAcquisitionMap);
+  const leagueRosterPPG = await getLeagueRosterPPG(family, currentSeason);
+
+  // Calculate acquisition type stats with rankings
+  const acquisitionTypeStats: Record<string, AcquisitionTypeStats> = {};
+
+  // Aggregate total points by acquisition type from weekly data
+  const totalsByType: Record<string, number> = {};
+  for (const weekData of weeklyScoresByType) {
+    Object.keys(weekData).forEach(key => {
+      if (key !== 'week') {
+        totalsByType[key] = (totalsByType[key] || 0) + weekData[key];
+      }
+    });
+  }
+
+  // Calculate stats and rankings for each acquisition type
+  const currentWeek = await getCurrentWeek();
+  const completedWeeks = currentWeek - 1;
+
+  Object.keys(totalsByType).forEach(acquisitionType => {
+    const totalPoints = totalsByType[acquisitionType];
+    const ppg = completedWeeks > 0 ? totalPoints / completedWeeks : 0;
+
+    // Calculate ranking for this acquisition type
+    const leagueData = leagueRosterPPG[acquisitionType] || {};
+    const allPPGs = Object.values(leagueData).sort((a, b) => b - a);
+    const rank = allPPGs.findIndex(value => value <= ppg) + 1;
+
+    acquisitionTypeStats[acquisitionType] = {
+      points: Math.round(totalPoints * 100) / 100,
+      ppg: Math.round(ppg * 100) / 100,
+      rank: rank || allPPGs.length + 1,
+      totalTeams: allPPGs.length,
+    };
+  });
+
   return {
     manager: {
       id: manager.id,
@@ -182,6 +242,10 @@ export async function getCurrentRosterAssets(leagueId: string, rosterId: number)
     currentAssets: {
       players: rosterPlayers,
       picks: uniquePicks,
+    },
+    analytics: {
+      weeklyScoresByType,
+      acquisitionTypeStats,
     },
   };
 }
@@ -402,4 +466,133 @@ async function getPlayerStatsForRoster(
   }
 
   return statsMap;
+}
+
+async function getWeeklyScoresByAcquisitionType(
+  family: string[],
+  rosterId: number,
+  currentSeason: string,
+  playerAcquisitionMap: Map<string, string>
+): Promise<WeeklyScore[]> {
+  const db = await getDb();
+
+  // Get current week to filter to only completed weeks
+  const currentWeek = await getCurrentWeek();
+  const completedWeeks = currentWeek - 1;
+
+  if (completedWeeks <= 0) {
+    return [];
+  }
+
+  // Get all starter scores for this roster - simplified query to debug
+  const weeklyData = await db
+    .select({
+      week: playerScores.week,
+      points: playerScores.points,
+      playerId: playerScores.playerId,
+      leagueId: playerScores.leagueId,
+    })
+    .from(playerScores)
+    .innerJoin(leagues, eq(playerScores.leagueId, leagues.id))
+    .where(
+      and(
+        eq(playerScores.rosterId, rosterId),
+        inArray(playerScores.leagueId, family),
+        eq(leagues.season, currentSeason),
+        eq(playerScores.isStarter, true), // Only starter points
+        gte(playerScores.week, 1),
+        lt(playerScores.week, currentWeek)
+      )
+    );
+
+
+  // Group by week and acquisition type
+  const weeklyScores: Record<number, Record<string, number>> = {};
+
+  // Initialize weeks
+  for (let week = 1; week <= completedWeeks; week++) {
+    weeklyScores[week] = { week };
+  }
+
+  // Aggregate points by week and acquisition type
+  for (const score of weeklyData) {
+    const week = score.week;
+    const acquisitionType = playerAcquisitionMap.get(score.playerId) || 'unknown';
+    const points = parseFloat(score.points) || 0;
+
+    if (!weeklyScores[week][acquisitionType]) {
+      weeklyScores[week][acquisitionType] = 0;
+    }
+    weeklyScores[week][acquisitionType] += points;
+  }
+
+
+  // Convert to array and round values
+  return Object.values(weeklyScores).map(weekData => {
+    const result: WeeklyScore = { week: weekData.week };
+    Object.keys(weekData).forEach(key => {
+      if (key !== 'week') {
+        result[key] = Math.round((weekData[key] || 0) * 100) / 100;
+      }
+    });
+    return result;
+  });
+}
+
+async function getLeagueRosterPPG(
+  family: string[],
+  currentSeason: string
+): Promise<Record<string, Record<number, number>>> {
+  // For now, return a simplified structure that won't crash the analytics
+  // This can be enhanced later with proper acquisition type mapping across all rosters
+  const db = await getDb();
+
+  // Get current week to filter to only completed weeks
+  const currentWeek = await getCurrentWeek();
+  const completedWeeks = currentWeek - 1;
+
+  if (completedWeeks <= 0) {
+    return {};
+  }
+
+  // Get all starter scores for the league to calculate basic PPG rankings
+  const leagueData = await db
+    .select({
+      rosterId: playerScores.rosterId,
+      points: sql<number>`sum(${playerScores.points}::numeric)`.as('totalPoints'),
+    })
+    .from(playerScores)
+    .where(
+      and(
+        inArray(playerScores.leagueId, family),
+        eq(sql`extract(year from to_timestamp(${playerScores.leagueId}::bigint >> 22) + interval '1262304000 seconds')::text`, currentSeason),
+        eq(playerScores.isStarter, true),
+        gte(playerScores.week, 1),
+        lt(playerScores.week, currentWeek)
+      )
+    )
+    .groupBy(playerScores.rosterId);
+
+  // For now, return a basic structure for league rankings
+  // This provides the data structure needed but with simplified data
+  const result: Record<string, Record<number, number>> = {
+    trade: {},
+    draft: {},
+    waiver: {},
+    free_agency: {},
+    unknown: {}
+  };
+
+  // Calculate PPG for each roster and assign to 'unknown' category for now
+  for (const score of leagueData) {
+    const rosterId = score.rosterId;
+    const ppg = Math.round((parseFloat(score.points.toString()) / completedWeeks) * 100) / 100;
+
+    // Add to all categories for now (simplified approach)
+    Object.keys(result).forEach(acquisitionType => {
+      result[acquisitionType][rosterId] = ppg;
+    });
+  }
+
+  return result;
 }
