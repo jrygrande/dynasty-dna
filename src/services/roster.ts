@@ -1,8 +1,8 @@
 import { getDb } from '@/db/index';
 import { assetEvents, players, rosters, users, playerScores, leagues, tradedPicks } from '@/db/schema';
-import { and, eq, desc, sql, isNotNull, inArray, gte } from 'drizzle-orm';
+import { and, eq, desc, sql, isNotNull, inArray, gte, lt } from 'drizzle-orm';
 import { getLeagueFamily } from '@/services/assets';
-import { getCurrentSeason } from '@/services/nfl';
+import { getCurrentSeason, getCurrentWeek } from '@/services/nfl';
 import type { PlayerScore } from '@/types/playerPerformance';
 
 export interface RosterPlayer {
@@ -14,7 +14,6 @@ export interface RosterPlayer {
   acquisitionDate: string;
   acquisitionType: string;
   currentSeasonStats: {
-    ppg: number;
     startPercentage: number;
     ppgWhenStarting: number;
     ppgSinceAcquiring: number;
@@ -158,7 +157,6 @@ export async function getCurrentRosterAssets(leagueId: string, rosterId: number)
     for (const event of playerEvents) {
       const playerInfo = playerInfoMap.get(event.playerId!);
       const stats = playerStats.get(event.playerId!) || {
-        ppg: 0,
         startPercentage: 0,
         ppgWhenStarting: 0,
         ppgSinceAcquiring: 0,
@@ -212,7 +210,11 @@ async function getPlayerStatsForRoster(
 
   if (playerIds.length === 0) return statsMap;
 
-  // Get current season player scores for our players
+  // Get current week to filter to only completed weeks
+  const currentWeek = await getCurrentWeek();
+  const completedWeeks = currentWeek - 1; // Only weeks with completed games
+
+  // Get current season player scores for our players (only completed weeks)
   const seasonScores = await db
     .select({
       playerId: playerScores.playerId,
@@ -227,11 +229,12 @@ async function getPlayerStatsForRoster(
       and(
         inArray(playerScores.leagueId, family),
         inArray(playerScores.playerId, playerIds),
-        eq(leagues.season, currentSeason)
+        eq(leagues.season, currentSeason),
+        lt(playerScores.week, currentWeek)
       )
     );
 
-  // Get all starter scores by position for percentile calculation
+  // Get all starter scores by position for percentile calculation (only completed weeks)
   const allStarterScores = await db
     .select({
       playerId: playerScores.playerId,
@@ -246,6 +249,7 @@ async function getPlayerStatsForRoster(
         inArray(playerScores.leagueId, family),
         eq(playerScores.isStarter, true),
         eq(leagues.season, currentSeason),
+        lt(playerScores.week, currentWeek),
         isNotNull(players.position)
       )
     );
@@ -274,7 +278,7 @@ async function getPlayerStatsForRoster(
     playerPositionMap.set(score.playerId, score.position!);
   }
 
-  // Calculate PPG for each player at their position
+  // Calculate PPG for each player at their position (testing without scaling)
   for (const [, data] of playerScoresByPosition) {
     const ppg = data.scores.reduce((sum, pts) => sum + pts, 0) / data.scores.length;
     if (!positionPPGMap.has(data.position)) {
@@ -295,12 +299,15 @@ async function getPlayerStatsForRoster(
   for (const [playerId, scores] of playerScoreMap) {
     const totalGames = scores.length;
     const starterGames = scores.filter(s => s.isStarter).length;
+
+    // Use points as-is (testing without scaling)
     const totalPoints = scores.reduce((sum, s) => sum + parseFloat(s.points), 0);
     const starterPoints = scores.filter(s => s.isStarter).reduce((sum, s) => sum + parseFloat(s.points), 0);
 
-    const ppg = totalGames > 0 ? totalPoints / totalGames : 0;
-    const startPercentage = totalGames > 0 ? (starterGames / totalGames) * 100 : 0;
+    // Metrics per requirements
+    const startPercentage = completedWeeks > 0 ? (starterGames / completedWeeks) * 100 : 0;
     const ppgWhenStarting = starterGames > 0 ? starterPoints / starterGames : 0;
+    const ppgSinceAcquiring = completedWeeks > 0 ? totalPoints / completedWeeks : 0; // TODO: Calculate from acquisition date
 
     // Calculate position percentile
     let positionPercentile = 0;
@@ -312,10 +319,9 @@ async function getPlayerStatsForRoster(
     }
 
     statsMap.set(playerId, {
-      ppg: Math.round(ppg * 100) / 100,
       startPercentage: Math.round(startPercentage * 10) / 10,
       ppgWhenStarting: Math.round(ppgWhenStarting * 100) / 100,
-      ppgSinceAcquiring: ppg, // For now, same as season PPG
+      ppgSinceAcquiring: Math.round(ppgSinceAcquiring * 100) / 100,
       positionPercentile: Math.round(positionPercentile * 10) / 10,
     });
   }
