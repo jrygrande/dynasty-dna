@@ -1,4 +1,5 @@
 import { Card, CardContent } from '@/components/ui/card';
+import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip';
 import { PositionBadge } from './PositionBadge';
 import { AcquisitionTypeBadge } from './AcquisitionTypeBadge';
 import { PercentileBar } from './PercentileBar';
@@ -7,10 +8,11 @@ import type { RosterPlayer } from '@/services/roster';
 interface PlayerCardProps {
   player: RosterPlayer;
   leagueId: string;
+  leagueName?: string;
   onPlayerClick: (playerId: string, playerName: string) => void;
 }
 
-export function PlayerCard({ player, leagueId, onPlayerClick }: PlayerCardProps) {
+export function PlayerCard({ player, leagueId, leagueName, onPlayerClick }: PlayerCardProps) {
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-US', {
       month: 'short',
@@ -70,7 +72,18 @@ export function PlayerCard({ player, leagueId, onPlayerClick }: PlayerCardProps)
               </div>
             </div>
             <div className="space-y-1">
-              <div className="text-muted-foreground">Position Rank</div>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div className="text-muted-foreground cursor-help">Production Rank</div>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p className="max-w-xs">
+                      This player's performance in your starting lineup compared to all players started at {player.position || 'this position'} in {leagueName || 'this league'}
+                    </p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
               <PercentileBar
                 percentile={player.currentSeasonStats.positionPercentile}
                 className="max-w-full lg:max-w-24"

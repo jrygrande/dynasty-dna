@@ -121,6 +121,7 @@ export default function RosterClient({ leagueId, rosterId }: RosterClientProps) 
                       key={player.id}
                       player={player}
                       leagueId={leagueId}
+                      leagueName="your league"
                       onPlayerClick={handlePlayerClick}
                     />
                   ))}
