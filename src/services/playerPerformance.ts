@@ -52,7 +52,7 @@ export function extractOwnershipPeriods(events: TimelineEvent[]): OwnershipPerio
     if (!event.toRosterId || !event.toUser) continue;
 
     // Determine period boundaries
-    const startWeek = event.week === 0 ? 1 : event.week + 1;
+    const startWeek = (event.week === 0 || event.week === null) ? 1 : event.week + 1;
 
     // For endWeek, we need to be careful about same-week trades and season boundaries
     let endWeek: number | null = null;

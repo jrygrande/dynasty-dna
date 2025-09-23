@@ -24,7 +24,8 @@
       "@/db": ["src/db/index.ts"],
       "@/lib/*": ["src/lib/*"],
       "@/repositories/*": ["src/repositories/*"],
-      "@/services/*": ["src/services/*"]
+      "@/services/*": ["src/services/*"],
+      "@/types/*": ["src/types/*"]
     },
     "allowJs": true,
     "esModuleInterop": true,
