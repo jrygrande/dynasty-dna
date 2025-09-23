@@ -125,17 +125,8 @@ export async function getCurrentRosterAssets(leagueId: string, rosterId: number)
   // All current assets are now players (we'll get picks separately)
   const playerEvents = currentAssets;
 
-  // Get traded picks (future picks owned by this roster)
-  const tradedPicksData = await db
-    .select()
-    .from(tradedPicks)
-    .where(
-      and(
-        eq(tradedPicks.leagueId, leagueId),
-        eq(tradedPicks.currentOwnerId, manager.id),
-        gte(tradedPicks.season, String(currentSeasonInt + 1))
-      )
-    );
+  // Get all draft picks for this roster (including non-traded original picks)
+  const allRosterPicks = await getAllRosterPicks(leagueId, rosterId, manager.id, currentSeasonInt);
 
   // Get player details and stats
   const rosterPlayers: RosterPlayer[] = [];
@@ -178,14 +169,8 @@ export async function getCurrentRosterAssets(leagueId: string, rosterId: number)
     }
   }
 
-  // Get all future picks for this roster (from traded picks table)
-  const uniquePicks: RosterPick[] = tradedPicksData.map(pick => ({
-    season: pick.season,
-    round: pick.round,
-    originalRosterId: pick.originalRosterId,
-    acquisitionDate: '2024-01-01T00:00:00.000Z', // Default date for traded picks
-    acquisitionType: 'traded_pick',
-  }));
+  // Use the computed roster picks
+  const uniquePicks: RosterPick[] = allRosterPicks;
 
   return {
     manager: {
@@ -198,6 +183,75 @@ export async function getCurrentRosterAssets(leagueId: string, rosterId: number)
       picks: uniquePicks,
     },
   };
+}
+
+async function getAllRosterPicks(
+  leagueId: string,
+  rosterId: number,
+  userId: string,
+  currentSeasonInt: number
+): Promise<RosterPick[]> {
+  const db = await getDb();
+
+  // Generate all default picks for this roster (3 years out, 4 rounds each)
+  const futureYears = [currentSeasonInt + 1, currentSeasonInt + 2, currentSeasonInt + 3];
+  const defaultPicks: RosterPick[] = [];
+
+  for (const year of futureYears) {
+    for (let round = 1; round <= 4; round++) {
+      defaultPicks.push({
+        season: String(year),
+        round,
+        originalRosterId: rosterId,
+        acquisitionDate: `${year - 3}-01-01T00:00:00.000Z`, // Year when provisioned (3 years prior)
+        acquisitionType: 'original',
+      });
+    }
+  }
+
+  // Get all traded picks affecting this roster
+  const tradedPicksData = await db
+    .select()
+    .from(tradedPicks)
+    .where(
+      and(
+        eq(tradedPicks.leagueId, leagueId),
+        gte(tradedPicks.season, String(currentSeasonInt + 1))
+      )
+    );
+
+  // Find picks traded away from this roster
+  const tradedAwayPicks = new Set<string>();
+
+  // Find picks traded to this roster
+  const tradedToPicks: RosterPick[] = [];
+
+  for (const pick of tradedPicksData) {
+    const pickKey = `${pick.season}-${pick.round}`;
+
+    if (pick.originalRosterId === rosterId && pick.currentOwnerId !== userId) {
+      // This roster's original pick was traded away
+      tradedAwayPicks.add(pickKey);
+    } else if (pick.currentOwnerId === userId && pick.originalRosterId !== rosterId) {
+      // This roster acquired someone else's pick
+      tradedToPicks.push({
+        season: pick.season,
+        round: pick.round,
+        originalRosterId: pick.originalRosterId,
+        acquisitionDate: '2024-01-01T00:00:00.000Z', // Default date for traded picks
+        acquisitionType: 'traded_pick',
+      });
+    }
+  }
+
+  // Filter out traded-away picks from default picks
+  const remainingOriginalPicks = defaultPicks.filter(pick => {
+    const pickKey = `${pick.season}-${pick.round}`;
+    return !tradedAwayPicks.has(pickKey);
+  });
+
+  // Combine remaining original picks with acquired picks
+  return [...remainingOriginalPicks, ...tradedToPicks];
 }
 
 async function getPlayerStatsForRoster(
