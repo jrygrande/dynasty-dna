@@ -5,19 +5,23 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { PlayerCard } from '@/components/roster/PlayerCard';
 import { AcquisitionTypeBadge } from '@/components/roster/AcquisitionTypeBadge';
-import type { RosterResponse } from '@/services/roster';
+import type { RosterResponse, RosterPlayer } from '@/services/roster';
 
 interface RosterClientProps {
   leagueId: string;
   rosterId: number;
 }
 
+type SortOption = 'production_rank' | 'start_percentage' | 'ppg_lineup' | 'ppg_roster';
+
 export default function RosterClient({ leagueId, rosterId }: RosterClientProps) {
   const [rosterData, setRosterData] = useState<RosterResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [sortBy, setSortBy] = useState<SortOption>('production_rank');
 
   useEffect(() => {
     async function fetchRosterData() {
@@ -77,6 +81,34 @@ export default function RosterClient({ leagueId, rosterId }: RosterClientProps) 
     window.location.href = `/player-scoring?leagueId=${leagueId}&playerId=${playerId}&playerName=${encodeURIComponent(playerName)}`;
   };
 
+  const sortPlayers = (players: RosterPlayer[], sortOption: SortOption): RosterPlayer[] => {
+    return [...players].sort((a, b) => {
+      let primarySort = 0;
+
+      switch (sortOption) {
+        case 'production_rank':
+          primarySort = b.currentSeasonStats.positionPercentile - a.currentSeasonStats.positionPercentile;
+          break;
+        case 'start_percentage':
+          primarySort = b.currentSeasonStats.startPercentage - a.currentSeasonStats.startPercentage;
+          break;
+        case 'ppg_lineup':
+          primarySort = b.currentSeasonStats.ppgWhenStarting - a.currentSeasonStats.ppgWhenStarting;
+          break;
+        case 'ppg_roster':
+          primarySort = b.currentSeasonStats.ppgSinceAcquiring - a.currentSeasonStats.ppgSinceAcquiring;
+          break;
+      }
+
+      // If primary sort is tied, use production rank as tiebreaker (higher percentile first)
+      if (primarySort === 0) {
+        return b.currentSeasonStats.positionPercentile - a.currentSeasonStats.positionPercentile;
+      }
+
+      return primarySort;
+    });
+  };
+
   return (
     <div className="container mx-auto px-4 py-8">
       {/* Header Section */}
@@ -110,21 +142,35 @@ export default function RosterClient({ leagueId, rosterId }: RosterClientProps) 
         <TabsContent value="players" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>Current Players ({currentAssets.players.length})</CardTitle>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <CardTitle>Current Players ({currentAssets.players.length})</CardTitle>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-muted-foreground">Sort by:</span>
+                  <Select value={sortBy} onValueChange={(value: SortOption) => setSortBy(value)}>
+                    <SelectTrigger className="w-48">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="production_rank">Production Rank</SelectItem>
+                      <SelectItem value="start_percentage">Start %</SelectItem>
+                      <SelectItem value="ppg_lineup">PPG in Lineup</SelectItem>
+                      <SelectItem value="ppg_roster">PPG on Roster</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
-                {currentAssets.players
-                  .sort((a, b) => b.currentSeasonStats.positionPercentile - a.currentSeasonStats.positionPercentile)
-                  .map((player) => (
-                    <PlayerCard
-                      key={player.id}
-                      player={player}
-                      leagueId={leagueId}
-                      leagueName="your league"
-                      onPlayerClick={handlePlayerClick}
-                    />
-                  ))}
+                {sortPlayers(currentAssets.players, sortBy).map((player) => (
+                  <PlayerCard
+                    key={player.id}
+                    player={player}
+                    leagueId={leagueId}
+                    leagueName="your league"
+                    onPlayerClick={handlePlayerClick}
+                  />
+                ))}
               </div>
             </CardContent>
           </Card>
@@ -245,7 +291,7 @@ export default function RosterClient({ leagueId, rosterId }: RosterClientProps) 
                   <div className="flex justify-between">
                     <span>Elite Players</span>
                     <span className="font-medium">
-                      {currentAssets.players.filter(p => p.currentSeasonStats.positionPercentile >= 80).length}
+                      {currentAssets.players.filter(p => p.currentSeasonStats.positionPercentile >= 90).length}
                     </span>
                   </div>
                 </div>

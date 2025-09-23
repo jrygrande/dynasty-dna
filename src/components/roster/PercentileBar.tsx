@@ -7,19 +7,19 @@ interface PercentileBarProps {
 
 export function PercentileBar({ percentile, className }: PercentileBarProps) {
   const getPercentileColor = (value: number) => {
-    if (value >= 80) return 'bg-green-500';
-    if (value >= 60) return 'bg-blue-500';
-    if (value >= 40) return 'bg-yellow-500';
-    if (value >= 20) return 'bg-orange-500';
-    return 'bg-red-500';
+    if (value >= 90) return 'bg-green-500';      // Elite
+    if (value >= 70) return 'bg-blue-500';       // Quality
+    if (value >= 40) return 'bg-yellow-500';     // Average
+    if (value >= 20) return 'bg-orange-500';     // Replacement
+    return 'bg-red-500';                         // Disaster
   };
 
   const getPercentileLabel = (value: number) => {
     if (value >= 90) return 'Elite';
-    if (value >= 75) return 'Good';
-    if (value >= 50) return 'Average';
-    if (value >= 25) return 'Below Avg';
-    return 'Poor';
+    if (value >= 70) return 'Quality';
+    if (value >= 40) return 'Average';
+    if (value >= 20) return 'Replacement';
+    return 'Disaster';
   };
 
   return (
