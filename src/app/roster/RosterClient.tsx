@@ -199,7 +199,7 @@ export default function RosterClient({ leagueId, rosterId }: RosterClientProps) 
                                 <AcquisitionTypeBadge type={pick.acquisitionType} />
                               </div>
                               <div className="text-sm text-muted-foreground">
-                                Originally: Roster {pick.originalRosterId}
+                                Originally: {pick.originalManagerName}
                               </div>
                               {pick.acquisitionType !== 'original' && (
                                 <div className="text-xs text-muted-foreground">

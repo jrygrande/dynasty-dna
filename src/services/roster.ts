@@ -25,6 +25,7 @@ export interface RosterPick {
   season: string;
   round: number;
   originalRosterId: number;
+  originalManagerName: string;
   acquisitionDate: string;
   acquisitionType: string;
 }
@@ -193,6 +194,24 @@ async function getAllRosterPicks(
 ): Promise<RosterPick[]> {
   const db = await getDb();
 
+  // Get all roster managers for this league to map roster IDs to usernames
+  const rosterManagers = await db
+    .select({
+      rosterId: rosters.rosterId,
+      username: users.username,
+      displayName: users.displayName,
+    })
+    .from(rosters)
+    .leftJoin(users, eq(rosters.ownerId, users.id))
+    .where(eq(rosters.leagueId, leagueId));
+
+  const rosterManagerMap = new Map(
+    rosterManagers.map(rm => [
+      rm.rosterId,
+      rm.displayName || rm.username || `Roster ${rm.rosterId}`
+    ])
+  );
+
   // Generate all default picks for this roster (3 years out, 4 rounds each)
   const futureYears = [currentSeasonInt + 1, currentSeasonInt + 2, currentSeasonInt + 3];
   const defaultPicks: RosterPick[] = [];
@@ -203,6 +222,7 @@ async function getAllRosterPicks(
         season: String(year),
         round,
         originalRosterId: rosterId,
+        originalManagerName: rosterManagerMap.get(rosterId) || `Roster ${rosterId}`,
         acquisitionDate: `${year - 3}-01-01T00:00:00.000Z`, // Year when provisioned (3 years prior)
         acquisitionType: 'original',
       });
@@ -238,6 +258,7 @@ async function getAllRosterPicks(
         season: pick.season,
         round: pick.round,
         originalRosterId: pick.originalRosterId,
+        originalManagerName: rosterManagerMap.get(pick.originalRosterId) || `Roster ${pick.originalRosterId}`,
         acquisitionDate: '2024-01-01T00:00:00.000Z', // Default date for traded picks
         acquisitionType: 'traded_pick',
       });
