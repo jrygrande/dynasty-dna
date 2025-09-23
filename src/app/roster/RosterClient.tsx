@@ -114,14 +114,16 @@ export default function RosterClient({ leagueId, rosterId }: RosterClientProps) 
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
-                {currentAssets.players.map((player) => (
-                  <PlayerCard
-                    key={player.id}
-                    player={player}
-                    leagueId={leagueId}
-                    onPlayerClick={handlePlayerClick}
-                  />
-                ))}
+                {currentAssets.players
+                  .sort((a, b) => b.currentSeasonStats.positionPercentile - a.currentSeasonStats.positionPercentile)
+                  .map((player) => (
+                    <PlayerCard
+                      key={player.id}
+                      player={player}
+                      leagueId={leagueId}
+                      onPlayerClick={handlePlayerClick}
+                    />
+                  ))}
               </div>
             </CardContent>
           </Card>
