@@ -22,10 +22,16 @@ export type NewAssetEvent = {
 };
 
 export async function replaceAssetEventsForLeagues(leagueIds: string[], rows: NewAssetEvent[]) {
-  if (!leagueIds.length) return 0;
-  const db = await getDb();
-  await db.delete(assetEvents).where(inArray(assetEvents.leagueId, leagueIds));
   if (!rows.length) return 0;
+  const db = await getDb();
+
+  // Only delete existing events if we have specific leagues to replace
+  if (leagueIds.length > 0) {
+    await db.delete(assetEvents).where(inArray(assetEvents.leagueId, leagueIds));
+  }
+
+  // With the unique constraint in place, we can rely on the database to prevent duplicates
+  // No need for application-level deduplication anymore
   const CHUNK = 400; // keep payloads small for Neon HTTP limits
   let total = 0;
   for (let i = 0; i < rows.length; i += CHUNK) {
@@ -47,8 +53,19 @@ export async function replaceAssetEventsForLeagues(leagueIds: string[], rows: Ne
       transactionId: e.transactionId ?? null,
       details: (e.details ?? null) as any,
     }));
-    await db.insert(assetEvents).values(slice);
-    total += slice.length;
+
+    try {
+      await db.insert(assetEvents).values(slice);
+      total += slice.length;
+    } catch (error: any) {
+      // If we hit a unique constraint violation, it means some events already exist
+      // This is expected in incremental sync scenarios - just continue
+      if (error.message?.includes('duplicate key') || error.message?.includes('unique constraint')) {
+        console.log(`Skipped ${slice.length} duplicate events in chunk`);
+        continue;
+      }
+      throw error; // Re-throw other errors
+    }
   }
   await persistDb();
   return total;
@@ -135,17 +152,26 @@ export async function getAssetsInTransaction(transactionId: string) {
     .where(eq(assetEvents.transactionId, transactionId))
     .orderBy(assetEvents.assetKind, assetEvents.playerId, assetEvents.pickSeason, assetEvents.pickRound);
 
+  // For trade transactions, filter to avoid showing duplicates
+  // If we have 'trade' events, only show those (they contain complete from/to info)
+  // Otherwise show all events (for non-trade transactions like waivers)
+  const hasTradeEvents = rows.some(row => row.eventType === 'trade' || row.eventType === 'pick_trade');
+
+  const filteredRows = hasTradeEvents
+    ? rows.filter(row => row.eventType === 'trade' || row.eventType === 'pick_trade')
+    : rows;
+
   // Get player names for player assets
   const { getPlayersByIds } = await import('@/repositories/players');
-  const playerIds = rows
+  const playerIds = filteredRows
     .filter(row => row.assetKind === 'player' && row.playerId)
     .map(row => row.playerId as string);
 
   const players = playerIds.length > 0 ? await getPlayersByIds(playerIds) : [];
   const playerMap = new Map(players.map(p => [p.id, p]));
 
-  // Enhance rows with player information
-  return rows.map(row => ({
+  // Enhance filtered rows with player information
+  return filteredRows.map(row => ({
     ...row,
     playerName: row.assetKind === 'player' && row.playerId ? playerMap.get(row.playerId)?.name || null : null,
     playerPosition: row.assetKind === 'player' && row.playerId ? playerMap.get(row.playerId)?.position || null : null,

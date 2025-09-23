@@ -257,12 +257,24 @@ export async function syncUser(input: { username?: string; userId?: string }): P
   return { userId: user.user_id, username: user.username, leagues };
 }
 
-export async function syncLeagueFamily(rootLeagueId: string) {
+export async function syncLeagueFamily(rootLeagueId: string, opts?: { incremental?: boolean }) {
   const family = await getLeagueFamily(rootLeagueId);
   const results: { leagueId: string; result: SyncResult }[] = [];
   for (const id of family) {
     const result = await syncLeague(id);
     results.push({ leagueId: id, result });
   }
+
+  // After syncing league data, run asset events sync
+  if (opts?.incremental) {
+    const { syncAssetEventsIncremental } = await import('./assets');
+    const assetEventsResult = await syncAssetEventsIncremental(rootLeagueId);
+    console.log(`Asset events incremental sync: ${assetEventsResult.eventsGenerated} events from ${assetEventsResult.transactionsProcessed} transactions`);
+  } else {
+    const { rebuildAssetEventsForLeagueFamily } = await import('./assets');
+    const assetEventsResult = await rebuildAssetEventsForLeagueFamily(rootLeagueId);
+    console.log(`Asset events full rebuild: ${assetEventsResult.events} events for ${assetEventsResult.leagues} leagues`);
+  }
+
   return { leagues: family, results };
 }

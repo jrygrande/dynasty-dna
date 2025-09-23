@@ -125,7 +125,7 @@ const TransactionNode: React.FC<TransactionNodeProps> = ({
       </div>
 
       {/* Event type label */}
-      <div className="text-xs text-gray-600 mt-1 max-w-16 text-center leading-tight">
+      <div className="text-xs text-gray-600 mt-1 max-w-20 text-center leading-tight break-words">
         {label}
       </div>
     </div>

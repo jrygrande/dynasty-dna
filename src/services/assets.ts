@@ -1,9 +1,9 @@
 import { Sleeper } from '@/lib/sleeper';
 import { getDb } from '@/db/index';
 import { leagues, rosters, drafts, draftPicks, transactions } from '@/db/schema';
-import { and, desc, eq, inArray, isNotNull, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull, sql, gte } from 'drizzle-orm';
 import { replaceAssetEventsForLeagues, NewAssetEvent } from '@/repositories/assetEvents';
-import { upsertLeague } from '@/repositories/leagues';
+import { upsertLeague, updateLastAssetEventsSyncTime, getLastAssetEventsSyncTime } from '@/repositories/leagues';
 
 export async function getLeagueFamily(rootLeagueId: string): Promise<string[]> {
   const db = await getDb();
@@ -333,4 +333,181 @@ export async function buildTimelineFromEvents(events: any[]) {
   }));
 
   return timeline;
+}
+
+export async function syncAssetEventsIncremental(rootLeagueId: string) {
+  const db = await getDb();
+  const leagueIds = await getLeagueFamily(rootLeagueId);
+
+  // Get the last sync time for the root league (family leader)
+  const lastSyncTime = await getLastAssetEventsSyncTime(rootLeagueId);
+
+  console.log(`Starting incremental asset events sync for league family: ${leagueIds.join(', ')}`);
+  console.log(`Last sync time: ${lastSyncTime ? lastSyncTime.toISOString() : 'never'}`);
+
+  // Build roster owner maps for each league
+  const rosterOwnerMaps = new Map<string, Map<number, string>>();
+  for (const lid of leagueIds) {
+    const rows = await db.select().from(rosters).where(eq(rosters.leagueId, lid));
+    const map = new Map<number, string>();
+    for (const r of rows) map.set(r.rosterId, r.ownerId);
+    rosterOwnerMaps.set(lid, map);
+  }
+
+  const events: NewAssetEvent[] = [];
+
+  // League seasons map for backfilling season on events
+  const leaguesRows = await db.select().from(leagues).where(inArray(leagues.id, leagueIds));
+  const leagueSeasonById = new Map<string, string>();
+  for (const lg of leaguesRows) leagueSeasonById.set(lg.id, String(lg.season));
+
+  // Only process transactions that are newer than last sync time
+  let txQuery = db.select().from(transactions).where(inArray(transactions.leagueId, leagueIds));
+
+  if (lastSyncTime) {
+    txQuery = txQuery.where(gte(transactions.createdAt, lastSyncTime));
+  }
+
+  const txs = await txQuery;
+  console.log(`Processing ${txs.length} transactions since last sync`);
+
+  for (const t of txs) {
+    const rosterMap = rosterOwnerMaps.get(t.leagueId) || new Map<number, string>();
+    const seasonForLeague = leagueSeasonById.get(t.leagueId) || null;
+    const payload: any = t.payload || {};
+    const week = t.week ?? null;
+    const toSafeDate = (v: any): Date | null => {
+      const n = Number(v);
+      if (!Number.isFinite(n) || n <= 0) return null;
+      // Accept either seconds or milliseconds epoch
+      const ms = n > 1e12 ? n : n * 1000;
+      // guard plausible range: 2000-01-01 .. 2100-01-01
+      const min = Date.UTC(2000, 0, 1);
+      const max = Date.UTC(2100, 0, 1);
+      if (ms < min || ms > max) return null;
+      return new Date(ms);
+    };
+    const eventTime = toSafeDate(payload?.status_updated) || toSafeDate(payload?.created) || null;
+
+    // Adds and drops
+    const adds = payload.adds || {};
+    const drops = payload.drops || {};
+    for (const [playerId, rosterIdRaw] of Object.entries(adds)) {
+      const toRosterId = Number(rosterIdRaw);
+      events.push({
+        leagueId: t.leagueId,
+        season: seasonForLeague,
+        week,
+        eventTime,
+        eventType: t.type === 'waiver' ? 'waiver_add' : t.type === 'free_agent' ? 'free_agent_add' : 'add',
+        assetKind: 'player',
+        playerId,
+        fromUserId: null,
+        toUserId: rosterMap.get(toRosterId) || null,
+        fromRosterId: null,
+        toRosterId,
+        transactionId: t.id,
+        details: { type: t.type },
+      });
+    }
+    for (const [playerId, rosterIdRaw] of Object.entries(drops)) {
+      const fromRosterId = Number(rosterIdRaw);
+      events.push({
+        leagueId: t.leagueId,
+        season: seasonForLeague,
+        week,
+        eventTime,
+        eventType: t.type === 'waiver' ? 'waiver_drop' : t.type === 'free_agent' ? 'free_agent_drop' : 'drop',
+        assetKind: 'player',
+        playerId,
+        fromUserId: rosterMap.get(fromRosterId) || null,
+        toUserId: null,
+        fromRosterId,
+        toRosterId: null,
+        transactionId: t.id,
+        details: { type: t.type },
+      });
+    }
+
+    // Trades and pick trades
+    if (t.type === 'trade') {
+      // players traded are represented via adds/drops above; also add explicit trade events linking both sides
+      const rostersInvolved: number[] = Array.from(new Set([...Object.values(adds), ...Object.values(drops)].map((v: any) => Number(v)).filter((n) => !Number.isNaN(n))));
+      for (const pid of Object.keys(adds)) {
+        // find from roster for this player by looking at drops for same player if present
+        const toRosterId = Number((adds as any)[pid]);
+        const fromRosterId = drops[pid] != null ? Number(drops[pid]) : null;
+        events.push({
+          leagueId: t.leagueId,
+          season: seasonForLeague,
+          week,
+          eventTime,
+          eventType: 'trade',
+          assetKind: 'player',
+          playerId: pid,
+          fromUserId: fromRosterId != null ? (rosterMap.get(fromRosterId) || null) : null,
+          toUserId: rosterMap.get(toRosterId) || null,
+          fromRosterId: fromRosterId,
+          toRosterId: toRosterId,
+          transactionId: t.id,
+          details: { type: t.type },
+        });
+      }
+      // draft_picks array
+      const dp: any[] = Array.isArray(payload.draft_picks) ? payload.draft_picks : [];
+      for (const pr of dp) {
+        const pickSeason = String(pr.season ?? '');
+        const pickRound = Number(pr.round ?? 0);
+        const originalRosterId = Number(pr.roster_id ?? pr.roster ?? 0);
+        // Sleeper may include owner_id and previous_owner_id as roster ids or user ids depending on context
+        let fromUserId: string | null = null;
+        let toUserId: string | null = null;
+        if (typeof pr.previous_owner_id === 'string') fromUserId = pr.previous_owner_id;
+        if (typeof pr.owner_id === 'string') toUserId = pr.owner_id;
+        if (!fromUserId && typeof pr.previous_owner_id === 'number') fromUserId = rosterMap.get(Number(pr.previous_owner_id)) || null;
+        if (!toUserId && typeof pr.owner_id === 'number') toUserId = rosterMap.get(Number(pr.owner_id)) || null;
+        events.push({
+          leagueId: t.leagueId,
+          season: pickSeason,
+          week,
+          eventTime,
+          eventType: 'pick_trade',
+          assetKind: 'pick',
+          pickSeason,
+          pickRound,
+          pickOriginalRosterId: originalRosterId || null,
+          fromUserId,
+          toUserId,
+          fromRosterId: null,
+          toRosterId: null,
+          transactionId: t.id,
+          details: { type: t.type },
+        });
+      }
+    }
+  }
+
+  console.log(`Generated ${events.length} asset events from incremental sync`);
+
+  // Insert events using the existing function (it handles duplicates gracefully now)
+  if (events.length > 0) {
+    // For incremental sync, we don't want to replace all events, just add new ones
+    // Since our constraint prevents duplicates, we can safely insert without worrying about conflicts
+    const insertedCount = await replaceAssetEventsForLeagues([], events); // Empty league list means insert-only mode
+    console.log(`Successfully inserted ${insertedCount} new asset events`);
+  }
+
+  // Update the last sync time for all leagues in the family
+  for (const leagueId of leagueIds) {
+    await updateLastAssetEventsSyncTime(leagueId);
+  }
+
+  console.log(`Incremental sync completed. Updated last sync time for ${leagueIds.length} leagues.`);
+
+  return {
+    leagues: leagueIds.length,
+    transactionsProcessed: txs.length,
+    eventsGenerated: events.length,
+    lastSyncTime: lastSyncTime?.toISOString() || null
+  };
 }

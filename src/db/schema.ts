@@ -23,6 +23,7 @@ export const leagues = pgTable(
     season: text('season').notNull(),
     previousLeagueId: text('previous_league_id'),
     settings: jsonb('settings'),
+    lastAssetEventsSyncAt: timestamp('last_asset_events_sync_at', { withTimezone: false }),
     createdAt: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
   },
   (t) => ({

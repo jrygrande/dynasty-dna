@@ -321,7 +321,42 @@ export default function ScoringBarChart({ scores, transactions, seasonBoundaries
 
       {/* Transaction Timeline */}
       <TransactionTimeline
-        transactions={transactions}
+        transactions={(() => {
+          // Filter transactions to avoid overlapping nodes for the same transaction
+          // For trade transactions, prefer 'trade' and 'pick_trade' events over 'add'/'drop' events
+          const transactionGroups = new Map<string, TransactionWithPosition[]>();
+
+          // Group by transactionId AND playerId to handle multiple players in same transaction
+          transactions.forEach(transaction => {
+            const key = transaction.transactionId
+              ? `${transaction.transactionId}-${transaction.playerId || 'no-player'}`
+              : `${transaction.eventType}-${transaction.position}`;
+            if (!transactionGroups.has(key)) {
+              transactionGroups.set(key, []);
+            }
+            transactionGroups.get(key)!.push(transaction);
+          });
+
+          // For each group, select the best representative event
+          const filteredTransactions: TransactionWithPosition[] = [];
+          transactionGroups.forEach(group => {
+            if (group.length === 1) {
+              // Single event, just include it
+              filteredTransactions.push(group[0]);
+            } else {
+              // Multiple events for same transaction - prioritize trade events
+              const tradeEvent = group.find(t => t.eventType === 'trade' || t.eventType === 'pick_trade');
+              if (tradeEvent) {
+                filteredTransactions.push(tradeEvent);
+              } else {
+                // No trade event, just pick the first one
+                filteredTransactions.push(group[0]);
+              }
+            }
+          });
+
+          return filteredTransactions;
+        })()}
         chartWidth={chartDimensions.width}
         chartMargin={{ left: 20, right: 30 }}
         maxPosition={Math.max(...chartData.map(d => d.position))}

@@ -28,3 +28,22 @@ export async function getLeagueSeasonMap(leagueIds: string[]): Promise<Map<strin
 
   return new Map(rows.map(r => [r.id, r.season]));
 }
+
+export async function updateLastAssetEventsSyncTime(leagueId: string) {
+  const db = await getDb();
+  await db
+    .update(leagues)
+    .set({ lastAssetEventsSyncAt: new Date() })
+    .where(eq(leagues.id, leagueId));
+  await persistDb();
+}
+
+export async function getLastAssetEventsSyncTime(leagueId: string): Promise<Date | null> {
+  const db = await getDb();
+  const [row] = await db
+    .select({ lastAssetEventsSyncAt: leagues.lastAssetEventsSyncAt })
+    .from(leagues)
+    .where(eq(leagues.id, leagueId))
+    .limit(1);
+  return row?.lastAssetEventsSyncAt ?? null;
+}
