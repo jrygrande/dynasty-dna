@@ -9,16 +9,20 @@ interface AcquisitionPieChartProps {
 }
 
 const ACQUISITION_COLORS = {
-  trade: '#2563eb',
-  draft: '#dc2626',
-  waiver: '#16a34a',
-  free_agency: '#ca8a04'
+  trade: '#9333ea',
+  draft_selected: '#16a34a',
+  waiver_add: '#ea580c',
+  free_agency: '#eab308'
 };
 
 const formatAcquisitionType = (type: string): string => {
   switch (type) {
     case 'free_agency':
       return 'Free Agency';
+    case 'draft_selected':
+      return 'Draft';
+    case 'waiver_add':
+      return 'Waiver';
     default:
       return type.charAt(0).toUpperCase() + type.slice(1);
   }
@@ -108,6 +112,7 @@ export function AcquisitionPieChart({ data }: AcquisitionPieChartProps) {
                 labelLine={false}
                 label={CustomLabel}
                 outerRadius={100}
+                innerRadius={50}
                 fill="#8884d8"
                 dataKey="value"
               >

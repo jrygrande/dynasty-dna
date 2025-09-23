@@ -41,6 +41,11 @@ export interface WeeklyScore {
   [acquisitionType: string]: number; // Dynamic keys for each acquisition type
 }
 
+export interface WeeklyPositionScore {
+  week: number;
+  [position: string]: number; // Dynamic keys for each position (QB, RB, WR, TE, etc.)
+}
+
 export interface AcquisitionTypeStats {
   points: number;
   ppg: number;
@@ -56,6 +61,7 @@ export interface RosterResponse {
   };
   analytics: {
     weeklyScoresByType: WeeklyScore[];
+    weeklyScoresByPosition: WeeklyPositionScore[];
     acquisitionTypeStats: Record<string, AcquisitionTypeStats>;
   };
 }
@@ -197,6 +203,7 @@ export async function getCurrentRosterAssets(leagueId: string, rosterId: number)
   }
 
   const weeklyScoresByType = await getWeeklyScoresByAcquisitionType(family, rosterId, currentSeason, analyticsAcquisitionMap);
+  const weeklyScoresByPosition = await getWeeklyScoresByPosition(family, rosterId, currentSeason);
   const leagueRosterPPG = await getLeagueRosterPPG(family, currentSeason);
 
   // Calculate acquisition type stats with rankings
@@ -245,6 +252,7 @@ export async function getCurrentRosterAssets(leagueId: string, rosterId: number)
     },
     analytics: {
       weeklyScoresByType,
+      weeklyScoresByPosition,
       acquisitionTypeStats,
     },
   };
@@ -595,4 +603,74 @@ async function getLeagueRosterPPG(
   }
 
   return result;
+}
+
+async function getWeeklyScoresByPosition(
+  family: string[],
+  rosterId: number,
+  currentSeason: string
+): Promise<WeeklyPositionScore[]> {
+  const db = await getDb();
+
+  // Get current week to filter to only completed weeks
+  const currentWeek = await getCurrentWeek();
+  const completedWeeks = currentWeek - 1;
+
+  if (completedWeeks <= 0) {
+    return [];
+  }
+
+  // Get all starter scores for this roster with position information
+  const weeklyData = await db
+    .select({
+      week: playerScores.week,
+      points: playerScores.points,
+      playerId: playerScores.playerId,
+      position: players.position,
+    })
+    .from(playerScores)
+    .innerJoin(leagues, eq(playerScores.leagueId, leagues.id))
+    .innerJoin(players, eq(playerScores.playerId, players.id))
+    .where(
+      and(
+        eq(playerScores.rosterId, rosterId),
+        inArray(playerScores.leagueId, family),
+        eq(leagues.season, currentSeason),
+        eq(playerScores.isStarter, true), // Only starter points
+        gte(playerScores.week, 1),
+        lt(playerScores.week, currentWeek),
+        isNotNull(players.position)
+      )
+    );
+
+  // Group by week and position
+  const weeklyScores: Record<number, Record<string, number>> = {};
+
+  // Initialize weeks
+  for (let week = 1; week <= completedWeeks; week++) {
+    weeklyScores[week] = { week };
+  }
+
+  // Aggregate points by week and position
+  for (const score of weeklyData) {
+    const week = score.week;
+    const position = score.position || 'Unknown';
+    const points = parseFloat(score.points) || 0;
+
+    if (!weeklyScores[week][position]) {
+      weeklyScores[week][position] = 0;
+    }
+    weeklyScores[week][position] += points;
+  }
+
+  // Convert to array and round values
+  return Object.values(weeklyScores).map(weekData => {
+    const result: WeeklyPositionScore = { week: weekData.week };
+    Object.keys(weekData).forEach(key => {
+      if (key !== 'week') {
+        result[key] = Math.round((weekData[key] || 0) * 100) / 100;
+      }
+    });
+    return result;
+  });
 }

@@ -2,38 +2,27 @@
 
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import type { WeeklyScore } from '@/services/roster';
+import type { WeeklyPositionScore } from '@/services/roster';
 
-interface WeeklyStackedBarChartProps {
-  data: WeeklyScore[];
+interface WeeklyPositionBarChartProps {
+  data: WeeklyPositionScore[];
 }
 
-const ACQUISITION_COLORS = {
-  trade: '#9333ea',
-  draft_selected: '#16a34a',
-  waiver_add: '#ea580c',
-  free_agency: '#eab308'
+const POSITION_COLORS = {
+  QB: '#3b82f6', // Blue
+  RB: '#ef4444', // Red
+  WR: '#10b981', // Green
+  TE: '#f59e0b', // Amber
+  K: '#8b5cf6',  // Purple
+  DEF: '#6b7280' // Gray
 };
 
-const formatAcquisitionType = (type: string): string => {
-  switch (type) {
-    case 'free_agency':
-      return 'Free Agency';
-    case 'draft_selected':
-      return 'Draft';
-    case 'waiver_add':
-      return 'Waiver';
-    default:
-      return type.charAt(0).toUpperCase() + type.slice(1);
-  }
-};
-
-export function WeeklyStackedBarChart({ data }: WeeklyStackedBarChartProps) {
+export function WeeklyPositionBarChart({ data }: WeeklyPositionBarChartProps) {
   if (!data || data.length === 0) {
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Weekly Scoring by Acquisition Type</CardTitle>
+          <CardTitle>Weekly Scoring by Position</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="flex items-center justify-center h-64 text-muted-foreground">
@@ -44,8 +33,8 @@ export function WeeklyStackedBarChart({ data }: WeeklyStackedBarChartProps) {
     );
   }
 
-  // Get all acquisition types from the data
-  const acquisitionTypes = Array.from(
+  // Get all positions from the data
+  const positions = Array.from(
     new Set(
       data.flatMap(week =>
         Object.keys(week).filter(key => key !== 'week')
@@ -66,7 +55,7 @@ export function WeeklyStackedBarChart({ data }: WeeklyStackedBarChartProps) {
           .sort((a: any, b: any) => b.value - a.value)
           .map((item: any, index: number) => (
             <p key={index} className="text-sm" style={{ color: item.color }}>
-              {formatAcquisitionType(item.dataKey)}: {item.value.toFixed(1)} pts
+              {item.dataKey}: {item.value.toFixed(1)} pts
             </p>
           ))}
         <div className="border-t pt-2 mt-2">
@@ -79,7 +68,7 @@ export function WeeklyStackedBarChart({ data }: WeeklyStackedBarChartProps) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Weekly Scoring by Acquisition Type</CardTitle>
+        <CardTitle>Weekly Scoring by Position</CardTitle>
       </CardHeader>
       <CardContent>
         <div className="h-80">
@@ -97,15 +86,15 @@ export function WeeklyStackedBarChart({ data }: WeeklyStackedBarChartProps) {
                 verticalAlign="bottom"
                 height={36}
                 formatter={(value) => (
-                  <span className="text-sm">{formatAcquisitionType(value)}</span>
+                  <span className="text-sm">{value}</span>
                 )}
               />
-              {acquisitionTypes.map((type) => (
+              {positions.map((position) => (
                 <Bar
-                  key={type}
-                  dataKey={type}
+                  key={position}
+                  dataKey={position}
                   stackId="points"
-                  fill={ACQUISITION_COLORS[type as keyof typeof ACQUISITION_COLORS] || '#6b7280'}
+                  fill={POSITION_COLORS[position as keyof typeof POSITION_COLORS] || '#6b7280'}
                 />
               ))}
             </BarChart>
