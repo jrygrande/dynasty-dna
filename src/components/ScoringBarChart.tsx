@@ -49,7 +49,9 @@ interface ScoringBarChartProps {
   rosterLegend: RosterLegendItem[];
   benchmarks?: WeeklyBenchmark[];
   playerPosition?: string;
-  onTransactionClick?: (transaction: TimelineEvent) => void;
+  openTransactions: Set<string>;
+  onTransactionToggle?: (transaction: TimelineEvent) => void;
+  playerId?: string;
 }
 
 interface ChartDataPoint {
@@ -68,7 +70,7 @@ interface ChartDataPoint {
   topDecile?: number;
 }
 
-export default function ScoringBarChart({ scores, transactions, seasonBoundaries, rosterLegend, benchmarks = [], playerPosition, onTransactionClick }: ScoringBarChartProps) {
+export default function ScoringBarChart({ scores, transactions, seasonBoundaries, rosterLegend, benchmarks = [], playerPosition, openTransactions, onTransactionToggle, playerId }: ScoringBarChartProps) {
   const chartContainerRef = React.useRef<HTMLDivElement>(null);
   const [chartDimensions, setChartDimensions] = React.useState({ width: 800, height: 384 });
 
@@ -181,13 +183,13 @@ export default function ScoringBarChart({ scores, transactions, seasonBoundaries
 
   const handleBarClick = (data: any) => {
     const point = data as ChartDataPoint;
-    if (point.hasTransaction && onTransactionClick) {
-      // For simplicity, just click on the first transaction
+    if (point.hasTransaction && onTransactionToggle) {
+      // For simplicity, just toggle the first transaction
       // Could be enhanced to show a list if multiple transactions
       const transaction = point.transactions[0];
       // Remove the position property to pass clean TimelineEvent
       const { position, ...timelineEvent } = transaction;
-      onTransactionClick(timelineEvent);
+      onTransactionToggle(timelineEvent);
     }
   };
 
@@ -324,7 +326,9 @@ export default function ScoringBarChart({ scores, transactions, seasonBoundaries
         chartMargin={{ left: 20, right: 30 }}
         maxPosition={Math.max(...chartData.map(d => d.position))}
         minPosition={Math.min(...chartData.map(d => d.position))}
-        onTransactionClick={onTransactionClick}
+        openTransactions={openTransactions}
+        onTransactionToggle={onTransactionToggle}
+        playerId={playerId}
       />
     </div>
   );

@@ -2,6 +2,7 @@
 
 import React from 'react';
 import type { TimelineEvent } from '@/lib/api/assets';
+import TransactionPopup from './TransactionPopup';
 
 interface TransactionWithPosition extends TimelineEvent {
   position: number;
@@ -13,13 +14,16 @@ interface TransactionTimelineProps {
   chartMargin: { left: number; right: number };
   maxPosition: number;
   minPosition: number;
-  onTransactionClick?: (transaction: TimelineEvent) => void;
+  openTransactions: Set<string>;
+  onTransactionToggle?: (transaction: TimelineEvent) => void;
+  playerId?: string;
 }
 
 interface TransactionNodeProps {
   transaction: TransactionWithPosition;
   xPosition: number;
-  onTransactionClick?: (transaction: TimelineEvent) => void;
+  isOpen: boolean;
+  onTransactionToggle?: (transaction: TimelineEvent) => void;
 }
 
 const getEventColor = (eventType: string): string => {
@@ -85,12 +89,13 @@ const formatEventType = (eventType: string): string => {
 const TransactionNode: React.FC<TransactionNodeProps> = ({
   transaction,
   xPosition,
-  onTransactionClick
+  isOpen,
+  onTransactionToggle
 }) => {
   const handleClick = () => {
-    if (onTransactionClick) {
+    if (onTransactionToggle) {
       const { position, ...timelineEvent } = transaction;
-      onTransactionClick(timelineEvent);
+      onTransactionToggle(timelineEvent);
     }
   };
 
@@ -112,7 +117,7 @@ const TransactionNode: React.FC<TransactionNodeProps> = ({
         className={`
           w-8 h-8 rounded-full border-2 flex items-center justify-center text-sm
           shadow-md transition-all duration-200 group-hover:scale-110 group-hover:shadow-lg
-          ${colorClasses}
+          ${colorClasses} ${isOpen ? 'ring-2 ring-blue-400 ring-offset-1' : ''}
         `}
         title={`${label} - ${transaction.eventTime ? new Date(transaction.eventTime).toLocaleDateString() : 'Unknown date'}`}
       >
@@ -133,7 +138,9 @@ export default function TransactionTimeline({
   chartMargin,
   maxPosition,
   minPosition,
-  onTransactionClick
+  openTransactions,
+  onTransactionToggle,
+  playerId
 }: TransactionTimelineProps) {
   if (transactions.length === 0) {
     return null;
@@ -149,19 +156,36 @@ export default function TransactionTimeline({
   };
 
   return (
-    <div className="relative w-full" style={{ height: '80px', marginTop: '10px' }}>
+    <div className="relative w-full" style={{ height: '160px', marginTop: '10px' }}>
       {/* Timeline background */}
       <div className="absolute top-6 left-0 right-0 h-px bg-gray-200" />
 
       {/* Transaction nodes */}
-      {transactions.map((transaction, index) => (
-        <TransactionNode
-          key={`${transaction.id}-${index}`}
-          transaction={transaction}
-          xPosition={calculateXPosition(transaction.position)}
-          onTransactionClick={onTransactionClick}
-        />
-      ))}
+      {transactions.map((transaction, index) => {
+        const xPosition = calculateXPosition(transaction.position);
+        const isOpen = openTransactions.has(transaction.id);
+
+        return (
+          <React.Fragment key={`${transaction.id}-${index}`}>
+            <TransactionNode
+              transaction={transaction}
+              xPosition={xPosition}
+              isOpen={isOpen}
+              onTransactionToggle={onTransactionToggle}
+            />
+
+            {/* Render popup if this transaction is open */}
+            {isOpen && (
+              <TransactionPopup
+                event={transaction}
+                xPosition={xPosition}
+                onClose={() => onTransactionToggle && onTransactionToggle(transaction)}
+                playerId={playerId}
+              />
+            )}
+          </React.Fragment>
+        );
+      })}
     </div>
   );
 }

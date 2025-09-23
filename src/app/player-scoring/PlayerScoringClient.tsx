@@ -5,7 +5,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import ScoringBarChart from '@/components/ScoringBarChart';
-import TransactionDetailsModal from '@/components/TransactionDetailsModal';
 import type { TimelineEvent } from '@/lib/api/assets';
 
 interface PlayerScoringResponse {
@@ -66,8 +65,7 @@ export default function PlayerScoringClient({ leagueId, playerId, playerName }: 
   const [data, setData] = useState<PlayerScoringResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedTransaction, setSelectedTransaction] = useState<TimelineEvent | null>(null);
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [openTransactions, setOpenTransactions] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     async function fetchData() {
@@ -107,14 +105,16 @@ export default function PlayerScoringClient({ leagueId, playerId, playerName }: 
     }
   }, [leagueId, playerId, playerName]);
 
-  const handleTransactionClick = (transaction: TimelineEvent) => {
-    setSelectedTransaction(transaction);
-    setIsModalOpen(true);
-  };
-
-  const handleCloseModal = () => {
-    setIsModalOpen(false);
-    setSelectedTransaction(null);
+  const handleTransactionToggle = (transaction: TimelineEvent) => {
+    setOpenTransactions(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(transaction.id)) {
+        newSet.delete(transaction.id);
+      } else {
+        newSet.add(transaction.id);
+      }
+      return newSet;
+    });
   };
 
   if (loading) {
@@ -185,18 +185,13 @@ export default function PlayerScoringClient({ leagueId, playerId, playerName }: 
             rosterLegend={data.timeline.rosterLegend}
             benchmarks={data.timeline.benchmarks}
             playerPosition={data.player.position || undefined}
-            onTransactionClick={handleTransactionClick}
+            openTransactions={openTransactions}
+            onTransactionToggle={handleTransactionToggle}
+            playerId={data.player.id}
           />
         </CardContent>
       </Card>
 
-      {/* Transaction Details Modal */}
-      <TransactionDetailsModal
-        event={selectedTransaction}
-        isOpen={isModalOpen}
-        onOpenChange={setIsModalOpen}
-        playerId={data.player.id}
-      />
     </div>
   );
 }
