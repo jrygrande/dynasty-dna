@@ -122,16 +122,10 @@ export default function RosterClient({ leagueId, rosterId }: RosterClientProps) 
         <Card>
           <CardHeader>
             <CardTitle className="text-3xl">
-              {manager.displayName || manager.username || 'Unknown Manager'}
+              {manager.teamName || 'Team Name Not Set'}
             </CardTitle>
             <div className="flex gap-6 text-sm text-muted-foreground mt-2">
-              <span className="flex items-center gap-1">
-                <span className="font-medium">{currentAssets.players.length}</span> Players
-              </span>
-              <span className="flex items-center gap-1">
-                <span className="font-medium">{currentAssets.picks.length}</span> Draft Picks
-              </span>
-              <span>Roster #{rosterId}</span>
+              <span>{manager.displayName || manager.username || 'Unknown Manager'}</span>
             </div>
           </CardHeader>
         </Card>

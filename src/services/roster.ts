@@ -34,6 +34,7 @@ export interface ManagerInfo {
   id: string;
   username: string | null;
   displayName: string | null;
+  teamName: string | null;
 }
 
 export interface WeeklyScore {
@@ -92,12 +93,20 @@ export async function getCurrentRosterAssets(leagueId: string, rosterId: number)
 
   // Get current roster state from Sleeper API as the source of truth for current players
   const { Sleeper } = await import('@/lib/sleeper');
-  const sleeperRosters = await Sleeper.getLeagueRosters(leagueId);
+  const [sleeperRosters, leagueUsers] = await Promise.all([
+    Sleeper.getLeagueRosters(leagueId),
+    Sleeper.getLeagueUsers(leagueId)
+  ]);
+
   const currentRoster = sleeperRosters.find(r => r.roster_id === rosterId);
 
   if (!currentRoster?.players) {
     throw new Error(`Could not find current roster data for roster ${rosterId}`);
   }
+
+  // Find the team name from league users metadata
+  const leagueUser = leagueUsers.find(user => user.user_id === manager.id);
+  const teamName = leagueUser?.metadata?.team_name || null;
 
   // Get acquisition details for all current players in batch
   const currentPlayerIds = currentRoster.players;
@@ -245,6 +254,7 @@ export async function getCurrentRosterAssets(leagueId: string, rosterId: number)
       id: manager.id,
       username: manager.username,
       displayName: manager.displayName,
+      teamName: teamName,
     },
     currentAssets: {
       players: rosterPlayers,
