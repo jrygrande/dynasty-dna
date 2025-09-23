@@ -9,13 +9,16 @@ interface AcquisitionTypeBadgeProps {
 export function AcquisitionTypeBadge({ type, className }: AcquisitionTypeBadgeProps) {
   const getTypeColor = (acquisitionType: string) => {
     switch (acquisitionType) {
+      case 'draft_selected':
       case 'draft':
-        return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200';
+        return 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200';
       case 'trade':
-        return 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200';
+        return 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200';
+      case 'free_agency':
       case 'free_agent_add':
+        return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200';
       case 'waiver_add':
-        return 'bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200';
+        return 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200';
       case 'original':
         return 'bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200';
       case 'traded_pick':
@@ -27,8 +30,11 @@ export function AcquisitionTypeBadge({ type, className }: AcquisitionTypeBadgePr
 
   const getDisplayText = (acquisitionType: string) => {
     switch (acquisitionType) {
+      case 'draft_selected':
+        return 'Draft';
+      case 'free_agency':
       case 'free_agent_add':
-        return 'FA';
+        return 'Free Agency';
       case 'waiver_add':
         return 'Waiver';
       case 'traded_pick':
