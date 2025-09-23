@@ -50,9 +50,6 @@ export function AcquisitionPieChart({ data }: AcquisitionPieChartProps) {
         <p className="text-sm text-muted-foreground">
           {data.ppg.toFixed(1)} PPG (#{data.rank}/{data.totalTeams})
         </p>
-        <p className="text-sm text-muted-foreground">
-          {data.value.toFixed(1)} total points
-        </p>
       </div>
     );
   };
