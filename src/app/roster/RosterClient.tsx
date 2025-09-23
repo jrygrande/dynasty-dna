@@ -236,7 +236,7 @@ export default function RosterClient({ leagueId, rosterId }: RosterClientProps) 
                     </span>
                   </div>
                   <div className="flex justify-between">
-                    <span>Avg PPG</span>
+                    <span>Avg PPG on Roster</span>
                     <span className="font-medium">
                       {(currentAssets.players.reduce((sum, p) => sum + p.currentSeasonStats.ppgSinceAcquiring, 0) / currentAssets.players.length).toFixed(1)}
                     </span>

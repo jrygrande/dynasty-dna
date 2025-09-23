@@ -58,13 +58,13 @@ export function PlayerCard({ player, leagueId, onPlayerClick }: PlayerCardProps)
               </div>
             </div>
             <div className="space-y-1">
-              <div className="text-muted-foreground">PPG Starting</div>
+              <div className="text-muted-foreground">PPG in Lineup</div>
               <div className="font-medium">
                 {player.currentSeasonStats.ppgWhenStarting}
               </div>
             </div>
             <div className="space-y-1">
-              <div className="text-muted-foreground">PPG Since</div>
+              <div className="text-muted-foreground">PPG on Roster</div>
               <div className="font-medium">
                 {player.currentSeasonStats.ppgSinceAcquiring}
               </div>
