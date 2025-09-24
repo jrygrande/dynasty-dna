@@ -362,11 +362,14 @@ export async function syncAssetEventsIncremental(rootLeagueId: string) {
   for (const lg of leaguesRows) leagueSeasonById.set(lg.id, String(lg.season));
 
   // Only process transactions that are newer than last sync time
-  let txQuery = db.select().from(transactions).where(inArray(transactions.leagueId, leagueIds));
-
-  if (lastSyncTime) {
-    txQuery = txQuery.where(gte(transactions.createdAt, lastSyncTime));
-  }
+  let txQuery = lastSyncTime
+    ? db.select().from(transactions).where(
+        and(
+          inArray(transactions.leagueId, leagueIds),
+          gte(transactions.createdAt, lastSyncTime)
+        )
+      )
+    : db.select().from(transactions).where(inArray(transactions.leagueId, leagueIds));
 
   const txs = await txQuery;
   console.log(`Processing ${txs.length} transactions since last sync`);

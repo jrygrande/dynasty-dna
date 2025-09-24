@@ -328,8 +328,9 @@ export default function ScoringBarChart({ scores, transactions, seasonBoundaries
 
           // Group by transactionId AND playerId to handle multiple players in same transaction
           transactions.forEach(transaction => {
+            const playerId = transaction.assetsInTransaction?.[0]?.playerId || 'no-player';
             const key = transaction.transactionId
-              ? `${transaction.transactionId}-${transaction.playerId || 'no-player'}`
+              ? `${transaction.transactionId}-${playerId}`
               : `${transaction.eventType}-${transaction.position}`;
             if (!transactionGroups.has(key)) {
               transactionGroups.set(key, []);
