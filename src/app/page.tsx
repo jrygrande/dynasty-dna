@@ -1,21 +1,59 @@
 import LeagueStandings from './LeagueStandings';
-import type { LeagueStandingsResponse } from './api/league/standings/route';
+import type { LeagueStandingsResponse, TeamStanding } from './api/league/standings/route';
 import { APP_NAME } from '@/lib/constants';
+import { Sleeper } from '@/lib/sleeper';
+
+const DYNASTY_DOMINATION_LEAGUE_ID = '1191596293294166016';
 
 async function getLeagueStandings(): Promise<LeagueStandingsResponse> {
-  const baseUrl = process.env.VERCEL_URL
-    ? `https://${process.env.VERCEL_URL}`
-    : 'http://localhost:3000';
+  try {
+    console.log(`Fetching standings for league ${DYNASTY_DOMINATION_LEAGUE_ID}`);
 
-  const response = await fetch(`${baseUrl}/api/league/standings`, {
-    cache: 'no-store', // Always fetch fresh data
-  });
+    // Fetch all required data from Sleeper API directly
+    const [league, rosters, users] = await Promise.all([
+      Sleeper.getLeague(DYNASTY_DOMINATION_LEAGUE_ID),
+      Sleeper.getLeagueRosters(DYNASTY_DOMINATION_LEAGUE_ID),
+      Sleeper.getLeagueUsers(DYNASTY_DOMINATION_LEAGUE_ID)
+    ]);
 
-  if (!response.ok) {
-    throw new Error(`Failed to fetch league standings: ${response.status}`);
+    // Create user lookup map
+    const userMap = new Map(users.map(user => [user.user_id, user]));
+
+    // Process rosters into team standings
+    const teams: TeamStanding[] = rosters.map(roster => {
+      const user = userMap.get(roster.owner_id);
+      const settings = roster.settings || {};
+
+      return {
+        rosterId: roster.roster_id,
+        teamName: user?.metadata?.team_name || null,
+        managerName: user?.display_name || user?.username || `Manager ${roster.roster_id}`,
+        wins: settings.wins || 0,
+        losses: settings.losses || 0,
+        ties: settings.ties || 0,
+        totalPoints: parseFloat(settings.fpts?.toString() || '0')
+      };
+    });
+
+    // Sort teams by wins (descending), then by total points (descending) as tiebreaker
+    teams.sort((a, b) => {
+      if (a.wins !== b.wins) {
+        return b.wins - a.wins; // More wins first
+      }
+      return b.totalPoints - a.totalPoints; // Higher points first
+    });
+
+    console.log(`Successfully processed ${teams.length} teams for ${league.name}`);
+
+    return {
+      leagueName: league.name || 'Dynasty Domination',
+      season: league.season?.toString() || '2024',
+      teams
+    };
+  } catch (error: any) {
+    console.error('Error fetching league standings:', error);
+    throw error;
   }
-
-  return response.json();
 }
 
 export default async function HomePage() {
