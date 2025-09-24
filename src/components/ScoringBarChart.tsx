@@ -4,6 +4,7 @@ import React from 'react';
 import { ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Cell } from 'recharts';
 import type { TimelineEvent } from '@/lib/api/assets';
 import TransactionTimeline from './TransactionTimeline';
+import { useIsMobile } from '@/hooks/useIsMobile';
 
 interface Score {
   leagueId: string;
@@ -72,7 +73,9 @@ interface ChartDataPoint {
 
 export default function ScoringBarChart({ scores, transactions, seasonBoundaries, rosterLegend, benchmarks = [], playerPosition, openTransactions, onTransactionToggle, playerId }: ScoringBarChartProps) {
   const chartContainerRef = React.useRef<HTMLDivElement>(null);
+  const scrollContainerRef = React.useRef<HTMLDivElement>(null);
   const [chartDimensions, setChartDimensions] = React.useState({ width: 800, height: 384 });
+  const isMobile = useIsMobile();
 
   // Track chart container size changes for timeline alignment
   React.useEffect(() => {
@@ -96,6 +99,7 @@ export default function ScoringBarChart({ scores, transactions, seasonBoundaries
       resizeObserver.disconnect();
     };
   }, []);
+
 
   // Create a color palette for different roster IDs
   const generateRosterColor = (rosterId: number): string => {
@@ -130,6 +134,32 @@ export default function ScoringBarChart({ scores, transactions, seasonBoundaries
       topDecile: benchmark.topDecile
     });
   });
+
+  // Calculate recent seasons for mobile view
+  const recentSeasonsData = React.useMemo(() => {
+    if (!isMobile || seasonBoundaries.length === 0) {
+      return { minPosition: 1, maxPosition: Math.max(...scores.map(s => s.position)) };
+    }
+
+    // Get the last 2 seasons (current + 1 previous)
+    const sortedBoundaries = seasonBoundaries
+      .sort((a, b) => parseInt(b.season) - parseInt(a.season))
+      .slice(0, 2);
+
+    if (sortedBoundaries.length === 0) {
+      return { minPosition: 1, maxPosition: Math.max(...scores.map(s => s.position)) };
+    }
+
+    const startPosition = sortedBoundaries.length === 2
+      ? sortedBoundaries[1].start
+      : sortedBoundaries[0].start;
+    const endPosition = sortedBoundaries[0].end;
+
+    return {
+      minPosition: startPosition,
+      maxPosition: endPosition
+    };
+  }, [isMobile, seasonBoundaries, scores]);
 
   // Prepare chart data with roster-based coloring and benchmark data
   const chartData: ChartDataPoint[] = scores.map(score => {
@@ -193,8 +223,41 @@ export default function ScoringBarChart({ scores, transactions, seasonBoundaries
     }
   };
 
+  // Filter chart data for mobile view (show recent seasons by default)
+  const visibleChartData = React.useMemo(() => {
+    if (!isMobile) return chartData;
+    return chartData.filter(d =>
+      d.position >= recentSeasonsData.minPosition &&
+      d.position <= recentSeasonsData.maxPosition
+    );
+  }, [chartData, isMobile, recentSeasonsData]);
+
+  // Calculate chart width for mobile scrolling
+  const chartWidth = React.useMemo(() => {
+    if (!isMobile) return '100%';
+    // Calculate width based on total data points to ensure all data is visible
+    const dataPointWidth = 12; // pixels per position for better readability
+    const totalWidth = Math.max(800, chartData.length * dataPointWidth);
+    return totalWidth;
+  }, [isMobile, chartData.length]);
+
   // Calculate overall max points for consistent scale
   const maxPoints = Math.max(...chartData.map(d => d.points));
+
+  // Auto-scroll to recent seasons on mobile
+  React.useEffect(() => {
+    if (isMobile && scrollContainerRef.current && chartData.length > 0) {
+      const container = scrollContainerRef.current;
+      // Small delay to ensure chart is rendered
+      const timeout = setTimeout(() => {
+        // Scroll to show recent seasons (rightmost area)
+        const scrollPosition = container.scrollWidth - container.clientWidth;
+        container.scrollLeft = Math.max(0, scrollPosition);
+      }, 100);
+
+      return () => clearTimeout(timeout);
+    }
+  }, [isMobile, chartData, recentSeasonsData]);
 
   // Create season boundary tick marks for X-axis
   const seasonTicks = seasonBoundaries.map(boundary => ({
@@ -214,7 +277,9 @@ export default function ScoringBarChart({ scores, transactions, seasonBoundaries
     <div className="w-full">
       <div className="mb-4 space-y-2">
         {/* Player/Team Legend */}
-        <div className="flex flex-wrap gap-4 text-sm">
+        <div className={`flex gap-4 text-sm ${
+          isMobile ? 'flex-wrap gap-2 text-xs' : 'flex-wrap gap-4'
+        }`}>
           <div className="flex items-center gap-2">
             <div className="w-4 h-4 bg-gray-500 opacity-40 rounded"></div>
             <span>Bench</span>
@@ -232,28 +297,43 @@ export default function ScoringBarChart({ scores, transactions, seasonBoundaries
 
         {/* Benchmark Legend */}
         {benchmarks.length > 0 && playerPosition && (
-          <div className="flex flex-wrap gap-4 text-sm border-t pt-2">
+          <div className={`flex flex-wrap gap-2 border-t pt-2 ${
+            isMobile ? 'text-xs' : 'gap-4 text-sm'
+          }`}>
             <div className="font-medium text-gray-700 mr-2">
-              {playerPosition} Weekly Benchmarks:
+              {playerPosition} Benchmarks:
             </div>
-            <div className="flex items-center gap-2">
-              <div className="w-6 h-0.5 bg-amber-500"></div>
-              <span>Weekly Position Median</span>
+            <div className="flex items-center gap-1">
+              <div className="w-4 h-0.5 bg-amber-500"></div>
+              <span>Median</span>
             </div>
-            <div className="flex items-center gap-2">
-              <div className="w-6 h-0.5 bg-emerald-500"></div>
-              <span>Weekly Elite (Top 10%)</span>
+            <div className="flex items-center gap-1">
+              <div className="w-4 h-0.5 bg-emerald-500"></div>
+              <span>Elite</span>
             </div>
           </div>
         )}
       </div>
 
-      <div ref={chartContainerRef} className="w-full h-96">
-        <ResponsiveContainer width="100%" height="100%">
-          <ComposedChart
-            data={chartData}
-            margin={{ top: 20, right: 30, left: 20, bottom: 60 }}
-          >
+      <div
+        ref={scrollContainerRef}
+        className={`w-full ${
+          isMobile ? 'overflow-x-auto scrollbar-thin scrollbar-thumb-gray-300' : ''
+        }`}
+        style={isMobile ? {
+          background: 'linear-gradient(to right, transparent 0%, white 5%, white 95%, transparent 100%)'
+        } : {}}
+      >
+        <div
+          ref={chartContainerRef}
+          className={isMobile ? 'h-64' : 'w-full h-96'}
+          style={isMobile ? { width: chartWidth } : {}}
+        >
+          <ResponsiveContainer width="100%" height="100%">
+            <ComposedChart
+              data={chartData}
+              margin={isMobile ? { top: 20, right: 15, left: 15, bottom: 40 } : { top: 20, right: 30, left: 20, bottom: 60 }}
+            >
             <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
 
             <XAxis
@@ -317,10 +397,10 @@ export default function ScoringBarChart({ scores, transactions, seasonBoundaries
             ))}
           </ComposedChart>
         </ResponsiveContainer>
-      </div>
+        </div>
 
-      {/* Transaction Timeline */}
-      <TransactionTimeline
+        {/* Transaction Timeline */}
+        <TransactionTimeline
         transactions={(() => {
           // Filter transactions to avoid overlapping nodes for the same transaction
           // For trade transactions, prefer 'trade' and 'pick_trade' events over 'add'/'drop' events
@@ -359,13 +439,14 @@ export default function ScoringBarChart({ scores, transactions, seasonBoundaries
           return filteredTransactions;
         })()}
         chartWidth={chartDimensions.width}
-        chartMargin={{ left: 20, right: 30 }}
+        chartMargin={isMobile ? { left: 15, right: 15 } : { left: 20, right: 30 }}
         maxPosition={Math.max(...chartData.map(d => d.position))}
         minPosition={Math.min(...chartData.map(d => d.position))}
         openTransactions={openTransactions}
         onTransactionToggle={onTransactionToggle}
         playerId={playerId}
       />
+      </div>
     </div>
   );
 }
