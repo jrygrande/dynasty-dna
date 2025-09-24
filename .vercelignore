@@ -1,0 +1,53 @@
+# Version control
+.git
+.gitignore
+
+# Dependencies
+node_modules
+
+# Environment variables and secrets
+.env
+.env.local
+.env.production.local
+.env.development.local
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Documentation
+*.md
+
+# Scripts and utilities
+scripts/
+data/
+sql/
+
+# TypeScript debugging scripts (not needed for deployment)
+check-league-family.ts
+debug-duplicates.ts
+examine-transaction.ts
+simulate-rebuild.ts
+test-cross-league-transactions.ts
+test-transaction-leagues.ts
+
+# Build artifacts that shouldn't be ignored (Next.js handles these)
+# .next/
+# dist/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
