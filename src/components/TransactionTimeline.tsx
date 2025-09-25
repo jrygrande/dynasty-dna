@@ -17,13 +17,16 @@ interface TransactionTimelineProps {
   openTransactions: Set<string>;
   onTransactionToggle?: (transaction: TimelineEvent) => void;
   playerId?: string;
+  isMobile?: boolean;
+  chartHeight?: number;
 }
 
 interface TransactionNodeProps {
   transaction: TransactionWithPosition;
-  xPosition: number;
+  position: number; // x or y position depending on orientation
   isOpen: boolean;
   onTransactionToggle?: (transaction: TimelineEvent) => void;
+  isMobile?: boolean;
 }
 
 const getEventColor = (eventType: string): string => {
@@ -88,9 +91,10 @@ const formatEventType = (eventType: string): string => {
 
 const TransactionNode: React.FC<TransactionNodeProps> = ({
   transaction,
-  xPosition,
+  position,
   isOpen,
-  onTransactionToggle
+  onTransactionToggle,
+  isMobile = false
 }) => {
   const handleClick = () => {
     if (onTransactionToggle) {
@@ -103,10 +107,42 @@ const TransactionNode: React.FC<TransactionNodeProps> = ({
   const icon = getEventIcon(transaction.eventType);
   const label = formatEventType(transaction.eventType);
 
+  if (isMobile) {
+    // Vertical layout for mobile
+    return (
+      <div
+        className="absolute flex flex-row items-center cursor-pointer group"
+        style={{ top: `${position}px`, transform: 'translateY(-50%)', left: '10px' }}
+        onClick={handleClick}
+      >
+        {/* Connection line to chart */}
+        <div className="h-px w-6 bg-gray-300 opacity-50 group-hover:opacity-75 transition-opacity" />
+
+        {/* Transaction node */}
+        <div
+          className={`
+            w-6 h-6 rounded-full border-2 flex items-center justify-center text-sm
+            shadow-md transition-all duration-200 group-hover:scale-110 group-hover:shadow-lg
+            ${colorClasses} ${isOpen ? 'ring-2 ring-blue-400 ring-offset-1' : ''}
+          `}
+          title={`${label} - ${transaction.eventTime ? new Date(transaction.eventTime).toLocaleDateString() : 'Unknown date'}`}
+        >
+          <span className="text-xs">{icon}</span>
+        </div>
+
+        {/* Event type label */}
+        <div className="text-xs text-gray-600 ml-2 max-w-16 leading-tight break-words">
+          {label}
+        </div>
+      </div>
+    );
+  }
+
+  // Desktop horizontal layout
   return (
     <div
       className="absolute flex flex-col items-center cursor-pointer group"
-      style={{ left: `${xPosition}px`, transform: 'translateX(-50%)' }}
+      style={{ left: `${position}px`, transform: 'translateX(-50%)' }}
       onClick={handleClick}
     >
       {/* Connection line to chart above */}
@@ -140,21 +176,70 @@ export default function TransactionTimeline({
   minPosition,
   openTransactions,
   onTransactionToggle,
-  playerId
+  playerId,
+  isMobile = false,
+  chartHeight = 0
 }: TransactionTimelineProps) {
   if (transactions.length === 0) {
     return null;
   }
 
-  // Calculate x positions for each transaction based on their position value
-  const calculateXPosition = (position: number): number => {
-    const chartAreaWidth = chartWidth - chartMargin.left - chartMargin.right;
-    const positionRange = maxPosition - minPosition;
-    const relativePosition = (position - minPosition) / positionRange;
-    // Add offset to better align with Recharts bar positioning
-    return chartMargin.left + (relativePosition * chartAreaWidth) + 32;
+  // Calculate positions for each transaction based on their position value
+  const calculatePosition = (position: number): number => {
+    if (isMobile) {
+      // For vertical mobile layout, calculate Y position
+      const chartAreaHeight = chartHeight - 40; // Account for margins
+      const positionRange = maxPosition - minPosition;
+      const relativePosition = (position - minPosition) / positionRange;
+      return 20 + (relativePosition * chartAreaHeight);
+    } else {
+      // For horizontal desktop layout, calculate X position
+      const chartAreaWidth = chartWidth - chartMargin.left - chartMargin.right;
+      const positionRange = maxPosition - minPosition;
+      const relativePosition = (position - minPosition) / positionRange;
+      return chartMargin.left + (relativePosition * chartAreaWidth) + 32;
+    }
   };
 
+  if (isMobile) {
+    // Vertical layout for mobile
+    return (
+      <div className="absolute left-0 top-0" style={{ width: '120px', height: chartHeight }}>
+        {/* Timeline background */}
+        <div className="absolute left-10 top-0 bottom-0 w-px bg-gray-200" />
+
+        {/* Transaction nodes */}
+        {transactions.map((transaction, index) => {
+          const position = calculatePosition(transaction.position);
+          const isOpen = openTransactions.has(transaction.id);
+
+          return (
+            <React.Fragment key={`${transaction.id}-${index}`}>
+              <TransactionNode
+                transaction={transaction}
+                position={position}
+                isOpen={isOpen}
+                onTransactionToggle={onTransactionToggle}
+                isMobile={true}
+              />
+
+              {/* Render popup if this transaction is open */}
+              {isOpen && (
+                <TransactionPopup
+                  event={transaction}
+                  xPosition={120}
+                  onClose={() => onTransactionToggle && onTransactionToggle(transaction)}
+                  playerId={playerId}
+                />
+              )}
+            </React.Fragment>
+          );
+        })}
+      </div>
+    );
+  }
+
+  // Horizontal layout for desktop
   return (
     <div className="relative w-full" style={{ height: '160px', marginTop: '10px' }}>
       {/* Timeline background */}
@@ -162,23 +247,24 @@ export default function TransactionTimeline({
 
       {/* Transaction nodes */}
       {transactions.map((transaction, index) => {
-        const xPosition = calculateXPosition(transaction.position);
+        const position = calculatePosition(transaction.position);
         const isOpen = openTransactions.has(transaction.id);
 
         return (
           <React.Fragment key={`${transaction.id}-${index}`}>
             <TransactionNode
               transaction={transaction}
-              xPosition={xPosition}
+              position={position}
               isOpen={isOpen}
               onTransactionToggle={onTransactionToggle}
+              isMobile={false}
             />
 
             {/* Render popup if this transaction is open */}
             {isOpen && (
               <TransactionPopup
                 event={transaction}
-                xPosition={xPosition}
+                xPosition={position}
                 onClose={() => onTransactionToggle && onTransactionToggle(transaction)}
                 playerId={playerId}
               />

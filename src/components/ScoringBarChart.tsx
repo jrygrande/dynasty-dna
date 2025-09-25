@@ -232,13 +232,20 @@ export default function ScoringBarChart({ scores, transactions, seasonBoundaries
     );
   }, [chartData, isMobile, recentSeasonsData]);
 
-  // Calculate chart width for mobile scrolling
-  const chartWidth = React.useMemo(() => {
-    if (!isMobile) return '100%';
-    // Calculate width based on total data points to ensure all data is visible
-    const dataPointWidth = 12; // pixels per position for better readability
-    const totalWidth = Math.max(800, chartData.length * dataPointWidth);
-    return totalWidth;
+  // Calculate chart size for mobile scrolling
+  const chartSize = React.useMemo(() => {
+    if (!isMobile) return { width: '100%', height: '100%' };
+
+    // For mobile vertical layout:
+    // - Fixed width (viewport)
+    // - Height based on data points for vertical scrolling
+    const dataPointHeight = 8; // pixels per position for vertical layout
+    const totalHeight = Math.max(600, chartData.length * dataPointHeight);
+
+    return {
+      width: '100%', // Fixed width on mobile
+      height: totalHeight
+    };
   }, [isMobile, chartData.length]);
 
   // Calculate overall max points for consistent scale
@@ -272,9 +279,9 @@ export default function ScoringBarChart({ scores, transactions, seasonBoundaries
       const container = scrollContainerRef.current;
       // Small delay to ensure chart is rendered
       const timeout = setTimeout(() => {
-        // Scroll to show recent seasons (rightmost area)
-        const scrollPosition = container.scrollWidth - container.clientWidth;
-        container.scrollLeft = Math.max(0, scrollPosition);
+        // For vertical layout, scroll to bottom (most recent)
+        const scrollPosition = container.scrollHeight - container.clientHeight;
+        container.scrollTop = Math.max(0, scrollPosition);
       }, 100);
 
       return () => clearTimeout(timeout);
@@ -340,21 +347,22 @@ export default function ScoringBarChart({ scores, transactions, seasonBoundaries
       <div
         ref={scrollContainerRef}
         className={`w-full ${
-          isMobile ? 'overflow-x-auto scrollbar-thin scrollbar-thumb-gray-300' : ''
+          isMobile ? 'overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 h-96' : ''
         }`}
         style={isMobile ? {
-          background: 'linear-gradient(to right, transparent 0%, white 5%, white 95%, transparent 100%)'
+          background: 'linear-gradient(to bottom, transparent 0%, white 5%, white 95%, transparent 100%)'
         } : {}}
       >
         <div
           ref={chartContainerRef}
-          className={isMobile ? 'h-64' : 'w-full h-96'}
-          style={isMobile ? { width: chartWidth } : {}}
+          className={isMobile ? 'w-full' : 'w-full h-96'}
+          style={isMobile ? { height: chartSize.height } : {}}
         >
           <ResponsiveContainer width="100%" height="100%">
             <ComposedChart
               data={chartData}
-              margin={isMobile ? { top: 20, right: 15, left: 15, bottom: 40 } : { top: 20, right: 30, left: 20, bottom: 60 }}
+              margin={isMobile ? { top: 20, right: 40, left: 20, bottom: 20 } : { top: 20, right: 30, left: 20, bottom: 60 }}
+              layout={isMobile ? 'vertical' : 'horizontal'}
             >
             <CartesianGrid
               strokeDasharray="3 3"
@@ -362,26 +370,53 @@ export default function ScoringBarChart({ scores, transactions, seasonBoundaries
               strokeOpacity={isMobile ? 0 : 0.1}
             />
 
-            <XAxis
-              dataKey="position"
-              type="number"
-              scale="linear"
-              domain={['dataMin', 'dataMax']}
-              ticks={seasonTicks.map(t => t.position)}
-              tickFormatter={(value) => {
-                const seasonTick = seasonTicks.find(t => t.position === value);
-                return seasonTick ? seasonTick.season : '';
-              }}
-              label={{ value: 'Season', position: 'insideBottom', offset: -10 }}
-              interval={0}
-            />
-
-            <YAxis
-              domain={[0, Math.ceil(maxPoints * 1.1)]}
-              tick={false}
-              axisLine={false}
-              tickLine={false}
-            />
+            {isMobile ? (
+              // Mobile vertical layout: X = points, Y = position/time
+              <>
+                <XAxis
+                  type="number"
+                  domain={[0, Math.ceil(maxPoints * 1.1)]}
+                  tick={false}
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <YAxis
+                  dataKey="position"
+                  type="number"
+                  scale="linear"
+                  domain={['dataMin', 'dataMax']}
+                  ticks={seasonTicks.map(t => t.position)}
+                  tickFormatter={(value) => {
+                    const seasonTick = seasonTicks.find(t => t.position === value);
+                    return seasonTick ? seasonTick.season : '';
+                  }}
+                  interval={0}
+                />
+              </>
+            ) : (
+              // Desktop horizontal layout: X = position/time, Y = points
+              <>
+                <XAxis
+                  dataKey="position"
+                  type="number"
+                  scale="linear"
+                  domain={['dataMin', 'dataMax']}
+                  ticks={seasonTicks.map(t => t.position)}
+                  tickFormatter={(value) => {
+                    const seasonTick = seasonTicks.find(t => t.position === value);
+                    return seasonTick ? seasonTick.season : '';
+                  }}
+                  label={{ value: 'Season', position: 'insideBottom', offset: -10 }}
+                  interval={0}
+                />
+                <YAxis
+                  domain={[0, Math.ceil(maxPoints * 1.1)]}
+                  tick={false}
+                  axisLine={false}
+                  tickLine={false}
+                />
+              </>
+            )}
 
             <Tooltip content={<CustomTooltip />} />
 
@@ -413,19 +448,19 @@ export default function ScoringBarChart({ scores, transactions, seasonBoundaries
               connectNulls={false}
             />
 
-            {/* Add horizontal reference lines */}
+            {/* Add reference lines (horizontal on desktop, vertical on mobile) */}
             {referenceLines.map((line, index) => (
               <ReferenceLine
-                key={`horizontal-ref-${index}`}
-                y={line.value}
+                key={`ref-${index}`}
+                {...(isMobile ? { x: line.value } : { y: line.value })}
                 stroke={`rgba(107, 114, 128, ${line.opacity})`}
                 strokeWidth={1.5}
                 strokeDasharray="5 5"
                 label={{
                   value: line.value,
-                  position: "insideTopRight",
+                  position: isMobile ? "insideTopRight" : "insideTopRight",
                   style: {
-                    textAnchor: 'end',
+                    textAnchor: isMobile ? 'start' : 'end',
                     fill: 'rgba(75, 85, 99, 0.8)',
                     fontSize: '11px',
                     fontWeight: 'bold'
@@ -434,11 +469,11 @@ export default function ScoringBarChart({ scores, transactions, seasonBoundaries
               />
             ))}
 
-            {/* Add season boundary lines between seasons */}
+            {/* Add season boundary lines (vertical on desktop, horizontal on mobile) */}
             {seasonBoundaries.slice(1).map(boundary => (
               <ReferenceLine
                 key={`season-${boundary.season}`}
-                x={boundary.start - 0.5}
+                {...(isMobile ? { y: boundary.start - 0.5 } : { x: boundary.start - 0.5 })}
                 stroke="rgba(148, 163, 184, 0.6)"
                 strokeWidth={2}
                 strokeDasharray="4 4"
@@ -494,6 +529,8 @@ export default function ScoringBarChart({ scores, transactions, seasonBoundaries
         openTransactions={openTransactions}
         onTransactionToggle={onTransactionToggle}
         playerId={playerId}
+        isMobile={isMobile}
+        chartHeight={typeof chartSize.height === 'number' ? chartSize.height : 600}
       />
       </div>
     </div>
