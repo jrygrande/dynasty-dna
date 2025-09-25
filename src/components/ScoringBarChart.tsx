@@ -124,9 +124,32 @@ export default function ScoringBarChart({ scores, transactions, seasonBoundaries
     return colors[rosterId % colors.length];
   };
 
+  // Deduplicate transactions with same transactionId (e.g., trade creates add/drop/trade events)
+  const deduplicatedTransactions = transactions.reduce((acc, transaction) => {
+    if (!transaction.transactionId) {
+      // No transactionId, keep as-is
+      acc.push(transaction);
+    } else {
+      // Check if we already have a transaction with this ID
+      const existingIndex = acc.findIndex(t => t.transactionId === transaction.transactionId);
+      if (existingIndex === -1) {
+        acc.push(transaction);
+      } else {
+        // Prefer trade events over add/drop events for better representation
+        const existing = acc[existingIndex];
+        if (transaction.eventType === 'trade' ||
+            (transaction.eventType === 'pick_trade' && existing.eventType !== 'trade')) {
+          acc[existingIndex] = transaction;
+        }
+        // Keep existing if it's already a trade event or higher priority
+      }
+    }
+    return acc;
+  }, [] as TransactionWithPosition[]);
+
   // Create a map of transactions by position for quick lookup
   const transactionsByPosition = new Map<number, TransactionWithPosition[]>();
-  transactions.forEach(transaction => {
+  deduplicatedTransactions.forEach(transaction => {
     const existing = transactionsByPosition.get(transaction.position) || [];
     existing.push(transaction);
     transactionsByPosition.set(transaction.position, existing);
@@ -196,7 +219,7 @@ export default function ScoringBarChart({ scores, transactions, seasonBoundaries
 
   // Add phantom data points for transactions that don't have corresponding scores
   const existingPositions = new Set(scores.map(s => s.position));
-  const phantomDataPoints: ChartDataPoint[] = transactions
+  const phantomDataPoints: ChartDataPoint[] = deduplicatedTransactions
     .filter(transaction => !existingPositions.has(transaction.position))
     .reduce((phantoms: ChartDataPoint[], transaction) => {
       // Group transactions by position to avoid duplicates
