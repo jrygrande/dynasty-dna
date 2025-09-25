@@ -244,6 +244,28 @@ export default function ScoringBarChart({ scores, transactions, seasonBoundaries
   // Calculate overall max points for consistent scale
   const maxPoints = Math.max(...chartData.map(d => d.points));
 
+  // Calculate horizontal reference line values
+  const referenceLines = React.useMemo(() => {
+    // High line: Max of player scores or elite benchmark, rounded up to nearest 5
+    const maxBenchmark = benchmarks.length > 0 ? Math.max(...benchmarks.map(b => b.topDecile || 0)) : 0;
+    const highLineValue = Math.ceil(Math.max(maxPoints, maxBenchmark) / 5) * 5;
+
+    // Middle line: Average of median benchmarks, rounded to nearest 5
+    const avgMedian = benchmarks.length > 0
+      ? benchmarks.reduce((sum, b) => sum + (b.median || 0), 0) / benchmarks.length
+      : maxPoints * 0.4;
+    const middleLineValue = Math.round(avgMedian / 5) * 5;
+
+    // Top line: Higher reference for elite performances (about 1.5x the high benchmark)
+    const topLineValue = Math.ceil((highLineValue * 1.3) / 5) * 5;
+
+    return [
+      { value: topLineValue, opacity: 0.5 },
+      { value: highLineValue, opacity: 0.4 },
+      { value: middleLineValue, opacity: 0.4 }
+    ];
+  }, [maxPoints, benchmarks]);
+
   // Auto-scroll to recent seasons on mobile
   React.useEffect(() => {
     if (isMobile && scrollContainerRef.current && chartData.length > 0) {
@@ -259,9 +281,9 @@ export default function ScoringBarChart({ scores, transactions, seasonBoundaries
     }
   }, [isMobile, chartData, recentSeasonsData]);
 
-  // Create season boundary tick marks for X-axis
+  // Create season boundary tick marks for X-axis aligned with season starts
   const seasonTicks = seasonBoundaries.map(boundary => ({
-    position: Math.floor((boundary.start + boundary.end) / 2),
+    position: boundary.start,
     season: boundary.season
   }));
 
@@ -334,7 +356,11 @@ export default function ScoringBarChart({ scores, transactions, seasonBoundaries
               data={chartData}
               margin={isMobile ? { top: 20, right: 15, left: 15, bottom: 40 } : { top: 20, right: 30, left: 20, bottom: 60 }}
             >
-            <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+            <CartesianGrid
+              strokeDasharray="3 3"
+              stroke="#e5e7eb"
+              strokeOpacity={isMobile ? 0 : 0.1}
+            />
 
             <XAxis
               dataKey="position"
@@ -352,7 +378,9 @@ export default function ScoringBarChart({ scores, transactions, seasonBoundaries
 
             <YAxis
               domain={[0, Math.ceil(maxPoints * 1.1)]}
-              label={{ value: 'Points', angle: -90, position: 'insideLeft' }}
+              tick={false}
+              axisLine={false}
+              tickLine={false}
             />
 
             <Tooltip content={<CustomTooltip />} />
@@ -385,14 +413,35 @@ export default function ScoringBarChart({ scores, transactions, seasonBoundaries
               connectNulls={false}
             />
 
-            {/* Add season boundary lines */}
-            {seasonBoundaries.map(boundary => (
+            {/* Add horizontal reference lines */}
+            {referenceLines.map((line, index) => (
+              <ReferenceLine
+                key={`horizontal-ref-${index}`}
+                y={line.value}
+                stroke={`rgba(107, 114, 128, ${line.opacity})`}
+                strokeWidth={1.5}
+                strokeDasharray="5 5"
+                label={{
+                  value: line.value,
+                  position: "insideTopRight",
+                  style: {
+                    textAnchor: 'end',
+                    fill: 'rgba(75, 85, 99, 0.8)',
+                    fontSize: '11px',
+                    fontWeight: 'bold'
+                  }
+                }}
+              />
+            ))}
+
+            {/* Add season boundary lines between seasons */}
+            {seasonBoundaries.slice(1).map(boundary => (
               <ReferenceLine
                 key={`season-${boundary.season}`}
-                x={boundary.start}
-                stroke="#94a3b8"
-                strokeWidth={1}
-                strokeDasharray="2 2"
+                x={boundary.start - 0.5}
+                stroke="rgba(148, 163, 184, 0.6)"
+                strokeWidth={2}
+                strokeDasharray="4 4"
               />
             ))}
           </ComposedChart>
