@@ -1,9 +1,10 @@
 'use client';
 
 import React from 'react';
-import { ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Cell } from 'recharts';
+import { ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Cell, ReferenceDot } from 'recharts';
 import type { TimelineEvent } from '@/lib/api/assets';
-import TransactionTimeline from './TransactionTimeline';
+import TransactionDot from './TransactionDot';
+import TransactionPopup from './TransactionPopup';
 import { useIsMobile } from '@/hooks/useIsMobile';
 
 interface Score {
@@ -69,12 +70,17 @@ interface ChartDataPoint {
   fill: string;
   median?: number;
   topDecile?: number;
+  isPhantom?: boolean; // For transaction positions without score data
 }
 
 export default function ScoringBarChart({ scores, transactions, seasonBoundaries, rosterLegend, benchmarks = [], playerPosition, openTransactions, onTransactionToggle, playerId }: ScoringBarChartProps) {
   const chartContainerRef = React.useRef<HTMLDivElement>(null);
   const scrollContainerRef = React.useRef<HTMLDivElement>(null);
   const [chartDimensions, setChartDimensions] = React.useState({ width: 800, height: 384 });
+  const [activeTransactions, setActiveTransactions] = React.useState<Array<{
+    transaction: TimelineEvent;
+    position: { x: number; y: number };
+  }>>([]);
   const isMobile = useIsMobile();
 
   // Track chart container size changes for timeline alignment
@@ -162,7 +168,7 @@ export default function ScoringBarChart({ scores, transactions, seasonBoundaries
   }, [isMobile, seasonBoundaries, scores]);
 
   // Prepare chart data with roster-based coloring and benchmark data
-  const chartData: ChartDataPoint[] = scores.map(score => {
+  const baseChartData: ChartDataPoint[] = scores.map(score => {
     const positionTransactions = transactionsByPosition.get(score.position) || [];
     const hasTransaction = positionTransactions.length > 0;
     const benchmarkData = benchmarksByPosition.get(score.position);
@@ -183,9 +189,47 @@ export default function ScoringBarChart({ scores, transactions, seasonBoundaries
         ? generateRosterColor(score.rosterId)
         : 'rgba(107, 114, 128, 0.4)', // Grey for bench
       median: benchmarkData?.median,
-      topDecile: benchmarkData?.topDecile
+      topDecile: benchmarkData?.topDecile,
+      isPhantom: false
     };
   });
+
+  // Add phantom data points for transactions that don't have corresponding scores
+  const existingPositions = new Set(scores.map(s => s.position));
+  const phantomDataPoints: ChartDataPoint[] = transactions
+    .filter(transaction => !existingPositions.has(transaction.position))
+    .reduce((phantoms: ChartDataPoint[], transaction) => {
+      // Group transactions by position to avoid duplicates
+      const existingPhantom = phantoms.find(p => p.position === transaction.position);
+      if (existingPhantom) {
+        existingPhantom.transactions.push(transaction);
+      } else {
+        // Find season boundary for this position
+        const seasonBoundary = seasonBoundaries.find(boundary =>
+          transaction.position >= boundary.start && transaction.position <= boundary.end
+        );
+
+        phantoms.push({
+          position: transaction.position,
+          season: seasonBoundary?.season || 'Unknown',
+          week: transaction.week || 0,
+          points: 0, // Phantom points
+          isStarter: false,
+          rosterId: transaction.toRosterId || 0,
+          ownerName: transaction.toUser?.displayName || transaction.toUser?.name || 'Unknown',
+          ownerId: transaction.toUser?.id || undefined,
+          hasTransaction: true,
+          transactions: [transaction],
+          fill: 'rgba(107, 114, 128, 0.05)', // Nearly invisible
+          isPhantom: true
+        });
+      }
+      return phantoms;
+    }, []);
+
+  // Combine base data with phantom data and sort by position
+  const chartData: ChartDataPoint[] = [...baseChartData, ...phantomDataPoints]
+    .sort((a, b) => a.position - b.position);
 
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
@@ -211,16 +255,31 @@ export default function ScoringBarChart({ scores, transactions, seasonBoundaries
     return null;
   };
 
+  const handleTransactionClick = (transaction: TransactionWithPosition, dotPosition: { cx: number; cy: number }) => {
+    setActiveTransactions(prev => {
+      // Check if this transaction popup is already open
+      const isTransactionOpen = prev.some(item => item.transaction.id === transaction.id);
+
+      if (isTransactionOpen) {
+        // If it's open, remove it
+        return prev.filter(item => item.transaction.id !== transaction.id);
+      } else {
+        // If not, add the new transaction with its position
+        return [...prev, {
+          transaction: { ...transaction },
+          position: { x: dotPosition.cx, y: dotPosition.cy }
+        }];
+      }
+    });
+  };
+
+  const handleClosePopup = (transactionId: string) => {
+    setActiveTransactions(prev => prev.filter(item => item.transaction.id !== transactionId));
+  };
+
   const handleBarClick = (data: any) => {
-    const point = data as ChartDataPoint;
-    if (point.hasTransaction && onTransactionToggle) {
-      // For simplicity, just toggle the first transaction
-      // Could be enhanced to show a list if multiple transactions
-      const transaction = point.transactions[0];
-      // Remove the position property to pass clean TimelineEvent
-      const { position, ...timelineEvent } = transaction;
-      onTransactionToggle(timelineEvent);
-    }
+    // Bar clicks will be handled by ReferenceDot clicks instead
+    // This can be removed once we fully migrate to ReferenceDot approach
   };
 
   // Filter chart data for mobile view (show recent seasons by default)
@@ -420,15 +479,31 @@ export default function ScoringBarChart({ scores, transactions, seasonBoundaries
 
             <Tooltip content={<CustomTooltip />} />
 
-            <Bar
-              dataKey="points"
-              onClick={handleBarClick}
-              style={{ cursor: 'pointer' }}
-            >
+            <Bar dataKey="points">
               {chartData.map((entry, index) => (
                 <Cell key={`cell-${index}`} fill={entry.fill} />
               ))}
             </Bar>
+
+            {/* Add ReferenceDot for each transaction */}
+            {chartData
+              .filter(dataPoint => dataPoint.hasTransaction && dataPoint.transactions)
+              .flatMap(dataPoint =>
+                dataPoint.transactions!.map((transaction, transIndex) => (
+                  <ReferenceDot
+                    key={`transaction-${transaction.id}-${transIndex}`}
+                    x={dataPoint.position}
+                    y={dataPoint.points}
+                    shape={(props: any) => (
+                      <TransactionDot
+                        {...props}
+                        onEventClick={handleTransactionClick}
+                        transaction={transaction}
+                      />
+                    )}
+                  />
+                ))
+              )}
 
             {/* Add smooth benchmark lines */}
             <Line
@@ -483,55 +558,27 @@ export default function ScoringBarChart({ scores, transactions, seasonBoundaries
         </ResponsiveContainer>
         </div>
 
-        {/* Transaction Timeline */}
-        <TransactionTimeline
-        transactions={(() => {
-          // Filter transactions to avoid overlapping nodes for the same transaction
-          // For trade transactions, prefer 'trade' and 'pick_trade' events over 'add'/'drop' events
-          const transactionGroups = new Map<string, TransactionWithPosition[]>();
-
-          // Group by transactionId AND playerId to handle multiple players in same transaction
-          transactions.forEach(transaction => {
-            const playerId = transaction.assetsInTransaction?.[0]?.playerId || 'no-player';
-            const key = transaction.transactionId
-              ? `${transaction.transactionId}-${playerId}`
-              : `${transaction.eventType}-${transaction.position}`;
-            if (!transactionGroups.has(key)) {
-              transactionGroups.set(key, []);
-            }
-            transactionGroups.get(key)!.push(transaction);
-          });
-
-          // For each group, select the best representative event
-          const filteredTransactions: TransactionWithPosition[] = [];
-          transactionGroups.forEach(group => {
-            if (group.length === 1) {
-              // Single event, just include it
-              filteredTransactions.push(group[0]);
-            } else {
-              // Multiple events for same transaction - prioritize trade events
-              const tradeEvent = group.find(t => t.eventType === 'trade' || t.eventType === 'pick_trade');
-              if (tradeEvent) {
-                filteredTransactions.push(tradeEvent);
-              } else {
-                // No trade event, just pick the first one
-                filteredTransactions.push(group[0]);
-              }
-            }
-          });
-
-          return filteredTransactions;
-        })()}
-        chartWidth={chartDimensions.width}
-        chartMargin={isMobile ? { left: 15, right: 15 } : { left: 20, right: 30 }}
-        maxPosition={Math.max(...chartData.map(d => d.position))}
-        minPosition={Math.min(...chartData.map(d => d.position))}
-        openTransactions={openTransactions}
-        onTransactionToggle={onTransactionToggle}
-        playerId={playerId}
-        isMobile={isMobile}
-        chartHeight={typeof chartSize.height === 'number' ? chartSize.height : 600}
-      />
+        {/* Transaction Popup Overlays */}
+        {activeTransactions.map((item) => (
+          <div
+            key={item.transaction.id}
+            className="absolute z-50 pointer-events-none"
+            style={{
+              left: item.position.x,
+              top: item.position.y,
+              transform: 'translate(-50%, calc(-100% - 15px))'
+            }}
+          >
+            <div className="pointer-events-auto">
+              <TransactionPopup
+                event={item.transaction}
+                xPosition={item.position.x}
+                onClose={() => handleClosePopup(item.transaction.id)}
+                playerId={playerId}
+              />
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );
