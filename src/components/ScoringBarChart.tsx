@@ -267,11 +267,6 @@ export default function ScoringBarChart({ scores, transactions, seasonBoundaries
               ({data.isStarter ? 'Starter' : 'Bench'})
             </span>
           </p>
-          {data.hasTransaction && (
-            <p className="text-xs text-red-600 mt-1">
-              {data.transactions.length} transaction{data.transactions.length > 1 ? 's' : ''}
-            </p>
-          )}
         </div>
       );
     }
@@ -515,8 +510,8 @@ export default function ScoringBarChart({ scores, transactions, seasonBoundaries
                 dataPoint.transactions!.map((transaction, transIndex) => (
                   <ReferenceDot
                     key={`transaction-${transaction.id}-${transIndex}`}
-                    x={dataPoint.position}
-                    y={dataPoint.points}
+                    x={isMobile ? dataPoint.points : dataPoint.position}
+                    y={isMobile ? dataPoint.position : dataPoint.points}
                     shape={(props: any) => (
                       <TransactionDot
                         {...props}
@@ -589,7 +584,7 @@ export default function ScoringBarChart({ scores, transactions, seasonBoundaries
             style={{
               left: item.position.x,
               top: item.position.y,
-              transform: 'translate(-50%, calc(-100% - 15px))'
+              transform: 'translate(-50%, calc(-100% - 8px))'
             }}
           >
             <div className="pointer-events-auto">
