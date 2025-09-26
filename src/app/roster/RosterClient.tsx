@@ -229,7 +229,7 @@ export default function RosterClient({ leagueId, rosterId }: RosterClientProps) 
             <WeeklyPositionBarChart data={analytics?.weeklyScoresByPosition || []} />
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
             {/* Position Distribution */}
             <Card>
               <CardHeader>
@@ -274,35 +274,6 @@ export default function RosterClient({ leagueId, rosterId }: RosterClientProps) 
                       <span>Total</span>
                       <span>{currentAssets.picks.length} picks</span>
                     </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Performance Summary */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">Performance Stats</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-2">
-                  <div className="flex justify-between">
-                    <span>Avg Start %</span>
-                    <span className="font-medium">
-                      {(currentAssets.players.reduce((sum, p) => sum + p.currentSeasonStats.startPercentage, 0) / currentAssets.players.length).toFixed(1)}%
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Avg PPG on Roster</span>
-                    <span className="font-medium">
-                      {(currentAssets.players.reduce((sum, p) => sum + p.currentSeasonStats.ppgSinceAcquiring, 0) / currentAssets.players.length).toFixed(1)}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Elite Players</span>
-                    <span className="font-medium">
-                      {currentAssets.players.filter(p => p.currentSeasonStats.positionPercentile >= 90).length}
-                    </span>
                   </div>
                 </div>
               </CardContent>
