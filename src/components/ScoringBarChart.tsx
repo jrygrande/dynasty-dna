@@ -154,18 +154,25 @@ export default function ScoringBarChart({ scores, transactions, seasonBoundaries
     transactionsByPosition.set(transaction.position, existing);
   });
 
-  // Create a map of benchmarks by position for quick lookup
+  // Find the last position with actual scoring data (non-zero points)
+  const lastScoringPosition = Math.max(...scores.filter(s => s.points > 0).map(s => s.position));
+
+  // Create a map of benchmarks by position for quick lookup, filtered to last scoring position
   const benchmarksByPosition = new Map<number, { median: number; topDecile: number }>();
-  benchmarks.forEach(benchmark => {
-    benchmarksByPosition.set(benchmark.position, {
-      median: benchmark.median,
-      topDecile: benchmark.topDecile
+  benchmarks
+    .filter(benchmark => benchmark.position <= lastScoringPosition)
+    .forEach(benchmark => {
+      benchmarksByPosition.set(benchmark.position, {
+        median: benchmark.median,
+        topDecile: benchmark.topDecile
+      });
     });
-  });
 
 
-  // Prepare chart data with roster-based coloring and benchmark data
-  const baseChartData: ChartDataPoint[] = scores.map(score => {
+  // Prepare chart data with roster-based coloring and benchmark data, filtered to last scoring position
+  const baseChartData: ChartDataPoint[] = scores
+    .filter(score => score.position <= lastScoringPosition)
+    .map(score => {
     const positionTransactions = transactionsByPosition.get(score.position) || [];
     const hasTransaction = positionTransactions.length > 0;
     const benchmarkData = benchmarksByPosition.get(score.position);
@@ -191,10 +198,10 @@ export default function ScoringBarChart({ scores, transactions, seasonBoundaries
     };
   });
 
-  // Add phantom data points for transactions that don't have corresponding scores
-  const existingPositions = new Set(scores.map(s => s.position));
+  // Add phantom data points for transactions that don't have corresponding scores, filtered to last scoring position
+  const existingPositions = new Set(scores.filter(s => s.position <= lastScoringPosition).map(s => s.position));
   const phantomDataPoints: ChartDataPoint[] = deduplicatedTransactions
-    .filter(transaction => !existingPositions.has(transaction.position))
+    .filter(transaction => !existingPositions.has(transaction.position) && transaction.position <= lastScoringPosition)
     .reduce((phantoms: ChartDataPoint[], transaction) => {
       // Group transactions by position to avoid duplicates
       const existingPhantom = phantoms.find(p => p.position === transaction.position);
