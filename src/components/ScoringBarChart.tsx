@@ -377,7 +377,7 @@ export default function ScoringBarChart({ scores, transactions, seasonBoundaries
 
       <div
         ref={chartContainerRef}
-        className="w-full"
+        className="w-full relative"
         style={isMobile ? { height: chartSize.height } : { height: '24rem' }}
       >
           <ResponsiveContainer width="100%" height="100%">
@@ -519,43 +519,17 @@ export default function ScoringBarChart({ scores, transactions, seasonBoundaries
             ))}
           </ComposedChart>
         </ResponsiveContainer>
-        </div>
 
-        {/* Transaction Popup Overlays */}
-        {activeTransactions.map((item) => {
-          // Calculate smart positioning to keep cards in bounds
-          const chartRect = chartContainerRef.current?.getBoundingClientRect();
-          const cardWidth = 320; // max-w-sm ~= 320px
-          const cardHeight = 200; // estimated height
-
-          // Determine if card should appear above or below dot
-          const spaceAbove = item.position.y;
-          const spaceBelow = chartRect ? chartRect.height - item.position.y : 300;
-          const preferAbove = spaceAbove > cardHeight + 20;
-
-          // Determine horizontal positioning
-          const spaceLeft = item.position.x;
-          const spaceRight = chartRect ? chartRect.width - item.position.x : 400;
-
-          let xOffset = '-50%'; // default center
-          if (spaceLeft < cardWidth / 2) {
-            xOffset = '0%'; // align left edge to dot
-          } else if (spaceRight < cardWidth / 2) {
-            xOffset = '-100%'; // align right edge to dot
-          }
-
-          const yTransform = preferAbove ? '-100%' : '20px';
-
-          return (
-            <div
-              key={item.transaction.id}
-              className="absolute z-50 pointer-events-none"
-              style={{
-                left: item.position.x,
-                top: item.position.y,
-                transform: `translate(${xOffset}, ${yTransform})`
-              }}
-            >
+        {/* Transaction Popup Overlays - positioned inside chart container */}
+        {activeTransactions.map((item) => (
+          <div
+            key={item.transaction.id}
+            className="absolute z-50 pointer-events-none"
+            style={{
+              left: `${item.position.x + 15}px`,
+              top: `${item.position.y - 20}px`,
+            }}
+          >
             <div className="pointer-events-auto">
               <TransactionPopup
                 event={item.transaction}
@@ -565,8 +539,8 @@ export default function ScoringBarChart({ scores, transactions, seasonBoundaries
               />
             </div>
           </div>
-          );
-        })}
+        ))}
+        </div>
     </div>
   );
 }
