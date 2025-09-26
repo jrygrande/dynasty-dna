@@ -75,7 +75,6 @@ interface ChartDataPoint {
 
 export default function ScoringBarChart({ scores, transactions, seasonBoundaries, rosterLegend, benchmarks = [], playerPosition, openTransactions, onTransactionToggle, playerId }: ScoringBarChartProps) {
   const chartContainerRef = React.useRef<HTMLDivElement>(null);
-  const scrollContainerRef = React.useRef<HTMLDivElement>(null);
   const [chartDimensions, setChartDimensions] = React.useState({ width: 800, height: 384 });
   const [activeTransactions, setActiveTransactions] = React.useState<Array<{
     transaction: TimelineEvent;
@@ -164,31 +163,6 @@ export default function ScoringBarChart({ scores, transactions, seasonBoundaries
     });
   });
 
-  // Calculate recent seasons for mobile view
-  const recentSeasonsData = React.useMemo(() => {
-    if (!isMobile || seasonBoundaries.length === 0) {
-      return { minPosition: 1, maxPosition: Math.max(...scores.map(s => s.position)) };
-    }
-
-    // Get the last 2 seasons (current + 1 previous)
-    const sortedBoundaries = seasonBoundaries
-      .sort((a, b) => parseInt(b.season) - parseInt(a.season))
-      .slice(0, 2);
-
-    if (sortedBoundaries.length === 0) {
-      return { minPosition: 1, maxPosition: Math.max(...scores.map(s => s.position)) };
-    }
-
-    const startPosition = sortedBoundaries.length === 2
-      ? sortedBoundaries[1].start
-      : sortedBoundaries[0].start;
-    const endPosition = sortedBoundaries[0].end;
-
-    return {
-      minPosition: startPosition,
-      maxPosition: endPosition
-    };
-  }, [isMobile, seasonBoundaries, scores]);
 
   // Prepare chart data with roster-based coloring and benchmark data
   const baseChartData: ChartDataPoint[] = scores.map(score => {
@@ -300,14 +274,8 @@ export default function ScoringBarChart({ scores, transactions, seasonBoundaries
     // This can be removed once we fully migrate to ReferenceDot approach
   };
 
-  // Filter chart data for mobile view (show recent seasons by default)
-  const visibleChartData = React.useMemo(() => {
-    if (!isMobile) return chartData;
-    return chartData.filter(d =>
-      d.position >= recentSeasonsData.minPosition &&
-      d.position <= recentSeasonsData.maxPosition
-    );
-  }, [chartData, isMobile, recentSeasonsData]);
+  // Use full chart data - no filtering needed since we show complete chart
+  const visibleChartData = chartData;
 
   // Calculate chart size for mobile scrolling
   const chartSize = React.useMemo(() => {
@@ -350,20 +318,6 @@ export default function ScoringBarChart({ scores, transactions, seasonBoundaries
     ];
   }, [maxPoints, benchmarks]);
 
-  // Auto-scroll to recent seasons on mobile
-  React.useEffect(() => {
-    if (isMobile && scrollContainerRef.current && chartData.length > 0) {
-      const container = scrollContainerRef.current;
-      // Small delay to ensure chart is rendered
-      const timeout = setTimeout(() => {
-        // For vertical layout, scroll to bottom (most recent)
-        const scrollPosition = container.scrollHeight - container.clientHeight;
-        container.scrollTop = Math.max(0, scrollPosition);
-      }, 100);
-
-      return () => clearTimeout(timeout);
-    }
-  }, [isMobile, chartData, recentSeasonsData]);
 
   // Create season boundary tick marks for X-axis aligned with season starts
   const seasonTicks = seasonBoundaries.map(boundary => ({
@@ -422,19 +376,10 @@ export default function ScoringBarChart({ scores, transactions, seasonBoundaries
       </div>
 
       <div
-        ref={scrollContainerRef}
-        className={`w-full ${
-          isMobile ? 'overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 h-96' : ''
-        }`}
-        style={isMobile ? {
-          background: 'linear-gradient(to bottom, transparent 0%, white 5%, white 95%, transparent 100%)'
-        } : {}}
+        ref={chartContainerRef}
+        className="w-full"
+        style={isMobile ? { height: chartSize.height } : { height: '24rem' }}
       >
-        <div
-          ref={chartContainerRef}
-          className={isMobile ? 'w-full' : 'w-full h-96'}
-          style={isMobile ? { height: chartSize.height } : {}}
-        >
           <ResponsiveContainer width="100%" height="100%">
             <ComposedChart
               data={chartData}
@@ -577,16 +522,40 @@ export default function ScoringBarChart({ scores, transactions, seasonBoundaries
         </div>
 
         {/* Transaction Popup Overlays */}
-        {activeTransactions.map((item) => (
-          <div
-            key={item.transaction.id}
-            className="absolute z-50 pointer-events-none"
-            style={{
-              left: item.position.x,
-              top: item.position.y,
-              transform: 'translate(-50%, calc(-100% - 8px))'
-            }}
-          >
+        {activeTransactions.map((item) => {
+          // Calculate smart positioning to keep cards in bounds
+          const chartRect = chartContainerRef.current?.getBoundingClientRect();
+          const cardWidth = 320; // max-w-sm ~= 320px
+          const cardHeight = 200; // estimated height
+
+          // Determine if card should appear above or below dot
+          const spaceAbove = item.position.y;
+          const spaceBelow = chartRect ? chartRect.height - item.position.y : 300;
+          const preferAbove = spaceAbove > cardHeight + 20;
+
+          // Determine horizontal positioning
+          const spaceLeft = item.position.x;
+          const spaceRight = chartRect ? chartRect.width - item.position.x : 400;
+
+          let xOffset = '-50%'; // default center
+          if (spaceLeft < cardWidth / 2) {
+            xOffset = '0%'; // align left edge to dot
+          } else if (spaceRight < cardWidth / 2) {
+            xOffset = '-100%'; // align right edge to dot
+          }
+
+          const yTransform = preferAbove ? '-100%' : '20px';
+
+          return (
+            <div
+              key={item.transaction.id}
+              className="absolute z-50 pointer-events-none"
+              style={{
+                left: item.position.x,
+                top: item.position.y,
+                transform: `translate(${xOffset}, ${yTransform})`
+              }}
+            >
             <div className="pointer-events-auto">
               <TransactionPopup
                 event={item.transaction}
@@ -596,8 +565,8 @@ export default function ScoringBarChart({ scores, transactions, seasonBoundaries
               />
             </div>
           </div>
-        ))}
-      </div>
+          );
+        })}
     </div>
   );
 }

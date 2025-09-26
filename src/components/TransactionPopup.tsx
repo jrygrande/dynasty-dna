@@ -38,16 +38,11 @@ export default function TransactionPopup({
 
   return (
     <div
-      className="absolute z-50 bg-white border border-gray-200 rounded-lg shadow-lg p-4 max-w-sm"
-      style={{
-        left: `${xPosition}px`,
-        transform: 'translateX(-50%)',
-        top: '10px', // Position below the timeline
-      }}
+      className="bg-white border border-gray-200 rounded-lg shadow-lg p-4 max-w-sm"
     >
-      {/* Arrow pointing up to the transaction node */}
+      {/* Arrow pointing down to the transaction node */}
       <div
-        className="absolute -top-2 left-1/2 transform -translate-x-1/2 w-4 h-4 bg-white border-l border-t border-gray-200 rotate-45"
+        className="absolute -bottom-1 left-1/2 transform -translate-x-1/2 w-3 h-3 bg-white border-r border-b border-gray-200 rotate-45"
       />
 
       {/* Close button */}
