@@ -526,8 +526,9 @@ export default function ScoringBarChart({ scores, transactions, seasonBoundaries
             key={item.transaction.id}
             className="absolute z-50 pointer-events-none"
             style={{
-              left: `${item.position.x + 15}px`,
-              top: `${item.position.y - 20}px`,
+              left: `${item.position.x}px`,
+              top: `${item.position.y}px`,
+              transform: 'translate(-50%, -105%)',
             }}
           >
             <div className="pointer-events-auto">
