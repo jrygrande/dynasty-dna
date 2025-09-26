@@ -220,7 +220,7 @@ export default function ScoringBarChart({ scores, transactions, seasonBoundaries
           points: 0, // Phantom points
           isStarter: false,
           rosterId: transaction.toRosterId || 0,
-          ownerName: transaction.toUser?.displayName || transaction.toUser?.name || 'Unknown',
+          ownerName: transaction.toUser?.displayName || transaction.toUser?.username || 'Unknown',
           ownerId: transaction.toUser?.id || undefined,
           hasTransaction: true,
           transactions: [transaction],
