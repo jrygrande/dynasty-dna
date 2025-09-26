@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Cell, ReferenceDot } from 'recharts';
+import { ComposedChart, Bar, Line, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Cell, ReferenceDot } from 'recharts';
 import type { TimelineEvent } from '@/lib/api/assets';
 import TransactionDot from './TransactionDot';
 import TransactionPopup from './TransactionPopup';
@@ -235,6 +235,21 @@ export default function ScoringBarChart({ scores, transactions, seasonBoundaries
   const chartData: ChartDataPoint[] = [...baseChartData, ...phantomDataPoints]
     .sort((a, b) => a.position - b.position);
 
+  // Calculate max chart value for area backgrounds
+  const chartMaxValue = Math.max(...chartData.map(d => d.points),
+    ...benchmarks.map(b => b.topDecile || 0)) * 1.1;
+
+  // Transform chart data to include proper area values
+  const enhancedChartData = chartData.map(point => ({
+    ...point,
+    // For the red area below median
+    belowMedianArea: point.median || 0,
+    // For the green area above elite - use difference from topDecile to chart max
+    aboveEliteArea: point.topDecile ? (chartMaxValue - point.topDecile) : 0,
+    // Base value for stacked green area
+    eliteBase: point.topDecile || chartMaxValue
+  }));
+
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
       const data = payload[0].payload as ChartDataPoint;
@@ -301,7 +316,7 @@ export default function ScoringBarChart({ scores, transactions, seasonBoundaries
   }, [isMobile, chartData.length]);
 
   // Calculate overall max points for consistent scale
-  const maxPoints = Math.max(...chartData.map(d => d.points));
+  const maxPoints = Math.max(...enhancedChartData.map(d => d.points));
 
   // Calculate horizontal reference line values
   const referenceLines = React.useMemo(() => {
@@ -368,14 +383,18 @@ export default function ScoringBarChart({ scores, transactions, seasonBoundaries
             isMobile ? 'text-xs' : 'gap-4 text-sm'
           }`}>
             <div className="font-medium text-gray-700 mr-2">
-              {playerPosition} Benchmarks:
+              {playerPosition} Performance Zones:
             </div>
             <div className="flex items-center gap-1">
-              <div className="w-4 h-0.5 bg-amber-500"></div>
-              <span>Median</span>
+              <div className="w-4 h-3 bg-red-200 rounded-sm"></div>
+              <span>Below Average</span>
             </div>
             <div className="flex items-center gap-1">
-              <div className="w-4 h-0.5 bg-emerald-500"></div>
+              <div className="w-4 h-3 bg-white border border-gray-300 rounded-sm"></div>
+              <span>Quality</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <div className="w-4 h-3 bg-emerald-200 rounded-sm"></div>
               <span>Elite</span>
             </div>
           </div>
@@ -389,7 +408,7 @@ export default function ScoringBarChart({ scores, transactions, seasonBoundaries
       >
           <ResponsiveContainer width="100%" height="100%">
             <ComposedChart
-              data={chartData}
+              data={enhancedChartData}
               margin={isMobile ? { top: 20, right: 40, left: 20, bottom: 20 } : { top: 20, right: 30, left: 20, bottom: 60 }}
               layout={isMobile ? 'vertical' : 'horizontal'}
             >
@@ -449,14 +468,38 @@ export default function ScoringBarChart({ scores, transactions, seasonBoundaries
 
             <Tooltip content={<CustomTooltip />} />
 
+            {/* Background area zones for benchmark context - render first so they appear behind bars */}
+            {/* Red area from 0 to median */}
+            <Area
+              dataKey="belowMedianArea"
+              fill="rgba(239, 68, 68, 0.15)"
+              stroke="none"
+              connectNulls={false}
+            />
+            {/* Green area above elite - stacked on top of elite base */}
+            <Area
+              dataKey="eliteBase"
+              fill="transparent"
+              stroke="none"
+              connectNulls={false}
+              stackId="elite"
+            />
+            <Area
+              dataKey="aboveEliteArea"
+              fill="rgba(16, 185, 129, 0.15)"
+              stroke="none"
+              connectNulls={false}
+              stackId="elite"
+            />
+
             <Bar dataKey="points">
-              {chartData.map((entry, index) => (
+              {enhancedChartData.map((entry, index) => (
                 <Cell key={`cell-${index}`} fill={entry.fill} />
               ))}
             </Bar>
 
             {/* Add ReferenceDot for each transaction */}
-            {chartData
+            {enhancedChartData
               .filter(dataPoint => dataPoint.hasTransaction && dataPoint.transactions)
               .flatMap(dataPoint =>
                 dataPoint.transactions!.map((transaction, transIndex) => (
@@ -475,44 +518,7 @@ export default function ScoringBarChart({ scores, transactions, seasonBoundaries
                 ))
               )}
 
-            {/* Add smooth benchmark lines */}
-            <Line
-              type="monotone"
-              dataKey="median"
-              stroke="#f59e0b"
-              strokeWidth={2}
-              dot={false}
-              connectNulls={false}
-            />
-            <Line
-              type="monotone"
-              dataKey="topDecile"
-              stroke="#10b981"
-              strokeWidth={2}
-              dot={false}
-              connectNulls={false}
-            />
 
-            {/* Add reference lines (horizontal on desktop, vertical on mobile) */}
-            {referenceLines.map((line, index) => (
-              <ReferenceLine
-                key={`ref-${index}`}
-                {...(isMobile ? { x: line.value } : { y: line.value })}
-                stroke={`rgba(107, 114, 128, ${line.opacity})`}
-                strokeWidth={1.5}
-                strokeDasharray="5 5"
-                label={{
-                  value: line.value,
-                  position: isMobile ? "insideTopRight" : "insideTopRight",
-                  style: {
-                    textAnchor: isMobile ? 'start' : 'end',
-                    fill: 'rgba(75, 85, 99, 0.8)',
-                    fontSize: '11px',
-                    fontWeight: 'bold'
-                  }
-                }}
-              />
-            ))}
 
             {/* Add season boundary lines (vertical on desktop, horizontal on mobile) */}
             {seasonBoundaries.slice(1).map(boundary => (
