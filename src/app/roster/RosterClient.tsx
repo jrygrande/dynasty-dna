@@ -62,8 +62,8 @@ export default function RosterClient({ leagueId, rosterId }: RosterClientProps) 
       try {
         let url = `/api/roster/${rosterId}?leagueId=${leagueId}`;
 
-        // Add season parameter if not current or all-time
-        if (selectedSeason !== 'current' && selectedSeason !== 'all-time') {
+        // Add season parameter if not current
+        if (selectedSeason !== 'current') {
           url += `&season=${selectedSeason}`;
         }
 

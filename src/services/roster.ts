@@ -190,7 +190,7 @@ export async function getCurrentRosterAssets(
 
   const currentRoster = sleeperRosters.find(r => r.roster_id === rosterId);
 
-  if (!currentRoster?.players) {
+  if (!currentRoster?.players || currentRoster.players.length === 0) {
     throw new Error(`Could not find current roster data for roster ${rosterId}`);
   }
 
@@ -294,8 +294,10 @@ export async function getCurrentRosterAssets(
 
     const playerInfoMap = new Map(playersInfo.map(p => [p.id, p]));
 
-    // Get season-specific stats
-    const playerStats = await getPlayerStatsForRoster(family, playerIds, targetSeason);
+    // Get season-specific or all-time stats
+    const playerStats = targetSeason === 'all-time'
+      ? await getPlayerAllTimeStats(family, playerIds, rosterId)
+      : await getPlayerStatsForRoster(family, playerIds, targetSeason);
 
     for (const event of playerEvents) {
       const playerInfo = playerInfoMap.get(event.playerId!);
@@ -306,8 +308,8 @@ export async function getCurrentRosterAssets(
         positionPercentile: 0,
       };
 
-      // If viewing a historical season, check if player was on roster in that season
-      if (options?.season && options.season !== currentSeason) {
+      // If viewing a historical season (not all-time), check if player was on roster in that season
+      if (options?.season && options.season !== currentSeason && options.season !== 'all-time') {
         const wasOnRosterInSeason = await wasPlayerOnRosterInSeason(
           event.playerId!,
           rosterId,
@@ -496,6 +498,198 @@ async function getAllRosterPicks(
 
   // Combine remaining original picks with acquired picks
   return [...remainingOriginalPicks, ...tradedToPicks];
+}
+
+/**
+ * Calculate all-time stats for players across their entire tenure on the roster
+ */
+async function getPlayerAllTimeStats(
+  family: string[],
+  playerIds: string[],
+  rosterId: number
+): Promise<Map<string, RosterPlayer['currentSeasonStats']>> {
+  const db = await getDb();
+  const statsMap = new Map<string, RosterPlayer['currentSeasonStats']>();
+
+  if (playerIds.length === 0) return statsMap;
+
+  // Get ALL player scores for these players on this roster across all seasons
+  const allSeasonScores = await db
+    .select({
+      playerId: playerScores.playerId,
+      points: playerScores.points,
+      isStarter: playerScores.isStarter,
+      week: playerScores.week,
+      season: leagues.season,
+      leagueId: playerScores.leagueId,
+    })
+    .from(playerScores)
+    .innerJoin(leagues, eq(playerScores.leagueId, leagues.id))
+    .where(
+      and(
+        inArray(playerScores.leagueId, family),
+        inArray(playerScores.playerId, playerIds),
+        eq(playerScores.rosterId, rosterId)
+      )
+    );
+
+  // Get all starter scores by position across all seasons for percentile calculation
+  const allStarterScores = await db
+    .select({
+      playerId: playerScores.playerId,
+      points: playerScores.points,
+      position: players.position,
+      season: leagues.season,
+      week: playerScores.week,
+    })
+    .from(playerScores)
+    .innerJoin(leagues, eq(playerScores.leagueId, leagues.id))
+    .innerJoin(players, eq(playerScores.playerId, players.id))
+    .where(
+      and(
+        inArray(playerScores.leagueId, family),
+        eq(playerScores.isStarter, true),
+        isNotNull(players.position)
+      )
+    );
+
+  // Build position PPG map for career percentile calculations
+  const positionPPGMap = new Map<string, number[]>();
+  const playerPositionMap = new Map<string, string>();
+
+  // Group starter scores by player/position and calculate career PPG
+  const playerCareerScores = new Map<string, { position: string; scores: number[] }>();
+  for (const score of allStarterScores) {
+    const key = `${score.playerId}-${score.position}`;
+    if (!playerCareerScores.has(key)) {
+      playerCareerScores.set(key, { position: score.position!, scores: [] });
+    }
+    playerCareerScores.get(key)!.scores.push(parseFloat(score.points));
+    playerPositionMap.set(score.playerId, score.position!);
+  }
+
+  // Calculate career PPG for each player at their position
+  for (const [, data] of playerCareerScores) {
+    const careerPPG = data.scores.reduce((sum, pts) => sum + pts, 0) / data.scores.length;
+    if (!positionPPGMap.has(data.position)) {
+      positionPPGMap.set(data.position, []);
+    }
+    positionPPGMap.get(data.position)!.push(careerPPG);
+  }
+
+  // Calculate career tenure for each player (first week to last week)
+  const playerTenures = new Map<string, { firstWeek: number; firstSeason: string; lastWeek: number; lastSeason: string }>();
+
+  // Get asset events to determine first acquisition date
+  const acquisitionEvents = await db
+    .select({
+      playerId: assetEvents.playerId,
+      season: assetEvents.season,
+      week: assetEvents.week,
+      eventTime: assetEvents.eventTime,
+    })
+    .from(assetEvents)
+    .where(
+      and(
+        inArray(assetEvents.playerId, playerIds),
+        eq(assetEvents.toRosterId, rosterId),
+        inArray(assetEvents.leagueId, family)
+      )
+    )
+    .orderBy(assetEvents.season, assetEvents.week, assetEvents.eventTime);
+
+  // Track each player's career span
+  for (const playerId of playerIds) {
+    const playerScores = allSeasonScores.filter(s => s.playerId === playerId);
+    const playerAcquisitions = acquisitionEvents.filter(e => e.playerId === playerId);
+
+    if (playerScores.length === 0) continue;
+
+    // Find first acquisition or earliest score
+    let firstSeason = playerScores[0].season;
+    let firstWeek = playerScores[0].week;
+
+    if (playerAcquisitions.length > 0) {
+      const firstAcquisition = playerAcquisitions[0];
+      if (firstAcquisition.season && firstAcquisition.week) {
+        firstSeason = firstAcquisition.season;
+        firstWeek = firstAcquisition.week;
+      }
+    }
+
+    // Find last score
+    const lastScore = playerScores.reduce((latest, current) => {
+      const latestSeasonInt = parseInt(latest.season);
+      const currentSeasonInt = parseInt(current.season);
+
+      if (currentSeasonInt > latestSeasonInt) return current;
+      if (currentSeasonInt === latestSeasonInt && current.week > latest.week) return current;
+      return latest;
+    });
+
+    playerTenures.set(playerId, {
+      firstSeason,
+      firstWeek,
+      lastSeason: lastScore.season,
+      lastWeek: lastScore.week,
+    });
+  }
+
+  // Group scores by player and calculate all-time stats
+  const playerScoreMap = new Map<string, typeof allSeasonScores>();
+  for (const score of allSeasonScores) {
+    if (!playerScoreMap.has(score.playerId)) {
+      playerScoreMap.set(score.playerId, []);
+    }
+    playerScoreMap.get(score.playerId)!.push(score);
+  }
+
+  for (const [playerId, scores] of playerScoreMap) {
+    const tenure = playerTenures.get(playerId);
+    if (!tenure) continue;
+
+    // Calculate total career weeks on roster by counting unique weeks with scores
+    // This is more accurate than trying to calculate span, as it accounts for gaps in ownership
+    const uniqueWeeks = new Set(scores.map(s => `${s.season}-${s.week}`));
+    const totalWeeksOnRoster = uniqueWeeks.size;
+
+    // Group scores by week to avoid double-counting duplicate records
+    const scoresByWeek = new Map<string, { isStarter: boolean; points: number }>();
+    for (const score of scores) {
+      const weekKey = `${score.season}-${score.week}`;
+      if (!scoresByWeek.has(weekKey)) {
+        scoresByWeek.set(weekKey, { isStarter: score.isStarter, points: parseFloat(score.points) });
+      }
+    }
+
+    const weeklyScores = Array.from(scoresByWeek.values());
+    const weeksStarted = weeklyScores.filter(w => w.isStarter).length;
+    const totalPoints = weeklyScores.reduce((sum, w) => sum + w.points, 0);
+    const starterPoints = weeklyScores.filter(w => w.isStarter).reduce((sum, w) => sum + w.points, 0);
+
+    // All-time metrics
+    const startPercentage = totalWeeksOnRoster > 0 ? (weeksStarted / totalWeeksOnRoster) * 100 : 0;
+    const ppgWhenStarting = weeksStarted > 0 ? starterPoints / weeksStarted : 0;
+    const ppgSinceAcquiring = totalWeeksOnRoster > 0 ? totalPoints / totalWeeksOnRoster : 0;
+
+    // Calculate position percentile based on career starter PPG
+    let positionPercentile = 0;
+    const playerPosition = playerPositionMap.get(playerId);
+    if (playerPosition && weeksStarted > 0 && positionPPGMap.has(playerPosition)) {
+      const positionPPGs = positionPPGMap.get(playerPosition)!;
+      const betterCount = positionPPGs.filter(otherPPG => otherPPG < ppgWhenStarting).length;
+      positionPercentile = positionPPGs.length > 0 ? (betterCount / positionPPGs.length) * 100 : 0;
+    }
+
+    statsMap.set(playerId, {
+      startPercentage: Math.round(startPercentage * 10) / 10,
+      ppgWhenStarting: Math.round(ppgWhenStarting * 100) / 100,
+      ppgSinceAcquiring: Math.round(ppgSinceAcquiring * 100) / 100,
+      positionPercentile: Math.round(positionPercentile * 10) / 10,
+    });
+  }
+
+  return statsMap;
 }
 
 async function getPlayerStatsForRoster(
@@ -732,6 +926,17 @@ async function getLeagueRosterPPG(
 
   // Get all player acquisition data for starter players
   const allPlayerIds = [...new Set(leagueStarters.map(s => s.playerId))];
+
+  // If no starter players found, return empty result
+  if (allPlayerIds.length === 0) {
+    return {
+      trade: {},
+      draft_selected: {},
+      waiver_add: {},
+      free_agency: {}
+    };
+  }
+
   const playerAcquisitions = await db
     .select()
     .from(assetEvents)
