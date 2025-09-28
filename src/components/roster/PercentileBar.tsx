@@ -6,6 +6,21 @@ interface PercentileBarProps {
 }
 
 export function PercentileBar({ percentile, className }: PercentileBarProps) {
+  // Handle null/no data case
+  if (percentile === -1) {
+    return (
+      <div className={cn('space-y-1', className)}>
+        <div className="flex justify-between text-xs">
+          <span className="text-muted-foreground">-</span>
+          <span className="text-muted-foreground">No data</span>
+        </div>
+        <div className="w-full bg-gray-200 rounded-full h-2 dark:bg-gray-700">
+          <div className="h-2 rounded-full bg-gray-300 dark:bg-gray-600" style={{ width: '100%' }} />
+        </div>
+      </div>
+    );
+  }
+
   const getPercentileColor = (value: number) => {
     if (value >= 90) return 'bg-green-500';      // Elite
     if (value >= 70) return 'bg-blue-500';       // Quality

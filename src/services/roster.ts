@@ -67,7 +67,97 @@ export interface RosterResponse {
   };
 }
 
-export async function getCurrentRosterAssets(leagueId: string, rosterId: number): Promise<RosterResponse> {
+/**
+ * Get appropriate week limits for a given season
+ */
+async function getSeasonWeekLimits(targetSeason: string): Promise<{ currentWeek: number; completedWeeks: number }> {
+  const currentSeason = await getCurrentSeason();
+
+  if (targetSeason === currentSeason) {
+    // For current season, use actual current week
+    const currentWeek = await getCurrentWeek();
+    return { currentWeek, completedWeeks: currentWeek - 1 };
+  } else {
+    // For past seasons, assume all 18 weeks were played
+    return { currentWeek: 19, completedWeeks: 18 }; // Week 19 so that week 18 is included (< 19)
+  }
+}
+
+/**
+ * Check if a player was on a specific roster during a specific season
+ */
+async function wasPlayerOnRosterInSeason(
+  playerId: string,
+  rosterId: number,
+  family: string[],
+  season: string
+): Promise<boolean> {
+  const db = await getDb();
+
+  // Get all asset events for this player across all seasons
+  const allEvents = await db
+    .select()
+    .from(assetEvents)
+    .where(
+      and(
+        eq(assetEvents.playerId, playerId),
+        inArray(assetEvents.leagueId, family)
+      )
+    )
+    .orderBy(assetEvents.season, assetEvents.week, assetEvents.eventTime);
+
+  // Track roster ownership through time
+  let currentRosterId: number | null = null;
+  let wasOnRosterInTargetSeason = false;
+
+  for (const event of allEvents) {
+    const eventSeason = event.season || '';
+
+    // Update current roster based on event
+    if (event.toRosterId !== null) {
+      currentRosterId = event.toRosterId;
+    }
+
+    // If this event is in the target season or before, check if player is on our roster
+    if (eventSeason <= season && currentRosterId === rosterId) {
+      wasOnRosterInTargetSeason = true;
+    }
+
+    // If this event is after the target season and player left our roster, they weren't on roster in target season
+    if (eventSeason > season) {
+      break;
+    }
+
+    // If player was traded away from our roster in target season or before, update status
+    if (eventSeason <= season && event.fromRosterId === rosterId && currentRosterId !== rosterId) {
+      wasOnRosterInTargetSeason = false;
+    }
+  }
+
+  // Also check if there are any player scores for this player on this roster in this season
+  // This is a more direct way to verify they were actually on the roster
+  const playerScoreCheck = await db
+    .select()
+    .from(playerScores)
+    .leftJoin(leagues, eq(playerScores.leagueId, leagues.id))
+    .where(
+      and(
+        eq(playerScores.playerId, playerId),
+        eq(playerScores.rosterId, rosterId),
+        eq(leagues.season, season),
+        inArray(playerScores.leagueId, family)
+      )
+    )
+    .limit(1);
+
+  return playerScoreCheck.length > 0 || wasOnRosterInTargetSeason;
+}
+
+export async function getCurrentRosterAssets(
+  leagueId: string,
+  rosterId: number,
+  options?: { season?: string }
+): Promise<RosterResponse> {
   const db = await getDb();
 
   // Get league family for historical tracking
@@ -179,9 +269,10 @@ export async function getCurrentRosterAssets(leagueId: string, rosterId: number)
   // Convert to the format expected by the rest of the function
   const currentAssets = Array.from(playerAcquisitionMap.values());
 
-  // Get current season to filter picks
+  // Get season for stats calculation (use provided season or current season)
   const currentSeason = await getCurrentSeason();
-  const currentSeasonInt = parseInt(currentSeason);
+  const targetSeason = options?.season || currentSeason;
+  const currentSeasonInt = parseInt(targetSeason);
 
   // All current assets are now players (we'll get picks separately)
   const playerEvents = currentAssets;
@@ -203,17 +294,37 @@ export async function getCurrentRosterAssets(leagueId: string, rosterId: number)
 
     const playerInfoMap = new Map(playersInfo.map(p => [p.id, p]));
 
-    // Get current season stats
-    const playerStats = await getPlayerStatsForRoster(family, playerIds, currentSeason);
+    // Get season-specific stats
+    const playerStats = await getPlayerStatsForRoster(family, playerIds, targetSeason);
 
     for (const event of playerEvents) {
       const playerInfo = playerInfoMap.get(event.playerId!);
-      const stats = playerStats.get(event.playerId!) || {
+      let stats = playerStats.get(event.playerId!) || {
         startPercentage: 0,
         ppgWhenStarting: 0,
         ppgSinceAcquiring: 0,
         positionPercentile: 0,
       };
+
+      // If viewing a historical season, check if player was on roster in that season
+      if (options?.season && options.season !== currentSeason) {
+        const wasOnRosterInSeason = await wasPlayerOnRosterInSeason(
+          event.playerId!,
+          rosterId,
+          family,
+          targetSeason
+        );
+
+        if (!wasOnRosterInSeason) {
+          // Player wasn't on roster in the target season, show null stats
+          stats = {
+            startPercentage: -1, // Use -1 to indicate "no data" which UI will show as "-"
+            ppgWhenStarting: -1,
+            ppgSinceAcquiring: -1,
+            positionPercentile: -1,
+          };
+        }
+      }
 
       if (playerInfo) {
         rosterPlayers.push({
@@ -240,9 +351,9 @@ export async function getCurrentRosterAssets(leagueId: string, rosterId: number)
     analyticsAcquisitionMap.set(playerId, event.eventType);
   }
 
-  const weeklyScoresByType = await getWeeklyScoresByAcquisitionType(family, rosterId, currentSeason, analyticsAcquisitionMap);
-  const weeklyScoresByPosition = await getWeeklyScoresByPosition(family, rosterId, currentSeason);
-  const leagueRosterPPG = await getLeagueRosterPPG(family, currentSeason);
+  const weeklyScoresByType = await getWeeklyScoresByAcquisitionType(family, rosterId, targetSeason, analyticsAcquisitionMap);
+  const weeklyScoresByPosition = await getWeeklyScoresByPosition(family, rosterId, targetSeason);
+  const leagueRosterPPG = await getLeagueRosterPPG(family, targetSeason);
 
   // Calculate acquisition type stats with rankings
   const acquisitionTypeStats: Record<string, AcquisitionTypeStats> = {};
@@ -258,12 +369,11 @@ export async function getCurrentRosterAssets(leagueId: string, rosterId: number)
   }
 
   // Calculate stats and rankings for each acquisition type
-  const currentWeek = await getCurrentWeek();
-  const completedWeeks = currentWeek - 1;
+  const { currentWeek: analyticsCurrentWeek, completedWeeks: analyticsCompletedWeeks } = await getSeasonWeekLimits(targetSeason);
 
   Object.keys(totalsByType).forEach(acquisitionType => {
     const totalPoints = totalsByType[acquisitionType];
-    const ppg = completedWeeks > 0 ? totalPoints / completedWeeks : 0;
+    const ppg = analyticsCompletedWeeks > 0 ? totalPoints / analyticsCompletedWeeks : 0;
 
     // Calculate ranking for this acquisition type
     const leagueData = leagueRosterPPG[acquisitionType] || {};
@@ -391,16 +501,15 @@ async function getAllRosterPicks(
 async function getPlayerStatsForRoster(
   family: string[],
   playerIds: string[],
-  currentSeason: string
+  targetSeason: string
 ): Promise<Map<string, RosterPlayer['currentSeasonStats']>> {
   const db = await getDb();
   const statsMap = new Map<string, RosterPlayer['currentSeasonStats']>();
 
   if (playerIds.length === 0) return statsMap;
 
-  // Get current week to filter to only completed weeks
-  const currentWeek = await getCurrentWeek();
-  const completedWeeks = currentWeek - 1; // Only weeks with completed games
+  // Get appropriate week limits for the target season
+  const { currentWeek, completedWeeks } = await getSeasonWeekLimits(targetSeason);
 
   // Get current season player scores for our players (only completed weeks)
   const seasonScores = await db
@@ -417,7 +526,7 @@ async function getPlayerStatsForRoster(
       and(
         inArray(playerScores.leagueId, family),
         inArray(playerScores.playerId, playerIds),
-        eq(leagues.season, currentSeason),
+        eq(leagues.season, targetSeason),
         lt(playerScores.week, currentWeek)
       )
     );
@@ -436,7 +545,7 @@ async function getPlayerStatsForRoster(
       and(
         inArray(playerScores.leagueId, family),
         eq(playerScores.isStarter, true),
-        eq(leagues.season, currentSeason),
+        eq(leagues.season, targetSeason),
         lt(playerScores.week, currentWeek),
         isNotNull(players.position)
       )
@@ -520,14 +629,13 @@ async function getPlayerStatsForRoster(
 async function getWeeklyScoresByAcquisitionType(
   family: string[],
   rosterId: number,
-  currentSeason: string,
+  targetSeason: string,
   playerAcquisitionMap: Map<string, string>
 ): Promise<WeeklyScore[]> {
   const db = await getDb();
 
-  // Get current week to filter to only completed weeks
-  const currentWeek = await getCurrentWeek();
-  const completedWeeks = currentWeek - 1;
+  // Get appropriate week limits for the target season
+  const { currentWeek, completedWeeks } = await getSeasonWeekLimits(targetSeason);
 
   if (completedWeeks <= 0) {
     return [];
@@ -547,7 +655,7 @@ async function getWeeklyScoresByAcquisitionType(
       and(
         eq(playerScores.rosterId, rosterId),
         inArray(playerScores.leagueId, family),
-        eq(leagues.season, currentSeason),
+        eq(leagues.season, targetSeason),
         eq(playerScores.isStarter, true), // Only starter points
         gte(playerScores.week, 1),
         lt(playerScores.week, currentWeek)
@@ -590,13 +698,12 @@ async function getWeeklyScoresByAcquisitionType(
 
 async function getLeagueRosterPPG(
   family: string[],
-  currentSeason: string
+  targetSeason: string
 ): Promise<Record<string, Record<number, number>>> {
   const db = await getDb();
 
-  // Get current week to filter to only completed weeks
-  const currentWeek = await getCurrentWeek();
-  const completedWeeks = currentWeek - 1;
+  // Get appropriate week limits for the target season
+  const { currentWeek, completedWeeks } = await getSeasonWeekLimits(targetSeason);
 
   if (completedWeeks <= 0) {
     return {};
@@ -615,7 +722,7 @@ async function getLeagueRosterPPG(
     .where(
       and(
         inArray(playerScores.leagueId, family),
-        eq(leagues.season, currentSeason),
+        eq(leagues.season, targetSeason),
         eq(playerScores.isStarter, true),
         gte(playerScores.week, 1),
         lt(playerScores.week, currentWeek)
@@ -703,13 +810,12 @@ async function getLeagueRosterPPG(
 async function getWeeklyScoresByPosition(
   family: string[],
   rosterId: number,
-  currentSeason: string
+  targetSeason: string
 ): Promise<WeeklyPositionScore[]> {
   const db = await getDb();
 
-  // Get current week to filter to only completed weeks
-  const currentWeek = await getCurrentWeek();
-  const completedWeeks = currentWeek - 1;
+  // Get appropriate week limits for the target season
+  const { currentWeek, completedWeeks } = await getSeasonWeekLimits(targetSeason);
 
   if (completedWeeks <= 0) {
     return [];
@@ -730,7 +836,7 @@ async function getWeeklyScoresByPosition(
       and(
         eq(playerScores.rosterId, rosterId),
         inArray(playerScores.leagueId, family),
-        eq(leagues.season, currentSeason),
+        eq(leagues.season, targetSeason),
         eq(playerScores.isStarter, true), // Only starter points
         gte(playerScores.week, 1),
         lt(playerScores.week, currentWeek),

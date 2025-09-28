@@ -21,10 +21,16 @@ export function PlayerCard({ player, leagueId, leagueName, onPlayerClick }: Play
   };
 
   const getStartPercentageColor = (percentage: number) => {
+    if (percentage === -1) return 'text-muted-foreground';
     if (percentage >= 75) return 'text-green-600 dark:text-green-400';
     if (percentage >= 50) return 'text-blue-600 dark:text-blue-400';
     if (percentage >= 25) return 'text-yellow-600 dark:text-yellow-400';
     return 'text-red-600 dark:text-red-400';
+  };
+
+  const formatStat = (value: number, suffix: string = ''): string => {
+    if (value === -1) return '-';
+    return `${value}${suffix}`;
   };
 
   return (
@@ -56,19 +62,19 @@ export function PlayerCard({ player, leagueId, leagueName, onPlayerClick }: Play
             <div className="space-y-1">
               <div className="text-muted-foreground">Start %</div>
               <div className={`font-medium ${getStartPercentageColor(player.currentSeasonStats.startPercentage)}`}>
-                {player.currentSeasonStats.startPercentage}%
+                {formatStat(player.currentSeasonStats.startPercentage, '%')}
               </div>
             </div>
             <div className="space-y-1">
               <div className="text-muted-foreground">PPG in Lineup</div>
               <div className="font-medium">
-                {player.currentSeasonStats.ppgWhenStarting}
+                {formatStat(player.currentSeasonStats.ppgWhenStarting)}
               </div>
             </div>
             <div className="space-y-1">
               <div className="text-muted-foreground">PPG on Roster</div>
               <div className="font-medium">
-                {player.currentSeasonStats.ppgSinceAcquiring}
+                {formatStat(player.currentSeasonStats.ppgSinceAcquiring)}
               </div>
             </div>
             <div className="space-y-1">

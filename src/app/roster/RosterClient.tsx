@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { SeasonSelector, type SeasonOption } from '@/components/ui/SeasonSelector';
 import { PlayerCard } from '@/components/roster/PlayerCard';
 import { AcquisitionTypeBadge } from '@/components/roster/AcquisitionTypeBadge';
 import { AcquisitionPieChart } from '@/components/charts/AcquisitionPieChart';
@@ -24,11 +25,49 @@ export default function RosterClient({ leagueId, rosterId }: RosterClientProps) 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [sortBy, setSortBy] = useState<SortOption>('production_rank');
+  const [availableSeasons, setAvailableSeasons] = useState<SeasonOption[]>([]);
+  const [selectedSeason, setSelectedSeason] = useState<string>('current');
+
+  // Fetch available seasons
+  useEffect(() => {
+    async function fetchSeasons() {
+      try {
+        const response = await fetch(`/api/leagues/${leagueId}/seasons`);
+        if (response.ok) {
+          const data = await response.json();
+          if (data.ok && data.seasons) {
+            const seasonOptions: SeasonOption[] = data.seasons.map((season: any) => ({
+              value: season.season,
+              label: `${season.season} Season`,
+              description: season.leagueName
+            }));
+            setAvailableSeasons(seasonOptions);
+
+            // Set current season as default if it exists
+            if (seasonOptions.length > 0) {
+              setSelectedSeason(seasonOptions[0].value);
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Error fetching seasons:', err);
+      }
+    }
+
+    fetchSeasons();
+  }, [leagueId]);
 
   useEffect(() => {
     async function fetchRosterData() {
       try {
-        const response = await fetch(`/api/roster/${rosterId}?leagueId=${leagueId}`);
+        let url = `/api/roster/${rosterId}?leagueId=${leagueId}`;
+
+        // Add season parameter if not current or all-time
+        if (selectedSeason !== 'current' && selectedSeason !== 'all-time') {
+          url += `&season=${selectedSeason}`;
+        }
+
+        const response = await fetch(url);
         const data = await response.json();
 
         if (!data.ok) {
@@ -44,8 +83,11 @@ export default function RosterClient({ leagueId, rosterId }: RosterClientProps) 
       }
     }
 
-    fetchRosterData();
-  }, [leagueId, rosterId]);
+    if (selectedSeason) {
+      setLoading(true);
+      fetchRosterData();
+    }
+  }, [leagueId, rosterId, selectedSeason]);
 
   if (loading) {
     return (
@@ -121,11 +163,25 @@ export default function RosterClient({ leagueId, rosterId }: RosterClientProps) 
       <div className="mb-8">
         <Card>
           <CardHeader>
-            <CardTitle className="text-3xl">
-              {manager.teamName || 'Team Name Not Set'}
-            </CardTitle>
-            <div className="flex gap-6 text-sm text-muted-foreground mt-2">
-              <span>{manager.displayName || manager.username || 'Unknown Manager'}</span>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <CardTitle className="text-3xl">
+                  {manager.teamName || 'Team Name Not Set'}
+                </CardTitle>
+                <div className="flex gap-6 text-sm text-muted-foreground mt-2">
+                  <span>{manager.displayName || manager.username || 'Unknown Manager'}</span>
+                </div>
+              </div>
+              {availableSeasons.length > 0 && (
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-muted-foreground">Season:</span>
+                  <SeasonSelector
+                    seasons={availableSeasons}
+                    value={selectedSeason}
+                    onValueChange={setSelectedSeason}
+                  />
+                </div>
+              )}
             </div>
           </CardHeader>
         </Card>
