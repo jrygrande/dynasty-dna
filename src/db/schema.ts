@@ -24,11 +24,15 @@ export const leagues = pgTable(
     previousLeagueId: text('previous_league_id'),
     settings: jsonb('settings'),
     lastAssetEventsSyncAt: timestamp('last_asset_events_sync_at', { withTimezone: false }),
+    lastSyncAt: timestamp('last_sync_at', { withTimezone: false }),
+    syncStatus: text('sync_status', { enum: ['idle', 'syncing', 'failed'] }).default('idle'),
+    syncVersion: integer('sync_version').default(1),
     createdAt: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
   },
   (t) => ({
     prevIdx: index('leagues_previous_league_id_idx').on(t.previousLeagueId),
     seasonIdx: index('leagues_season_idx').on(t.season),
+    syncStatusIdx: index('leagues_sync_status_idx').on(t.syncStatus),
   })
 );
 

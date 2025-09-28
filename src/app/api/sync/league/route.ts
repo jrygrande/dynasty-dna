@@ -5,13 +5,20 @@ export async function POST(req: NextRequest) {
   try {
     const contentType = req.headers.get('content-type') || '';
     let leagueId: string | undefined;
+    let background = false;
+    let incremental = false;
+
     if (contentType.includes('application/json')) {
       const body = await req.json().catch(() => ({}));
       leagueId = body.leagueId || body.league_id;
+      background = body.background || false;
+      incremental = body.incremental || false;
     }
     if (!leagueId) {
       const { searchParams } = new URL(req.url);
       leagueId = searchParams.get('leagueId') || searchParams.get('league_id') || undefined;
+      background = searchParams.get('background') === 'true';
+      incremental = searchParams.get('incremental') === 'true';
     }
     if (!leagueId) {
       return NextResponse.json({ ok: false, error: 'leagueId required' }, { status: 400 });
@@ -22,8 +29,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: `invalid leagueId: ${leagueId}` }, { status: 400 });
     }
 
-    const result = await syncLeague(leagueId);
-    return NextResponse.json({ ok: true, result });
+    if (background) {
+      // For background sync, don't wait for completion
+      syncLeague(leagueId, { incremental }).catch(error => {
+        console.error(`Background sync failed for league ${leagueId}:`, error);
+      });
+      return NextResponse.json({ ok: true, message: 'Background sync initiated' });
+    } else {
+      const result = await syncLeague(leagueId, { incremental });
+      return NextResponse.json({ ok: true, result });
+    }
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message || 'sync failed' }, { status: 500 });
   }

@@ -125,12 +125,41 @@ export async function getCurrentRosterAssets(leagueId: string, rosterId: number)
     )
     .orderBy(desc(assetEvents.season), desc(assetEvents.week), desc(assetEvents.eventTime));
 
-  // Group by player and take the most recent event for each
+  // Group by player and take the most recent event for each, with priority for trade events
   const playerAcquisitionMap = new Map<string, any>();
 
+  // Define event type priority (higher = more priority)
+  const getEventTypePriority = (eventType: string): number => {
+    switch (eventType) {
+      case 'trade': return 5;
+      case 'draft_selected': return 4;
+      case 'waiver_add': return 3;
+      case 'free_agent_add': return 2;
+      case 'add': return 1;
+      default: return 0;
+    }
+  };
+
   for (const event of allPlayerEvents) {
-    if (!playerAcquisitionMap.has(event.playerId!)) {
-      playerAcquisitionMap.set(event.playerId!, event);
+    const playerId = event.playerId!;
+    const existingEvent = playerAcquisitionMap.get(playerId);
+
+    if (!existingEvent) {
+      playerAcquisitionMap.set(playerId, event);
+    } else {
+      // If events are from the same time period, prioritize by event type
+      const sameTime = existingEvent.season === event.season &&
+                      existingEvent.week === event.week;
+
+      if (sameTime) {
+        const existingPriority = getEventTypePriority(existingEvent.eventType);
+        const newPriority = getEventTypePriority(event.eventType);
+
+        if (newPriority > existingPriority) {
+          playerAcquisitionMap.set(playerId, event);
+        }
+      }
+      // If different time periods, keep the most recent (already handled by orderBy)
     }
   }
 

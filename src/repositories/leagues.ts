@@ -47,3 +47,45 @@ export async function getLastAssetEventsSyncTime(leagueId: string): Promise<Date
     .limit(1);
   return row?.lastAssetEventsSyncAt ?? null;
 }
+
+export async function updateLeagueSyncStatus(leagueId: string, status: 'idle' | 'syncing' | 'failed', lastSyncAt?: Date) {
+  const db = await getDb();
+  const updateData: any = { syncStatus: status };
+
+  if (lastSyncAt) {
+    updateData.lastSyncAt = lastSyncAt;
+  }
+
+  await db
+    .update(leagues)
+    .set(updateData)
+    .where(eq(leagues.id, leagueId));
+  await persistDb();
+}
+
+export async function getLeagueSyncInfo(leagueId: string) {
+  const db = await getDb();
+  const [row] = await db
+    .select({
+      lastSyncAt: leagues.lastSyncAt,
+      syncStatus: leagues.syncStatus,
+      syncVersion: leagues.syncVersion,
+    })
+    .from(leagues)
+    .where(eq(leagues.id, leagueId))
+    .limit(1);
+  return row ?? null;
+}
+
+export async function isLeagueDataStale(leagueId: string, thresholdHours: number): Promise<boolean> {
+  const syncInfo = await getLeagueSyncInfo(leagueId);
+
+  if (!syncInfo?.lastSyncAt) {
+    return true; // No sync time = stale
+  }
+
+  const thresholdMs = thresholdHours * 60 * 60 * 1000;
+  const stalenessTime = Date.now() - thresholdMs;
+
+  return syncInfo.lastSyncAt.getTime() < stalenessTime;
+}

@@ -21,8 +21,13 @@ export type SyncResult = {
 
 import { createJob, updateJobProgress, completeJob, failJob } from './jobs';
 import { getLeagueFamily } from './assets';
+import { updateLeagueSyncStatus } from '@/repositories/leagues';
 
-export async function syncLeague(leagueId: string, opts?: { season?: string; weeks?: number[] }) : Promise<SyncResult> {
+export async function syncLeague(leagueId: string, opts?: { season?: string; weeks?: number[]; incremental?: boolean }) : Promise<SyncResult> {
+  // Mark sync as starting
+  await updateLeagueSyncStatus(leagueId, 'syncing');
+
+  try {
   // League core
   const league = await Sleeper.getLeague(leagueId);
   await upsertLeague({
@@ -58,6 +63,12 @@ export async function syncLeague(leagueId: string, opts?: { season?: string; wee
   let weeks: number[];
   if (opts?.weeks && opts.weeks.length) {
     weeks = opts.weeks;
+  } else if (opts?.incremental) {
+    // For incremental sync, only sync current week and last 2 weeks
+    const state = await Sleeper.getState();
+    const currentWeek = Number(state.week ?? 18);
+    const startWeek = Math.max(1, currentWeek - 2);
+    weeks = Array.from({ length: currentWeek - startWeek + 1 }, (_, i) => startWeek + i);
   } else {
     const state = await Sleeper.getState();
     const currentWeek = Number(state.week ?? 18);
@@ -225,6 +236,10 @@ export async function syncLeague(leagueId: string, opts?: { season?: string; wee
     }
   }
   await completeJob(jobId);
+
+  // Mark sync as completed successfully
+  await updateLeagueSyncStatus(leagueId, 'idle', new Date());
+
   return {
     leagueId,
     users: leagueUsers.length,
@@ -236,6 +251,11 @@ export async function syncLeague(leagueId: string, opts?: { season?: string; wee
     draftPicks: draftPicksCount,
     tradedPicks: tradedPicksCount,
   };
+  } catch (error) {
+    // Mark sync as failed
+    await updateLeagueSyncStatus(leagueId, 'failed');
+    throw error;
+  }
 }
 
 export type SyncUserResult = {

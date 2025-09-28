@@ -53,6 +53,12 @@ async function ensureSchema(db: ReturnType<typeof drizzle>) {
   );`);
   await db.execute(sql`CREATE INDEX IF NOT EXISTS leagues_previous_league_id_idx ON leagues (previous_league_id);`);
   await db.execute(sql`CREATE INDEX IF NOT EXISTS leagues_season_idx ON leagues (season);`);
+  // Add sync tracking fields
+  await db.execute(sql`ALTER TABLE leagues ADD COLUMN IF NOT EXISTS last_asset_events_sync_at timestamp;`);
+  await db.execute(sql`ALTER TABLE leagues ADD COLUMN IF NOT EXISTS last_sync_at timestamp;`);
+  await db.execute(sql`ALTER TABLE leagues ADD COLUMN IF NOT EXISTS sync_status text DEFAULT 'idle';`);
+  await db.execute(sql`ALTER TABLE leagues ADD COLUMN IF NOT EXISTS sync_version integer DEFAULT 1;`);
+  await db.execute(sql`CREATE INDEX IF NOT EXISTS leagues_sync_status_idx ON leagues (sync_status);`);
   // rosters
   await db.execute(sql`CREATE TABLE IF NOT EXISTS rosters (
     league_id text NOT NULL,
