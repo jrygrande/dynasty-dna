@@ -56,6 +56,7 @@ async function ensureSchema(db: ReturnType<typeof drizzle>) {
   // Add sync tracking fields
   await db.execute(sql`ALTER TABLE leagues ADD COLUMN IF NOT EXISTS last_asset_events_sync_at timestamp;`);
   await db.execute(sql`ALTER TABLE leagues ADD COLUMN IF NOT EXISTS last_sync_at timestamp;`);
+  await db.execute(sql`ALTER TABLE leagues ADD COLUMN IF NOT EXISTS sync_started_at timestamp;`);
   await db.execute(sql`ALTER TABLE leagues ADD COLUMN IF NOT EXISTS sync_status text DEFAULT 'idle';`);
   await db.execute(sql`ALTER TABLE leagues ADD COLUMN IF NOT EXISTS sync_version integer DEFAULT 1;`);
   await db.execute(sql`CREATE INDEX IF NOT EXISTS leagues_sync_status_idx ON leagues (sync_status);`);

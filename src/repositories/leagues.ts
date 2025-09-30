@@ -52,6 +52,14 @@ export async function updateLeagueSyncStatus(leagueId: string, status: 'idle' | 
   const db = await getDb();
   const updateData: any = { syncStatus: status };
 
+  if (status === 'syncing') {
+    // Track when sync started for stuck detection
+    updateData.syncStartedAt = new Date();
+  } else if (status === 'idle' || status === 'failed') {
+    // Clear started time when sync finishes
+    updateData.syncStartedAt = null;
+  }
+
   if (lastSyncAt) {
     updateData.lastSyncAt = lastSyncAt;
   }
@@ -68,6 +76,7 @@ export async function getLeagueSyncInfo(leagueId: string) {
   const [row] = await db
     .select({
       lastSyncAt: leagues.lastSyncAt,
+      syncStartedAt: leagues.syncStartedAt,
       syncStatus: leagues.syncStatus,
       syncVersion: leagues.syncVersion,
     })

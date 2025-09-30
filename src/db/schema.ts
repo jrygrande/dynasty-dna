@@ -25,6 +25,7 @@ export const leagues = pgTable(
     settings: jsonb('settings'),
     lastAssetEventsSyncAt: timestamp('last_asset_events_sync_at', { withTimezone: false }),
     lastSyncAt: timestamp('last_sync_at', { withTimezone: false }),
+    syncStartedAt: timestamp('sync_started_at', { withTimezone: false }),
     syncStatus: text('sync_status', { enum: ['idle', 'syncing', 'failed'] }).default('idle'),
     syncVersion: integer('sync_version').default(1),
     createdAt: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),

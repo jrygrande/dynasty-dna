@@ -119,21 +119,26 @@ export function DataFreshnessWidget({ leagueId }: DataFreshnessWidgetProps) {
     if (!leagueId || isRefreshing) return;
 
     setIsRefreshing(true);
+    setError(null);
+
     try {
       const response = await fetch(`/api/sync/trigger?leagueId=${leagueId}`, {
         method: 'POST',
       });
       const data = await response.json();
 
-      if (data.ok) {
-        // Start polling immediately to show updated status
-        setTimeout(() => {
-          window.location.reload();
-        }, 2000);
+      if (data.ok && !data.alreadyRunning) {
+        // Optimistically update UI to show syncing state
+        setSyncStatus(prev => prev ? { ...prev, syncStatus: 'syncing' } : null);
+        // Polling will pick up the actual status changes
+      } else if (data.alreadyRunning) {
+        // Already syncing, no need to do anything
+        console.log('Sync already in progress');
       } else {
         setError('Failed to trigger refresh');
       }
     } catch (err) {
+      console.error('Failed to trigger refresh:', err);
       setError('Network error');
     } finally {
       setIsRefreshing(false);

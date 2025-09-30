@@ -24,6 +24,9 @@ import { getLeagueFamily } from './assets';
 import { updateLeagueSyncStatus } from '@/repositories/leagues';
 
 export async function syncLeague(leagueId: string, opts?: { season?: string; weeks?: number[]; incremental?: boolean }) : Promise<SyncResult> {
+  const startTime = Date.now();
+  console.log(`[Sync] Starting ${opts?.incremental ? 'incremental' : 'full'} sync for league ${leagueId}`);
+
   // Mark sync as starting
   await updateLeagueSyncStatus(leagueId, 'syncing');
 
@@ -240,6 +243,9 @@ export async function syncLeague(leagueId: string, opts?: { season?: string; wee
   // Mark sync as completed successfully
   await updateLeagueSyncStatus(leagueId, 'idle', new Date());
 
+  const duration = ((Date.now() - startTime) / 1000).toFixed(2);
+  console.log(`[Sync] Completed sync for league ${leagueId} in ${duration}s (${txCount} txs, ${matchupCount} matchups, ${playerScoresCount} scores)`);
+
   return {
     leagueId,
     users: leagueUsers.length,
@@ -252,6 +258,8 @@ export async function syncLeague(leagueId: string, opts?: { season?: string; wee
     tradedPicks: tradedPicksCount,
   };
   } catch (error) {
+    const duration = ((Date.now() - startTime) / 1000).toFixed(2);
+    console.error(`[Sync] Failed sync for league ${leagueId} after ${duration}s:`, error);
     // Mark sync as failed
     await updateLeagueSyncStatus(leagueId, 'failed');
     throw error;

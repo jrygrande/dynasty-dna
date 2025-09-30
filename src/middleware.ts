@@ -19,13 +19,17 @@ export async function middleware(request: NextRequest) {
 
     if (isStale) {
       // Trigger background sync (non-blocking)
-      triggerBackgroundSync(leagueId);
+      // Use request origin for URL construction (works in all environments)
+      const origin = request.nextUrl.origin;
+      triggerBackgroundSync(leagueId, origin);
+    } else {
+      console.log(`[Middleware] League ${leagueId} data is fresh, skipping sync`);
     }
 
     // Continue with the request
     return NextResponse.next();
   } catch (error) {
-    console.error('Middleware sync check error:', error);
+    console.error('[Middleware] Sync check error:', error);
     // Don't block the request on errors
     return NextResponse.next();
   }
@@ -81,14 +85,13 @@ function getDataStalenessThreshold(dayOfWeek: number, hour: number): number {
   return 6;
 }
 
-function triggerBackgroundSync(leagueId: string) {
+function triggerBackgroundSync(leagueId: string, requestOrigin: string) {
   // Trigger sync via API endpoint instead of direct import
   // This ensures the sync runs in a serverless function context, not in middleware
-  const baseUrl = process.env.VERCEL_URL
-    ? `https://${process.env.VERCEL_URL}`
-    : process.env.NEXTAUTH_URL || 'http://localhost:3000';
+  // Use request origin to construct URL (works in all environments)
+  const triggerUrl = `${requestOrigin}/api/sync/trigger?leagueId=${leagueId}`;
 
-  const triggerUrl = `${baseUrl}/api/sync/trigger?leagueId=${leagueId}`;
+  console.log(`[Middleware] Triggering background sync for league ${leagueId}`);
 
   // Fire-and-forget fetch - don't await or block middleware
   fetch(triggerUrl, {
@@ -96,7 +99,7 @@ function triggerBackgroundSync(leagueId: string) {
     headers: { 'Content-Type': 'application/json' },
   }).catch(error => {
     // Silent fail - don't block the request
-    console.error('Failed to trigger background sync:', error);
+    console.error(`[Middleware] Failed to trigger background sync for league ${leagueId}:`, error);
   });
 }
 
