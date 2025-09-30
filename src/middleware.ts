@@ -82,13 +82,21 @@ function getDataStalenessThreshold(dayOfWeek: number, hour: number): number {
 }
 
 function triggerBackgroundSync(leagueId: string) {
-  // Import and trigger sync directly
-  import('@/services/sync').then(({ syncLeague }) => {
-    syncLeague(leagueId, { incremental: true }).catch(error => {
-      console.error('Background sync failed:', error);
-    });
+  // Trigger sync via API endpoint instead of direct import
+  // This ensures the sync runs in a serverless function context, not in middleware
+  const baseUrl = process.env.VERCEL_URL
+    ? `https://${process.env.VERCEL_URL}`
+    : process.env.NEXTAUTH_URL || 'http://localhost:3000';
+
+  const triggerUrl = `${baseUrl}/api/sync/trigger?leagueId=${leagueId}`;
+
+  // Fire-and-forget fetch - don't await or block middleware
+  fetch(triggerUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
   }).catch(error => {
-    console.error('Failed to import sync service:', error);
+    // Silent fail - don't block the request
+    console.error('Failed to trigger background sync:', error);
   });
 }
 

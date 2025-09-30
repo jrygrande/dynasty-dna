@@ -18,6 +18,7 @@ export function DataFreshnessWidget({ leagueId }: DataFreshnessWidgetProps) {
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const formatLastSync = (lastSyncAt: string | null): string => {
     if (!lastSyncAt) return 'Never synced';
@@ -114,13 +115,38 @@ export function DataFreshnessWidget({ leagueId }: DataFreshnessWidgetProps) {
   // Don't render if error and no previous data
   if (error && !syncStatus) return null;
 
+  const handleRefresh = async () => {
+    if (!leagueId || isRefreshing) return;
+
+    setIsRefreshing(true);
+    try {
+      const response = await fetch(`/api/sync/trigger?leagueId=${leagueId}`, {
+        method: 'POST',
+      });
+      const data = await response.json();
+
+      if (data.ok) {
+        // Start polling immediately to show updated status
+        setTimeout(() => {
+          window.location.reload();
+        }, 2000);
+      } else {
+        setError('Failed to trigger refresh');
+      }
+    } catch (err) {
+      setError('Network error');
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
   const statusText = syncStatus ? formatLastSync(syncStatus.lastSyncAt) : 'Checking...';
   const statusColor = syncStatus ? getStatusColor(syncStatus) : 'text-gray-500';
 
   return (
     <div className="w-full flex justify-center py-4 mt-8 border-t border-gray-100">
       <div className="bg-gray-50 border border-gray-200 rounded-md px-3 py-2">
-        <div className="flex items-center gap-2 text-xs">
+        <div className="flex items-center gap-3 text-xs">
           {syncStatus && getStatusIcon(syncStatus)}
           <span className={`font-medium ${statusColor}`}>
             Data synced: {statusText}
@@ -128,6 +154,14 @@ export function DataFreshnessWidget({ leagueId }: DataFreshnessWidgetProps) {
           {syncStatus?.syncStatus === 'syncing' && (
             <span className="text-blue-600 text-xs">Updating...</span>
           )}
+          <button
+            onClick={handleRefresh}
+            disabled={isRefreshing || syncStatus?.syncStatus === 'syncing'}
+            className="text-blue-600 hover:text-blue-700 disabled:text-gray-400 disabled:cursor-not-allowed font-medium"
+            title="Refresh data now"
+          >
+            {isRefreshing ? 'Refreshing...' : 'Refresh'}
+          </button>
         </div>
       </div>
     </div>

@@ -30,9 +30,15 @@ export async function POST(req: NextRequest) {
     }
 
     if (background) {
-      // For background sync, don't wait for completion
-      syncLeague(leagueId, { incremental }).catch(error => {
-        console.error(`Background sync failed for league ${leagueId}:`, error);
+      // For background sync, return immediately and run sync asynchronously
+      // Use setImmediate/Promise.resolve() to ensure sync runs in next tick
+      Promise.resolve().then(async () => {
+        try {
+          await syncLeague(leagueId, { incremental });
+          console.log(`Background sync completed for league ${leagueId}`);
+        } catch (error) {
+          console.error(`Background sync failed for league ${leagueId}:`, error);
+        }
       });
       return NextResponse.json({ ok: true, message: 'Background sync initiated' });
     } else {
