@@ -300,6 +300,12 @@ export async function syncLeagueFamily(rootLeagueId: string, opts?: { incrementa
     return { leagueId: id, result };
   }, 3); // Process 3 leagues in parallel
 
+  // Update NFL State
+  const state = await Sleeper.getState();
+  const { upsertNFLState } = await import('@/repositories/state');
+  await upsertNFLState({ season: state.season, week: state.week });
+  console.log(`Updated NFL State: Season ${state.season}, Week ${state.week}`);
+
   // After syncing league data, run asset events sync
   if (opts?.incremental) {
     const { syncAssetEventsIncremental } = await import('./assets');
