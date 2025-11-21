@@ -3,6 +3,12 @@ import { NextRequest, NextResponse } from 'next/server';
 export async function middleware(request: NextRequest) {
   const { pathname, searchParams } = request.nextUrl;
 
+  // Allow skipping sync for testing or manual override
+  if (request.cookies.has('DYNASTY_DNA_SKIP_SYNC')) {
+    console.log('[Middleware] Skipping sync due to DYNASTY_DNA_SKIP_SYNC cookie');
+    return NextResponse.next();
+  }
+
   // Only process roster and player-scoring pages
   if (!pathname.startsWith('/roster') && !pathname.startsWith('/player-scoring')) {
     return NextResponse.next();
@@ -36,53 +42,17 @@ export async function middleware(request: NextRequest) {
 }
 
 async function checkIfLeagueDataIsStale(leagueId: string): Promise<boolean> {
+  // Stale if never synced or last sync > 1 hour ago
+  const STALENESS_THRESHOLD_HOURS = 1;
   try {
     // Import directly to avoid middleware fetch issues
     const { isLeagueDataStale } = await import('@/repositories/leagues');
-
-    // Get current hour to determine staleness threshold
-    const now = new Date();
-    const currentHour = now.getHours();
-    const currentDay = now.getDay(); // 0 = Sunday, 1 = Monday, etc.
-
-    // Determine staleness threshold based on time and season
-    let thresholdHours = getDataStalenessThreshold(currentDay, currentHour);
-
-    return await isLeagueDataStale(leagueId, thresholdHours);
+    return await isLeagueDataStale(leagueId, STALENESS_THRESHOLD_HOURS);
   } catch (error) {
     console.error('Error checking staleness:', error);
+    // Default to not stale on error to avoid sync loops
     return false;
   }
-}
-
-function getDataStalenessThreshold(dayOfWeek: number, hour: number): number {
-  // Determine if we're in NFL season (roughly September through January)
-  const now = new Date();
-  const month = now.getMonth(); // 0-11
-  const isNFLSeason = month >= 8 || month <= 0; // Sep-Jan
-
-  if (!isNFLSeason) {
-    // Off-season: 24 hour threshold
-    return 24;
-  }
-
-  // During NFL season, use dynamic thresholds
-  const isSunday = dayOfWeek === 0;
-  const isMonday = dayOfWeek === 1;
-  const isThursday = dayOfWeek === 4;
-
-  // Game days with more frequent updates
-  if (isSunday || isMonday || isThursday) {
-    // During game hours (12pm-11pm ET), use 1 hour threshold
-    if (hour >= 12 && hour <= 23) {
-      return 1;
-    }
-    // Other times on game days, use 3 hour threshold
-    return 3;
-  }
-
-  // Non-game days during season: 6 hour threshold
-  return 6;
 }
 
 function triggerBackgroundSync(leagueId: string, requestOrigin: string) {
