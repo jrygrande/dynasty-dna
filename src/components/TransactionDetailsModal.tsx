@@ -1,5 +1,5 @@
 import React from 'react';
-import type { TimelineEvent } from '@/lib/api/assets';
+import type { TimelineEvent, TimelineAsset } from '@/lib/api/assets';
 import TradeDetailsModal from './TradeDetailsModal';
 import DraftSelectionModal from './DraftSelectionModal';
 
@@ -8,13 +8,15 @@ interface TransactionDetailsModalProps {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
   playerId?: string; // Current player context for the timeline
+  onAssetClick?: (asset: TimelineAsset) => void; // NEW: Callback when asset is clicked
 }
 
 export default function TransactionDetailsModal({
   event,
   isOpen,
   onOpenChange,
-  playerId
+  playerId,
+  onAssetClick
 }: TransactionDetailsModalProps) {
   if (!event) return null;
 
@@ -28,6 +30,7 @@ export default function TransactionDetailsModal({
         event={event}
         isOpen={isOpen}
         onOpenChange={onOpenChange}
+        onAssetClick={onAssetClick}
       />
     );
   }
@@ -39,6 +42,7 @@ export default function TransactionDetailsModal({
         isOpen={isOpen}
         onOpenChange={onOpenChange}
         playerId={playerId}
+        onAssetClick={onAssetClick}
       />
     );
   }

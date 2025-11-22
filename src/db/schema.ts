@@ -226,3 +226,57 @@ export const assetEvents = pgTable(
     timeIdx: index('asset_events_time_idx').on(t.season, t.week, t.eventTime),
   })
 );
+
+export const enrichedTransactions = pgTable(
+  'enriched_transactions',
+  {
+    id: text('id').primaryKey(), // Sleeper transaction ID or synthetic draft-pick ID
+    leagueId: text('league_id').notNull(),
+    type: text('type').notNull(), // trade, waiver, free_agent, draft_selection
+    status: text('status').notNull(),
+    timestamp: timestamp('timestamp', { withTimezone: false }).notNull(),
+
+    // The managers involved
+    managers: jsonb('managers').$type<{
+      rosterId: number;
+      userId: string;
+      displayName: string;
+      side: 'proposer' | 'consenter' | 'selector' | null;
+    }[]>(),
+
+    // All assets moving in this transaction, fully resolved
+    assets: jsonb('assets').$type<{
+      kind: 'player' | 'pick';
+      id: string; // player_id or pick_id
+      name: string; // Resolved name (Player Name or "2024 1st Rd")
+      fromRosterId: number | null;
+      toRosterId: number | null;
+      fromUserId: string | null;
+      toUserId: string | null;
+    }[]>(),
+
+    metadata: jsonb('metadata'), // Any extra context
+    createdAt: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+  },
+  (t) => ({
+    leagueIdx: index('enriched_transactions_league_idx').on(t.leagueId),
+    typeIdx: index('enriched_transactions_type_idx').on(t.type),
+    timeIdx: index('enriched_transactions_timestamp_idx').on(t.timestamp),
+  })
+);
+
+export const jobRuns = pgTable('job_runs', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  type: text('type').notNull(),
+  ref: text('ref'),
+  status: text('status').default('running').notNull(),
+  total: integer('total'),
+  done: integer('done').default(0),
+  error: text('error'),
+  startedAt: timestamp('started_at', { withTimezone: false }).defaultNow().notNull(),
+  finishedAt: timestamp('finished_at', { withTimezone: false }),
+}, (t) => ({
+  typeRefIdx: index('job_runs_type_ref_idx').on(t.type, t.ref),
+  startedIdx: index('job_runs_started_idx').on(t.startedAt),
+}));
+

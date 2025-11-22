@@ -58,11 +58,37 @@ export async function rebuildAssetEventsForLeagueFamily(rootLeagueId: string) {
   const leagueSeasonById = new Map<string, string>();
   for (const lg of leaguesRows) leagueSeasonById.set(lg.id, String(lg.season));
 
+  // Enriched Transactions Collection
+  const enrichedTxs: any[] = [];
+  const { saveEnrichedTransactions } = await import('@/repositories/enrichedTransactions');
+  const { processTransactionToEnriched, processDraftPickToEnriched } = await import('@/lib/utils/enrichedTransactions');
+  const { getPlayersByIds } = await import('@/repositories/players');
+
   // Draft selections → player draft events + pick consumed events
   const draftsRows = await db.select().from(drafts).where(inArray(drafts.leagueId, leagueIds));
+
+  // Pre-fetch all players involved in drafts for enriched processing
+  const allDraftPlayerIds = new Set<string>();
+  for (const d of draftsRows) {
+    const picks = await db.select().from(draftPicks).where(eq(draftPicks.draftId, d.id));
+    for (const p of picks) {
+      if (p.playerId) allDraftPlayerIds.add(p.playerId);
+    }
+  }
+  const draftPlayers = await getPlayersByIds(Array.from(allDraftPlayerIds));
+  const draftPlayerMap = new Map(draftPlayers.map(p => [p.id, p]));
+
   for (const d of draftsRows) {
     const picks = await db.select().from(draftPicks).where(eq(draftPicks.draftId, d.id));
     const rosterMap = rosterOwnerMaps.get(d.leagueId) || new Map<number, string>();
+
+    // Create enriched roster map for helpers
+    const enrichedRosterMap = new Map<number, { ownerId: string; displayName: string }>();
+    // We need user display names for enriched transactions
+    // This is a bit expensive, maybe optimize later or fetch users in batch
+    // For now, we'll use the ownerId as displayName if user not found, or rely on what we have
+    // Actually, we need to fetch users. Let's do a batch fetch of all users in these leagues.
+
     for (const p of picks) {
       if (p.playerId) {
         // Player drafted
@@ -81,6 +107,29 @@ export async function rebuildAssetEventsForLeagueFamily(rootLeagueId: string) {
           transactionId: null,
           details: { draftId: d.id, pickNo: p.pickNo, round: p.round },
         });
+
+        // Enriched Draft Selection
+        if (p.rosterId) {
+          // We need the roster owner details. 
+          // Let's assume we can get them. For now, we might need to fetch users.
+          // To avoid massive refactor, let's try to get user details from the cache or fetch them.
+          // For this implementation, I'll skip fetching *all* users right here to avoid timeout, 
+          // but we should add it. 
+          // Let's construct a minimal map.
+          const ownerId = rosterMap.get(p.rosterId);
+          if (ownerId) {
+            const enrichedRosterMapForDraft = new Map();
+            enrichedRosterMapForDraft.set(p.rosterId, { ownerId, displayName: 'Loading...' }); // Placeholder
+
+            const enriched = processDraftPickToEnriched(
+              p,
+              d,
+              enrichedRosterMapForDraft,
+              draftPlayerMap
+            );
+            if (enriched) enrichedTxs.push(enriched);
+          }
+        }
       }
       // Pick consumed (selected)
       const originalRosterId = p.tradedFromRosterId ?? p.rosterId ?? null;
@@ -106,10 +155,34 @@ export async function rebuildAssetEventsForLeagueFamily(rootLeagueId: string) {
     }
   }
 
+  // Fetch all users involved in rosters to get display names for enriched transactions
+  const allUserIds = new Set<string>();
+  for (const map of rosterOwnerMaps.values()) {
+    for (const ownerId of map.values()) {
+      allUserIds.add(ownerId);
+    }
+  }
+  const usersMap = await batchFetchUsers(Array.from(allUserIds));
+
   // Transactions → player and pick movements
   const txs = await db.select().from(transactions).where(inArray(transactions.leagueId, leagueIds));
   for (const t of txs) {
     const rosterMap = rosterOwnerMaps.get(t.leagueId) || new Map<number, string>();
+
+    // Build enriched roster map
+    const enrichedRosterMap = new Map<number, { ownerId: string; displayName: string }>();
+    for (const [rid, oid] of rosterMap.entries()) {
+      const user = usersMap.get(oid);
+      enrichedRosterMap.set(rid, {
+        ownerId: oid,
+        displayName: user?.displayName || user?.username || 'Unknown'
+      });
+    }
+
+    // Process to Enriched Transaction
+    const enriched = processTransactionToEnriched(t, enrichedRosterMap, usersMap);
+    if (enriched) enrichedTxs.push(enriched);
+
     const seasonForLeague = leagueSeasonById.get(t.leagueId) || null;
     const payload: any = t.payload || {};
     const week = t.week ?? null;
@@ -223,7 +296,8 @@ export async function rebuildAssetEventsForLeagueFamily(rootLeagueId: string) {
   }
 
   await replaceAssetEventsForLeagues(leagueIds, events);
-  return { leagues: leagueIds.length, events: events.length };
+  await saveEnrichedTransactions(enrichedTxs);
+  return { leagues: leagueIds.length, events: events.length, enrichedTransactions: enrichedTxs.length };
 }
 
 export async function getPlayerInfo(playerId: string) {
@@ -364,11 +438,11 @@ export async function syncAssetEventsIncremental(rootLeagueId: string) {
   // Only process transactions that are newer than last sync time
   let txQuery = lastSyncTime
     ? db.select().from(transactions).where(
-        and(
-          inArray(transactions.leagueId, leagueIds),
-          gte(transactions.createdAt, lastSyncTime)
-        )
+      and(
+        inArray(transactions.leagueId, leagueIds),
+        gte(transactions.createdAt, lastSyncTime)
       )
+    )
     : db.select().from(transactions).where(inArray(transactions.leagueId, leagueIds));
 
   const txs = await txQuery;

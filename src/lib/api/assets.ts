@@ -65,12 +65,43 @@ export const playerSummarySchema = z.object({
   status: z.string().nullable(),
 });
 
+export const enrichedTransactionManagerSchema = z.object({
+  rosterId: z.number(),
+  userId: z.string().nullable(),
+  displayName: z.string().nullable(),
+  side: z.string().nullable(),
+});
+
+export const enrichedTransactionAssetSchema = z.object({
+  kind: z.enum(['player', 'pick']),
+  id: z.string(),
+  name: z.string(),
+  fromRosterId: z.number().nullable(),
+  toRosterId: z.number().nullable(),
+  fromUserId: z.string().nullable(),
+  toUserId: z.string().nullable(),
+});
+
+export const enrichedTransactionSchema = z.object({
+  id: z.string(),
+  leagueId: z.string(),
+  type: z.string(),
+  status: z.string(),
+  timestamp: z.string().or(z.date()).transform(val => new Date(val).toISOString()),
+  managers: z.array(enrichedTransactionManagerSchema),
+  assets: z.array(enrichedTransactionAssetSchema),
+  metadata: z.unknown().nullable(),
+});
+
 export const playerTimelineResponseSchema = z.object({
   family: z.array(z.string()),
   player: playerSummarySchema,
   events: z.array(z.unknown()),
   timeline: z.array(timelineEventSchema),
+  enrichedTransactions: z.array(enrichedTransactionSchema).optional(),
 });
+
+export type EnrichedTransaction = z.infer<typeof enrichedTransactionSchema>;
 
 export type TimelineUser = z.infer<typeof timelineUserSchema>;
 export type TimelineAsset = z.infer<typeof timelineAssetSchema>;

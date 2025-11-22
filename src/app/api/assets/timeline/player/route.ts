@@ -26,6 +26,50 @@ export async function GET(req: NextRequest) {
     // Get performance data for each period between transactions
     const performance = await getPlayerPerformancePeriods(timeline, family, playerId);
 
+    // Enhance draft_selected events with pick provenance
+    const { getPickTimeline } = await import('@/repositories/assetEvents');
+
+    for (const event of timeline) {
+      if (event.eventType === 'draft_selected' && event.details) {
+        const details = event.details as any;
+        // Extract pick information from the draft event
+        if (details.round && event.season) {
+          // Find the original roster ID for this pick from the toRosterId
+          const originalRosterId = event.toRosterId;
+
+          if (originalRosterId) {
+            try {
+              // Fetch the pick timeline to see if it was traded
+              const pickEvents = await getPickTimeline(
+                family,
+                event.season,
+                details.round,
+                originalRosterId
+              );
+
+              // Check if the pick had any trade events before selection
+              const pickTrades = pickEvents.filter(e => e.eventType === 'pick_trade');
+
+              // Add pick provenance to the event details
+              event.details = {
+                ...details,
+                pickAsset: {
+                  season: event.season,
+                  round: details.round,
+                  originalRosterId: originalRosterId,
+                  hadTrades: pickTrades.length > 0,
+                  tradeCount: pickTrades.length
+                }
+              };
+            } catch (error) {
+              console.error(`Failed to fetch pick provenance for draft event:`, error);
+              // Continue without pick provenance if fetch fails
+            }
+          }
+        }
+      }
+    }
+
     // Create a comprehensive timeline that includes both transaction events and continuation periods
     const allTimelineEvents = [...timeline];
 
@@ -105,6 +149,14 @@ export async function GET(req: NextRequest) {
       return event;
     });
 
+    // Fetch enriched transactions from ALL leagues in the family
+    const { getEnrichedTransactionsForAsset } = await import('@/repositories/enrichedTransactions');
+    const enrichedTransactionsPromises = family.map(fam =>
+      getEnrichedTransactionsForAsset(fam, playerId)
+    );
+    const enrichedTransactionsArrays = await Promise.all(enrichedTransactionsPromises);
+    const enrichedTransactions = enrichedTransactionsArrays.flat();
+
     // Always return success, even if no events found
     return NextResponse.json({
       ok: true,
@@ -112,7 +164,8 @@ export async function GET(req: NextRequest) {
       family,
       player,
       timeline: timelineWithPerformance || [],
-      performance: performance || []
+      performance: performance || [],
+      enrichedTransactions: enrichedTransactions || []
     });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e?.message || 'timeline failed' }, { status: 500 });

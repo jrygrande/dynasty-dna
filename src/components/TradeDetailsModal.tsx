@@ -7,13 +7,14 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { ArrowRight, ArrowLeft } from 'lucide-react';
-import type { TimelineEvent } from '@/lib/api/assets';
+import type { TimelineEvent, TimelineAsset } from '@/lib/api/assets';
 import { groupAssetsByRecipient, formatAssetName, getUserDisplayName } from '@/lib/utils/transactions';
 
 interface TradeDetailsModalProps {
   event: TimelineEvent;
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
+  onAssetClick?: (asset: TimelineAsset) => void;
 }
 
 const formatDate = (dateString: string | null): string => {
@@ -26,7 +27,7 @@ const formatDate = (dateString: string | null): string => {
   });
 };
 
-export default function TradeDetailsModal({ event, isOpen, onOpenChange }: TradeDetailsModalProps) {
+export default function TradeDetailsModal({ event, isOpen, onOpenChange, onAssetClick }: TradeDetailsModalProps) {
   // Group assets by recipient
   const groupedAssets = groupAssetsByRecipient(
     event.assetsInTransaction || [],
@@ -37,11 +38,18 @@ export default function TradeDetailsModal({ event, isOpen, onOpenChange }: Trade
   );
 
 
+
   // Convert to manager-based format for display
   const managers = groupedAssets.map(({ user, assets }) => ({
     name: getUserDisplayName(user),
-    assets: assets.map(formatAssetName)
+    assets: assets.map(asset => ({ name: formatAssetName(asset), asset }))
   }));
+
+  const handleAssetClick = (asset: TimelineAsset) => {
+    if (onAssetClick) {
+      onAssetClick(asset);
+    }
+  };
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
@@ -60,10 +68,17 @@ export default function TradeDetailsModal({ event, isOpen, onOpenChange }: Trade
               {managers[0]?.name || 'Manager 1'} gets:
             </h3>
             <ul className="list-none space-y-2">
-              {managers[0]?.assets.map((asset, index) => (
-                <li key={index} className="flex items-center space-x-2">
+              {managers[0]?.assets.map(({ name, asset }, index) => (
+                <li
+                  key={index}
+                  className={`flex items-center space-x-2 ${onAssetClick ? 'cursor-pointer hover:bg-emerald-50 p-1 rounded transition-colors' : ''
+                    }`}
+                  onClick={() => handleAssetClick(asset)}
+                >
                   <ArrowRight size={16} className="text-emerald-500 flex-shrink-0" />
-                  <span className="text-gray-700">{asset}</span>
+                  <span className={`text-gray-700 ${onAssetClick ? 'hover:text-emerald-700 hover:underline' : ''}`}>
+                    {name}
+                  </span>
                 </li>
               )) || <li className="text-gray-500 italic">No assets</li>}
             </ul>
@@ -81,9 +96,16 @@ export default function TradeDetailsModal({ event, isOpen, onOpenChange }: Trade
               {managers[1]?.name || 'Manager 2'} gets:
             </h3>
             <ul className="list-none space-y-2">
-              {managers[1]?.assets.map((asset, index) => (
-                <li key={index} className="flex items-center md:justify-end space-x-2">
-                  <span className="text-gray-700">{asset}</span>
+              {managers[1]?.assets.map(({ name, asset }, index) => (
+                <li
+                  key={index}
+                  className={`flex items-center md:justify-end space-x-2 ${onAssetClick ? 'cursor-pointer hover:bg-emerald-50 p-1 rounded transition-colors' : ''
+                    }`}
+                  onClick={() => handleAssetClick(asset)}
+                >
+                  <span className={`text-gray-700 ${onAssetClick ? 'hover:text-emerald-700 hover:underline' : ''}`}>
+                    {name}
+                  </span>
                   <ArrowLeft size={16} className="text-emerald-500 flex-shrink-0" />
                 </li>
               )) || <li className="text-gray-500 italic">No assets</li>}

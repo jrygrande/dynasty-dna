@@ -1,5 +1,5 @@
 import PlayerTimelineClient from './PlayerTimelineClient';
-import MultiTimelineView from '@/components/MultiTimelineView';
+import AssetTimelineGraph from '@/components/AssetTimelineGraph';
 import {
   PlayerTimelineErrorPayload,
   PlayerTimelineFetchError,
@@ -121,7 +121,7 @@ export default async function PlayerTimelinePage({ searchParams }: PageProps) {
 
   return (
     <main className="min-h-screen bg-background">
-      <MultiTimelineView
+      <AssetTimelineGraph
         initialTimeline={{ data, conflicts }}
         leagueId={leagueId!}
       />

@@ -7,7 +7,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Separator } from '@/components/ui/separator';
-import type { TimelineEvent } from '@/lib/api/assets';
+import { Button } from '@/components/ui/button';
+import type { TimelineEvent, TimelineAsset } from '@/lib/api/assets';
 import { formatAssetName, getUserDisplayName } from '@/lib/utils/transactions';
 
 interface DraftSelectionModalProps {
@@ -15,6 +16,7 @@ interface DraftSelectionModalProps {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
   playerId?: string; // Current player context for the timeline
+  onAssetClick?: (asset: TimelineAsset) => void;
 }
 
 const formatDate = (dateString: string | null): string => {
@@ -70,7 +72,7 @@ const getPlayerName = async (event: TimelineEvent, currentPlayerId?: string): Pr
   return 'Unknown Player';
 };
 
-export default function DraftSelectionModal({ event, isOpen, onOpenChange, playerId }: DraftSelectionModalProps) {
+export default function DraftSelectionModal({ event, isOpen, onOpenChange, playerId, onAssetClick }: DraftSelectionModalProps) {
   const [playerName, setPlayerName] = useState<string>('Loading...');
   const managerName = getUserDisplayName(event.toUser);
 
@@ -82,6 +84,24 @@ export default function DraftSelectionModal({ event, isOpen, onOpenChange, playe
   const details = (event.details || {}) as any;
   const round = details.round || 'Unknown';
   const pickNo = details.pickNo || 'Unknown';
+
+  // Check if we have pick provenance
+  const pickAsset = details.pickAsset;
+  const hasPickProvenance = pickAsset && pickAsset.season && pickAsset.round && pickAsset.originalRosterId;
+
+  const handlePickClick = () => {
+    if (hasPickProvenance && onAssetClick) {
+      const pickTimelineAsset: TimelineAsset = {
+        id: `pick-${pickAsset.season}-${pickAsset.round}-${pickAsset.originalRosterId}`,
+        assetKind: 'pick',
+        eventType: 'pick_trade',
+        pickSeason: pickAsset.season,
+        pickRound: pickAsset.round,
+        pickOriginalRosterId: pickAsset.originalRosterId,
+      };
+      onAssetClick(pickTimelineAsset);
+    }
+  };
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
@@ -117,6 +137,37 @@ export default function DraftSelectionModal({ event, isOpen, onOpenChange, playe
               Round {round} | Pick #{pickNo}
             </span>
           </div>
+
+          {/* Pick Provenance - Show if available */}
+          {hasPickProvenance && (
+            <>
+              <Separator />
+              <div className="space-y-2">
+                <div className="text-sm font-semibold text-gray-600">Pick History:</div>
+                <div className="text-sm text-gray-700">
+                  {pickAsset.hadTrades ? (
+                    <span className="text-blue-600">
+                      This pick was traded {pickAsset.tradeCount} time{pickAsset.tradeCount !== 1 ? 's' : ''} before selection
+                    </span>
+                  ) : (
+                    <span className="text-gray-500">
+                      This pick was not traded before selection
+                    </span>
+                  )}
+                </div>
+                {onAssetClick && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handlePickClick}
+                    className="w-full mt-2"
+                  >
+                    View Pick Timeline
+                  </Button>
+                )}
+              </div>
+            </>
+          )}
         </div>
 
         <div className="text-center text-sm text-gray-500 mt-4">

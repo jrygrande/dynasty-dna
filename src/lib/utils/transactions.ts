@@ -13,60 +13,69 @@ export interface AssetsByUser {
 export function groupAssetsByRecipient(assets: any[], fromUser?: any, toUser?: any, fromRosterId?: number | null, toRosterId?: number | null): AssetsByUser[] {
   const userMap = new Map<string, AssetsByUser>();
 
-  // Create a mapping from roster IDs to users
-  const rosterToUser = new Map<number, any>();
+  // Build user map from all unique user IDs in the assets
+  // This is more robust than relying on fromUser/toUser parameters
+  const userIds = new Set<string>();
+  assets.forEach(asset => {
+    if (asset.toUserId) userIds.add(asset.toUserId);
+    if (asset.fromUserId) userIds.add(asset.fromUserId);
+  });
+
+  // Initialize user map with all users found in assets
+  userIds.forEach(userId => {
+    // Try to find display name from fromUser/toUser if available
+    let displayName = 'Unknown User';
+    let user = null;
+
+    if (fromUser && fromUser.id === userId) {
+      displayName = fromUser.displayName || fromUser.username || 'Unknown User';
+      user = fromUser;
+    } else if (toUser && toUser.id === userId) {
+      displayName = toUser.displayName || toUser.username || 'Unknown User';
+      user = toUser;
+    }
+
+    if (!user) {
+      user = { id: userId, username: null, displayName };
+    }
+
+    userMap.set(userId, {
+      userId,
+      user,
+      assets: []
+    });
+  });
+
+  // Create a mapping from roster IDs to user IDs for quick lookup
+  const rosterToUserId = new Map<number, string>();
   if (fromUser && fromRosterId) {
-    rosterToUser.set(fromRosterId, fromUser);
+    rosterToUserId.set(fromRosterId, fromUser.id);
   }
   if (toUser && toRosterId) {
-    rosterToUser.set(toRosterId, toUser);
+    rosterToUserId.set(toRosterId, toUser.id);
   }
 
   for (const asset of assets) {
-    // For each asset, determine who received it based on toRosterId
-    let recipientUser = null;
-    let recipientUserId = null;
+    // For each asset, determine who received it
+    let recipientUserId: string | null = null;
 
     // First try roster-based assignment (for players)
-    if (asset.toRosterId && rosterToUser.has(asset.toRosterId)) {
-      recipientUser = rosterToUser.get(asset.toRosterId);
-      recipientUserId = recipientUser.id;
-    } else if (asset.fromRosterId && rosterToUser.has(asset.fromRosterId)) {
-      // If toRosterId is null, this might be a "from" movement, so the other party gets it
-      const otherRosterIds = Array.from(rosterToUser.keys()).filter(id => id !== asset.fromRosterId);
-      if (otherRosterIds.length > 0) {
-        recipientUser = rosterToUser.get(otherRosterIds[0]);
-        recipientUserId = recipientUser?.id;
-      }
+    if (asset.toRosterId && rosterToUserId.has(asset.toRosterId)) {
+      recipientUserId = rosterToUserId.get(asset.toRosterId)!;
+    }
+    // If no roster-based assignment, try user ID assignment (for picks)
+    else if (asset.toUserId) {
+      recipientUserId = asset.toUserId;
     }
 
-    // If no roster-based assignment found, try direct user ID assignment (for picks)
-    if (!recipientUserId && asset.toUserId) {
-      if (asset.toUserId === fromUser?.id) {
-        recipientUser = fromUser;
-        recipientUserId = fromUser.id;
-      } else if (asset.toUserId === toUser?.id) {
-        recipientUser = toUser;
-        recipientUserId = toUser.id;
-      }
+    // If we found a recipient, add the asset to their list
+    if (recipientUserId && userMap.has(recipientUserId)) {
+      userMap.get(recipientUserId)!.assets.push(asset);
     }
-
-    if (!recipientUserId) {
-      continue;
-    }
-
-    if (!userMap.has(recipientUserId)) {
-      userMap.set(recipientUserId, {
-        userId: recipientUserId,
-        user: recipientUser,
-        assets: []
-      });
-    }
-
-    userMap.get(recipientUserId)!.assets.push(asset);
   }
 
-  return Array.from(userMap.values());
+  const result = Array.from(userMap.values());
+  return result;
 }
 
 export function formatAssetName(asset: any): string {
