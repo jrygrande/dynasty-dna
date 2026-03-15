@@ -55,3 +55,76 @@
 - Transaction log page with full asset details
 - Draft history visualization
 - Asset event denormalization pipeline
+
+## 2026-03-15: Phase 2 — Data Foundation Complete
+
+### What was accomplished
+
+**Full data foundation** enabling historical league analysis, player name resolution, browsable transactions and drafts, and the asset event pipeline that powers future analytics.
+
+#### Step 1: Player Data Sync
+- Created `src/services/playerSync.ts` — bulk sync of all fantasy-relevant NFL players from Sleeper's `/players/nfl` endpoint
+- Filters to QB/RB/WR/TE/K/DEF positions, batch-upserts (50 per batch) into `players` table
+- 24-hour staleness check: skips sync if data is fresh
+- Wired into `syncLeague()` — player sync runs automatically at the start of any league sync
+- New API endpoint: `POST /api/sync/players` (with `?force=true` option)
+
+#### Step 2: Historical League Family Sync
+- Modified `POST /api/sync/league` to sync ALL seasons in a dynasty family, not just the current one
+- `syncLeagueFamily()` now skips completed seasons that were synced within the last 7 days (avoids redundant API calls)
+- Leagues sorted oldest-first during sync for correct data ordering
+- Added `?season=` query parameter to `GET /api/leagues/[familyId]` — returns rosters/standings for any season
+- Season pills on league page are now clickable buttons — clicking loads that season's standings
+
+#### Step 3: Asset Event Pipeline
+- Created `src/services/assetEvents.ts` — the core denormalization engine
+- `buildAssetEvents(leagueId, season)`: delete-and-rebuild pattern (idempotent)
+- Processes all transaction types:
+  - **Trades**: player adds/drops → `trade` events; draft pick movements → `pick_trade` events
+  - **Waivers**: `waiver_add` and `waiver_drop` events (preserves bid amounts)
+  - **Free Agents**: `free_agent_add` and `free_agent_drop` events
+  - **Drafts**: each completed draft pick → `draft_selected` event with pick metadata
+- Resolves `fromUserId`/`toUserId` via roster owner lookups
+- Added pick lineage index on `(leagueId, pickSeason, pickRound, pickOriginalRosterId)` for efficient pick tracking
+- Wired into `syncLeague()` — asset events rebuild automatically after each season sync
+
+#### Step 4: Transaction Log UI
+- New API: `GET /api/leagues/[familyId]/transactions` with filters for season, type (trade/waiver/free_agent), pagination
+- Joins transactions with player names and roster owner names
+- New page: `/league/[familyId]/transactions` with:
+  - Season filter pills (All Seasons + individual seasons)
+  - Type filter tabs (All / Trades / Waivers / Free Agents)
+  - Trade cards: two-column layout showing each side's received/sent players and draft picks
+  - Waiver/FA cards: simple add/drop with player names and manager names
+  - Pagination for large transaction histories
+
+#### Step 5: Draft History UI
+- New API: `GET /api/leagues/[familyId]/drafts` with optional `?season=` filter
+- Returns draft board data: picks with player names, positions, manager names
+- New page: `/league/[familyId]/drafts` with:
+  - Draft board grid (rounds x teams) showing player, position badge, and drafter
+  - Position-coded badges (QB=red, RB=blue, WR=green, TE=orange, K=purple, DEF=gray)
+  - Keeper indicators
+  - Season filter for multi-year viewing
+
+#### Step 6: Asset History API + Timeline Component
+- New API: `GET /api/leagues/[familyId]/asset-history?playerId=X` — returns chronological asset events across all family seasons
+- Also supports pick tracking: `?pickSeason=&pickRound=&pickOriginalRosterId=`
+- `AssetTimeline` component: vertical timeline with color-coded event dots (Draft=blue, Trade=purple, Waiver=amber, Drop=red, FA=green)
+- Shows ownership chain with manager names and dates
+
+#### Navigation
+- League page header now has "Transactions" and "Drafts" navigation links alongside "Sync Data" button
+
+### Key decisions made
+- **Delete-and-rebuild for asset events**: Rather than incremental updates, we delete all events for a league and rebuild from transactions + drafts. This is simpler, idempotent, and avoids complex diffing logic. The performance cost is negligible since it's a write-time operation, not read-time.
+- **7-day staleness for completed seasons**: Completed seasons' data doesn't change on Sleeper, so we skip re-syncing them if synced within 7 days. This dramatically reduces API calls for leagues with 6+ seasons of history.
+- **Player sync at league sync time**: Rather than a separate scheduled job, player metadata syncs lazily when a user visits their league. The 24-hour staleness window prevents redundant calls.
+
+### What's next (Phase 3: Manager Analytics)
+- Lineup optimization score (actual vs. optimal lineup per week)
+- Trade grading (value at trade time vs. value N days/season later)
+- Draft grading (pick value vs. player performance)
+- Waiver/FA acquisition scoring
+- Manager DNA profile (composite score across all dimensions)
+- League-wide manager leaderboard with historical rankings

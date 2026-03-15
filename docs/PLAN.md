@@ -60,13 +60,13 @@ Build a web application that measures dynasty fantasy football manager efficacy 
 - [x] League overview page with standings
 - [x] Database schema for auth, leagues, rosters, drafts, transactions, matchups, player scores
 
-### Phase 2: Data Foundation
-- [ ] Historical league sync (sync all seasons in a family, not just current)
-- [ ] Player data sync (bulk player metadata from Sleeper)
-- [ ] Draft history visualization (who was drafted, by whom, which pick)
-- [ ] Transaction log per league (trades, waivers, FA, with all assets involved)
-- [ ] Asset event pipeline (denormalize transactions into per-asset movement records)
-- [ ] Draft pick lineage tracking (pick → player → traded for picks → those picks draft players)
+### Phase 2: Data Foundation ✅
+- [x] Historical league sync (sync all seasons in a family, not just current)
+- [x] Player data sync (bulk player metadata from Sleeper)
+- [x] Draft history visualization (who was drafted, by whom, which pick)
+- [x] Transaction log per league (trades, waivers, FA, with all assets involved)
+- [x] Asset event pipeline (denormalize transactions into per-asset movement records)
+- [x] Draft pick lineage tracking (pick → player → traded for picks → those picks draft players)
 
 ### Phase 3: Manager Analytics
 - [ ] Lineup optimization score (actual vs. optimal lineup per week)

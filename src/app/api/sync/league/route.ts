@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { syncLeague } from "@/services/sync";
+import { syncLeague, syncLeagueFamily } from "@/services/sync";
 import { ensureLeagueFamily } from "@/services/leagueFamily";
+import { getDb, schema } from "@/db";
+import { eq } from "drizzle-orm";
 
 export async function POST(req: NextRequest) {
   const { leagueId } = await req.json();
@@ -12,13 +14,33 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    // Ensure the league family exists
+    // Ensure the league family exists (discovers all seasons via Sleeper API)
     const familyId = await ensureLeagueFamily(leagueId);
 
-    // Sync the league data
-    await syncLeague(leagueId);
+    // Get all league IDs in the family, sorted oldest-first
+    const db = getDb();
+    const members = await db
+      .select()
+      .from(schema.leagueFamilyMembers)
+      .where(eq(schema.leagueFamilyMembers.familyId, familyId));
 
-    return NextResponse.json({ success: true, familyId });
+    const allLeagueIds = members
+      .sort((a, b) => Number(a.season) - Number(b.season))
+      .map((m) => m.leagueId);
+
+    if (allLeagueIds.length === 0) {
+      // Fallback: sync just the requested league
+      await syncLeague(leagueId);
+    } else {
+      // Sync all seasons in the family
+      await syncLeagueFamily(allLeagueIds);
+    }
+
+    return NextResponse.json({
+      success: true,
+      familyId,
+      seasonsSynced: allLeagueIds.length || 1,
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Sync failed";
     return NextResponse.json({ error: message }, { status: 500 });

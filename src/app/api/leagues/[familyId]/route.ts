@@ -3,11 +3,12 @@ import { getDb, schema } from "@/db";
 import { eq } from "drizzle-orm";
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: { familyId: string } }
 ) {
   const db = getDb();
   const familyId = params.familyId;
+  const seasonParam = req.nextUrl.searchParams.get("season");
 
   // UUID format check — only query the UUID column if it looks like a UUID
   const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(familyId);
@@ -92,8 +93,15 @@ export async function GET(
     .map((m) => ({ leagueId: m.leagueId, season: m.season }))
     .sort((a, b) => Number(b.season) - Number(a.season));
 
-  // Load the current (most recent) league data
-  const currentLeagueId = family[0].rootLeagueId;
+  // Determine which season's league to load
+  let currentLeagueId = family[0].rootLeagueId;
+  if (seasonParam) {
+    const seasonMatch = seasons.find((s) => s.season === seasonParam);
+    if (seasonMatch) {
+      currentLeagueId = seasonMatch.leagueId;
+    }
+  }
+
   const leagues = await db
     .select()
     .from(schema.leagues)

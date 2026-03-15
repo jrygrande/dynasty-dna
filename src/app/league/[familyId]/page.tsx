@@ -41,14 +41,16 @@ export default function LeagueOverviewPage() {
   const [data, setData] = useState<LeagueOverviewData | null>(null);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
+  const [selectedSeason, setSelectedSeason] = useState<string | null>(null);
 
   useEffect(() => {
     loadLeagueData();
-  }, [familyId]);
+  }, [familyId, selectedSeason]);
 
   async function loadLeagueData() {
     setLoading(true);
-    const res = await fetch(`/api/leagues/${familyId}`);
+    const seasonQuery = selectedSeason ? `?season=${selectedSeason}` : "";
+    const res = await fetch(`/api/leagues/${familyId}${seasonQuery}`);
     if (res.ok) {
       const result = await res.json();
       setData(result);
@@ -63,7 +65,7 @@ export default function LeagueOverviewPage() {
       });
       if (syncRes.ok) {
         // Reload after sync
-        const retryRes = await fetch(`/api/leagues/${familyId}`);
+        const retryRes = await fetch(`/api/leagues/${familyId}${seasonQuery}`);
         if (retryRes.ok) {
           const result = await retryRes.json();
           setData(result);
@@ -88,11 +90,17 @@ export default function LeagueOverviewPage() {
     setSyncing(false);
   }
 
+  function handleSeasonClick(season: string) {
+    setSelectedSeason(season);
+  }
+
   if (loading || syncing) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-pulse text-muted-foreground">
-          {syncing ? "Syncing league data from Sleeper..." : "Loading league..."}
+          {syncing
+            ? "Syncing league data from Sleeper..."
+            : "Loading league..."}
         </div>
       </div>
     );
@@ -127,13 +135,27 @@ export default function LeagueOverviewPage() {
               {data.league.season} Season
             </span>
           </div>
-          <button
-            onClick={handleSync}
-            disabled={syncing}
-            className="px-3 py-1.5 text-sm rounded-md border hover:bg-secondary transition-colors disabled:opacity-50"
-          >
-            {syncing ? "Syncing..." : "Sync Data"}
-          </button>
+          <div className="flex items-center gap-3">
+            <Link
+              href={`/league/${familyId}/transactions`}
+              className="px-3 py-1.5 text-sm rounded-md border hover:bg-secondary transition-colors"
+            >
+              Transactions
+            </Link>
+            <Link
+              href={`/league/${familyId}/drafts`}
+              className="px-3 py-1.5 text-sm rounded-md border hover:bg-secondary transition-colors"
+            >
+              Drafts
+            </Link>
+            <button
+              onClick={handleSync}
+              disabled={syncing}
+              className="px-3 py-1.5 text-sm rounded-md border hover:bg-secondary transition-colors disabled:opacity-50"
+            >
+              {syncing ? "Syncing..." : "Sync Data"}
+            </button>
+          </div>
         </div>
       </header>
 
@@ -142,16 +164,17 @@ export default function LeagueOverviewPage() {
         {data.seasons.length > 1 && (
           <div className="flex gap-2 mb-6">
             {data.seasons.map((s) => (
-              <span
+              <button
                 key={s.leagueId}
-                className={`px-3 py-1 text-sm rounded-full ${
+                onClick={() => handleSeasonClick(s.season)}
+                className={`px-3 py-1 text-sm rounded-full transition-colors ${
                   s.leagueId === data.league.id
                     ? "bg-primary text-primary-foreground"
-                    : "bg-secondary text-secondary-foreground"
+                    : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
                 }`}
               >
                 {s.season}
-              </span>
+              </button>
             ))}
           </div>
         )}

@@ -1,6 +1,8 @@
 import { Sleeper } from "@/lib/sleeper";
 import { getDb, schema } from "@/db";
 import { eq } from "drizzle-orm";
+import { syncPlayers } from "@/services/playerSync";
+import { buildAssetEvents } from "@/services/assetEvents";
 
 interface SyncProgress {
   step: string;
@@ -17,6 +19,10 @@ export async function syncLeague(
   onProgress?: ProgressCallback
 ): Promise<void> {
   const db = getDb();
+
+  // Ensure player metadata is available (skips if fresh)
+  onProgress?.({ step: "players", detail: "Checking player data freshness" });
+  await syncPlayers();
 
   onProgress?.({ step: "league", detail: "Fetching league info" });
   const league = await Sleeper.getLeague(leagueId);
@@ -261,6 +267,10 @@ export async function syncLeague(
     }
   }
 
+  // Build asset events from transactions + drafts
+  onProgress?.({ step: "asset_events", detail: "Building asset event timeline" });
+  await buildAssetEvents(leagueId, league.season);
+
   onProgress?.({ step: "complete", detail: "Sync complete" });
 }
 
@@ -272,19 +282,50 @@ function getMaxWeek(status: string): number {
   return 0; // pre_draft or drafting — no matchups yet
 }
 
+const COMPLETED_STALENESS_MS = 7 * 24 * 60 * 60 * 1000; // 7 days for completed seasons
+
 /**
  * Sync the entire league family (all seasons).
+ * Skips completed seasons that were synced within the last 7 days.
  */
 export async function syncLeagueFamily(
   leagueIds: string[],
   onProgress?: ProgressCallback
 ): Promise<void> {
+  const db = getDb();
+
   for (let i = 0; i < leagueIds.length; i++) {
     const leagueId = leagueIds[i];
     onProgress?.({
       step: "family",
       detail: `Syncing season ${i + 1} of ${leagueIds.length}`,
     });
+
+    // Check if we can skip this league (completed + recently synced)
+    const existing = await db
+      .select({
+        status: schema.leagues.status,
+        lastSyncedAt: schema.leagues.lastSyncedAt,
+      })
+      .from(schema.leagues)
+      .where(eq(schema.leagues.id, leagueId))
+      .limit(1);
+
+    if (existing.length > 0) {
+      const { status, lastSyncedAt } = existing[0];
+      if (
+        status === "complete" &&
+        lastSyncedAt &&
+        Date.now() - new Date(lastSyncedAt).getTime() < COMPLETED_STALENESS_MS
+      ) {
+        onProgress?.({
+          step: "family",
+          detail: `Season ${i + 1} of ${leagueIds.length} — skipped (recently synced)`,
+        });
+        continue;
+      }
+    }
+
     await syncLeague(leagueId, onProgress);
   }
 }

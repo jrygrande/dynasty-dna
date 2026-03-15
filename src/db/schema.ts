@@ -243,6 +243,12 @@ export const assetEvents = pgTable(
   (ae) => ({
     playerIdx: index("asset_events_player_idx").on(ae.leagueId, ae.playerId),
     txIdx: index("asset_events_tx_idx").on(ae.transactionId),
+    pickIdx: index("asset_events_pick_idx").on(
+      ae.leagueId,
+      ae.pickSeason,
+      ae.pickRound,
+      ae.pickOriginalRosterId
+    ),
   })
 );
 
