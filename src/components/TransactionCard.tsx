@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 interface TransactionAdd {
   playerId: string;
   playerName: string;
@@ -36,6 +38,23 @@ export interface TransactionData {
   drops: TransactionDrop[];
   draftPicks: TransactionPick[];
   settings: Record<string, unknown> | null;
+}
+
+function PlayerLink({ playerId, playerName, familyId, className }: {
+  playerId: string;
+  playerName: string;
+  familyId?: string;
+  className?: string;
+}) {
+  if (!familyId) return <span className={className}>{playerName}</span>;
+  return (
+    <Link
+      href={`/league/${familyId}/player/${playerId}`}
+      className={`${className} hover:underline`}
+    >
+      {playerName}
+    </Link>
+  );
 }
 
 function getRoundSuffix(round: number): string {
@@ -81,14 +100,14 @@ function TypeBadge({ type }: { type: string }) {
   );
 }
 
-export function TransactionCard({ tx }: { tx: TransactionData }) {
+export function TransactionCard({ tx, familyId }: { tx: TransactionData; familyId?: string }) {
   if (tx.type === "trade") {
-    return <TradeCard tx={tx} />;
+    return <TradeCard tx={tx} familyId={familyId} />;
   }
-  return <SimpleTransactionCard tx={tx} />;
+  return <SimpleTransactionCard tx={tx} familyId={familyId} />;
 }
 
-function TradeCard({ tx }: { tx: TransactionData }) {
+function TradeCard({ tx, familyId }: { tx: TransactionData; familyId?: string }) {
   // Group adds/drops/picks by roster to show two-column trade layout
   const rosterIds = tx.managers.map((m) => m.rosterId);
 
@@ -134,7 +153,7 @@ function TradeCard({ tx }: { tx: TransactionData }) {
                 <p className="text-xs text-muted-foreground mb-1">Received</p>
                 {side.received.map((a) => (
                   <p key={a.playerId} className="text-sm text-green-600 dark:text-green-400">
-                    + {a.playerName}
+                    + <PlayerLink playerId={a.playerId} playerName={a.playerName} familyId={familyId} />
                   </p>
                 ))}
               </div>
@@ -156,7 +175,7 @@ function TradeCard({ tx }: { tx: TransactionData }) {
                 <p className="text-xs text-muted-foreground mb-1">Sent</p>
                 {side.sent.map((d) => (
                   <p key={d.playerId} className="text-sm text-red-600 dark:text-red-400">
-                    - {d.playerName}
+                    - <PlayerLink playerId={d.playerId} playerName={d.playerName} familyId={familyId} />
                   </p>
                 ))}
               </div>
@@ -180,7 +199,7 @@ function TradeCard({ tx }: { tx: TransactionData }) {
   );
 }
 
-function SimpleTransactionCard({ tx }: { tx: TransactionData }) {
+function SimpleTransactionCard({ tx, familyId }: { tx: TransactionData; familyId?: string }) {
   const waiverBid =
     tx.settings && typeof tx.settings === "object" && "waiver_bid" in tx.settings
       ? (tx.settings as { waiver_bid: number }).waiver_bid
@@ -207,7 +226,7 @@ function SimpleTransactionCard({ tx }: { tx: TransactionData }) {
         {tx.adds.map((a) => (
           <p key={a.playerId} className="text-sm">
             <span className="text-green-600 dark:text-green-400 font-medium">
-              + {a.playerName}
+              + <PlayerLink playerId={a.playerId} playerName={a.playerName} familyId={familyId} />
             </span>
             <span className="text-muted-foreground ml-2">
               &rarr; {a.managerName}
@@ -217,7 +236,7 @@ function SimpleTransactionCard({ tx }: { tx: TransactionData }) {
         {tx.drops.map((d) => (
           <p key={d.playerId} className="text-sm">
             <span className="text-red-600 dark:text-red-400 font-medium">
-              - {d.playerName}
+              - <PlayerLink playerId={d.playerId} playerName={d.playerName} familyId={familyId} />
             </span>
             <span className="text-muted-foreground ml-2">
               from {d.managerName}

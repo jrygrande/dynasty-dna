@@ -115,7 +115,7 @@ export default function DraftsPage() {
         {!loading && data && (
           <div className="space-y-10">
             {data.drafts.map((draft) => (
-              <DraftBoard key={draft.id} draft={draft} />
+              <DraftBoard key={draft.id} draft={draft} familyId={familyId} />
             ))}
             {data.drafts.length === 0 && (
               <p className="text-muted-foreground text-center py-8">
@@ -129,7 +129,7 @@ export default function DraftsPage() {
   );
 }
 
-function DraftBoard({ draft }: { draft: DraftData }) {
+function DraftBoard({ draft, familyId }: { draft: DraftData; familyId: string }) {
   // Build grid: rows = rounds, columns = pick order within round
   const picksByRound = new Map<number, DraftPick[]>();
   for (const pick of draft.picks) {
@@ -190,9 +190,18 @@ function DraftBoard({ draft }: { draft: DraftData }) {
                               {pick.position}
                             </span>
                           )}
-                          <span className="font-medium text-sm truncate">
-                            {pick.playerName}
-                          </span>
+                          {pick.playerId ? (
+                            <Link
+                              href={`/league/${familyId}/player/${pick.playerId}`}
+                              className="font-medium text-sm truncate hover:underline"
+                            >
+                              {pick.playerName}
+                            </Link>
+                          ) : (
+                            <span className="font-medium text-sm truncate">
+                              {pick.playerName}
+                            </span>
+                          )}
                         </div>
                         <p className="text-xs text-muted-foreground truncate">
                           {pick.managerName}

@@ -138,7 +138,7 @@ export default function TransactionsPage() {
 
             <div className="space-y-3">
               {data.transactions.map((tx) => (
-                <TransactionCard key={tx.id} tx={tx} />
+                <TransactionCard key={tx.id} tx={tx} familyId={familyId} />
               ))}
             </div>
 
