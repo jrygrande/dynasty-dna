@@ -1,282 +1,474 @@
-import { pgTable, text, integer, timestamp, jsonb, uuid, boolean, numeric, index, uniqueIndex, primaryKey } from 'drizzle-orm/pg-core';
+import {
+  pgTable,
+  text,
+  timestamp,
+  integer,
+  jsonb,
+  primaryKey,
+  uniqueIndex,
+  index,
+  boolean,
+  real,
+  uuid,
+  bigint,
+} from "drizzle-orm/pg-core";
 
-// Postgres schema aligned with ensureSchema() and Neon driver.
+// ============================================================
+// NextAuth.js Tables
+// ============================================================
 
-export const users = pgTable(
-  'users',
+export const users = pgTable("users", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  name: text("name"),
+  email: text("email").unique(),
+  emailVerified: timestamp("emailVerified", { mode: "date" }),
+  image: text("image"),
+});
+
+export const accounts = pgTable(
+  "accounts",
   {
-    id: text('id').primaryKey(), // Sleeper user_id
-    username: text('username').notNull(),
-    displayName: text('display_name'),
-    createdAt: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+    userId: text("userId")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    type: text("type").notNull(),
+    provider: text("provider").notNull(),
+    providerAccountId: text("providerAccountId").notNull(),
+    refresh_token: text("refresh_token"),
+    access_token: text("access_token"),
+    expires_at: integer("expires_at"),
+    token_type: text("token_type"),
+    scope: text("scope"),
+    id_token: text("id_token"),
+    session_state: text("session_state"),
   },
-  (t) => ({
-    usernameIdx: uniqueIndex('users_username_uq').on(t.username),
+  (account) => ({
+    pk: primaryKey({ columns: [account.provider, account.providerAccountId] }),
   })
 );
 
-export const leagues = pgTable(
-  'leagues',
+export const sessions = pgTable("sessions", {
+  sessionToken: text("sessionToken").primaryKey(),
+  userId: text("userId")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  expires: timestamp("expires", { mode: "date" }).notNull(),
+});
+
+export const verificationTokens = pgTable(
+  "verification_tokens",
   {
-    id: text('id').primaryKey(), // Sleeper league_id
-    name: text('name').notNull(),
-    season: text('season').notNull(),
-    previousLeagueId: text('previous_league_id'),
-    settings: jsonb('settings'),
-    lastAssetEventsSyncAt: timestamp('last_asset_events_sync_at', { withTimezone: false }),
-    lastSyncAt: timestamp('last_sync_at', { withTimezone: false }),
-    syncStartedAt: timestamp('sync_started_at', { withTimezone: false }),
-    syncStatus: text('sync_status', { enum: ['idle', 'syncing', 'failed'] }).default('idle'),
-    syncVersion: integer('sync_version').default(1),
-    createdAt: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+    identifier: text("identifier").notNull(),
+    token: text("token").notNull(),
+    expires: timestamp("expires", { mode: "date" }).notNull(),
   },
-  (t) => ({
-    prevIdx: index('leagues_previous_league_id_idx').on(t.previousLeagueId),
-    seasonIdx: index('leagues_season_idx').on(t.season),
-    syncStatusIdx: index('leagues_sync_status_idx').on(t.syncStatus),
+  (vt) => ({
+    pk: primaryKey({ columns: [vt.identifier, vt.token] }),
+  })
+);
+
+// ============================================================
+// Sleeper Account Linking
+// ============================================================
+
+export const sleeperLinks = pgTable(
+  "sleeper_links",
+  {
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    sleeperId: text("sleeper_id").notNull(),
+    sleeperUsername: text("sleeper_username").notNull(),
+    linkedAt: timestamp("linked_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (sl) => ({
+    pk: primaryKey({ columns: [sl.userId] }),
+    sleeperIdIdx: uniqueIndex("sleeper_links_sleeper_id_idx").on(sl.sleeperId),
+  })
+);
+
+// ============================================================
+// League & Roster Data (cached from Sleeper)
+// ============================================================
+
+export const leagues = pgTable("leagues", {
+  id: text("id").primaryKey(), // Sleeper league_id
+  name: text("name").notNull(),
+  season: text("season").notNull(),
+  previousLeagueId: text("previous_league_id"),
+  status: text("status"), // pre_draft, drafting, in_season, complete
+  settings: jsonb("settings"),
+  scoringSettings: jsonb("scoring_settings"),
+  rosterPositions: jsonb("roster_positions"), // e.g. ["QB","RB","RB","WR","WR","TE","FLEX","FLEX","BN",...]
+  totalRosters: integer("total_rosters"),
+  lastSyncedAt: timestamp("last_synced_at", { mode: "date" }),
+});
+
+export const leagueFamilies = pgTable("league_families", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  rootLeagueId: text("root_league_id").notNull(), // The most recent league in the chain
+  name: text("name").notNull(),
+  createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+});
+
+export const leagueFamilyMembers = pgTable(
+  "league_family_members",
+  {
+    familyId: uuid("family_id")
+      .notNull()
+      .references(() => leagueFamilies.id, { onDelete: "cascade" }),
+    leagueId: text("league_id")
+      .notNull()
+      .references(() => leagues.id, { onDelete: "cascade" }),
+    season: text("season").notNull(),
+  },
+  (lfm) => ({
+    pk: primaryKey({ columns: [lfm.familyId, lfm.leagueId] }),
+  })
+);
+
+export const leagueUsers = pgTable(
+  "league_users",
+  {
+    leagueId: text("league_id")
+      .notNull()
+      .references(() => leagues.id, { onDelete: "cascade" }),
+    userId: text("user_id").notNull(), // Sleeper user_id
+    displayName: text("display_name"),
+    teamName: text("team_name"),
+    avatar: text("avatar"),
+  },
+  (lu) => ({
+    pk: primaryKey({ columns: [lu.leagueId, lu.userId] }),
   })
 );
 
 export const rosters = pgTable(
-  'rosters',
+  "rosters",
   {
-    rosterId: integer('roster_id').notNull(), // Sleeper roster_id (per league)
-    leagueId: text('league_id').notNull(),
-    ownerId: text('owner_id').notNull(), // users.id
+    leagueId: text("league_id")
+      .notNull()
+      .references(() => leagues.id, { onDelete: "cascade" }),
+    rosterId: integer("roster_id").notNull(),
+    ownerId: text("owner_id"), // Sleeper user_id
+    players: jsonb("players"), // string[] of player IDs
+    starters: jsonb("starters"), // string[] of starter player IDs
+    reserve: jsonb("reserve"), // IR slots
+    wins: integer("wins").default(0),
+    losses: integer("losses").default(0),
+    ties: integer("ties").default(0),
+    fpts: real("fpts").default(0),
+    fptsAgainst: real("fpts_against").default(0),
+    settings: jsonb("settings"),
   },
-  (t) => ({
-    pk: primaryKey({ columns: [t.leagueId, t.rosterId], name: 'rosters_pk' }),
-    leagueIdx: index('rosters_league_id_idx').on(t.leagueId),
-    ownerIdx: index('rosters_owner_id_idx').on(t.ownerId),
+  (r) => ({
+    pk: primaryKey({ columns: [r.leagueId, r.rosterId] }),
+    ownerIdx: index("rosters_owner_idx").on(r.leagueId, r.ownerId),
   })
 );
 
-export const players = pgTable('players', {
-  id: text('id').primaryKey(), // Sleeper player_id
-  name: text('name').notNull(),
-  position: text('position'),
-  team: text('team'),
-  status: text('status'),
-  updatedAt: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
+// ============================================================
+// Player Data
+// ============================================================
+
+export const players = pgTable("players", {
+  id: text("id").primaryKey(), // Sleeper player_id
+  name: text("name").notNull(),
+  firstName: text("first_name"),
+  lastName: text("last_name"),
+  position: text("position"), // QB, RB, WR, TE, K, DEF
+  team: text("team"), // NFL team abbreviation
+  age: integer("age"),
+  status: text("status"), // Active, Inactive, Injured Reserve
+  injuryStatus: text("injury_status"), // Out, Doubtful, Questionable, null
+  yearsExp: integer("years_exp"),
+  updatedAt: timestamp("updated_at", { mode: "date" }).defaultNow().notNull(),
 });
+
+// ============================================================
+// Transaction & Event Data
+// ============================================================
 
 export const transactions = pgTable(
-  'transactions',
+  "transactions",
   {
-    id: text('id').primaryKey(),
-    leagueId: text('league_id').notNull(),
-    week: integer('week'),
-    type: text('type').notNull(), // trade|waiver|free_agent|commissioner
-    payload: jsonb('payload'),
-    createdAt: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+    id: text("id").primaryKey(), // Sleeper transaction_id
+    leagueId: text("league_id")
+      .notNull()
+      .references(() => leagues.id, { onDelete: "cascade" }),
+    type: text("type").notNull(), // trade, waiver, free_agent, commissioner
+    status: text("status").notNull(), // complete, failed
+    week: integer("week").notNull(),
+    rosterIds: jsonb("roster_ids"), // number[]
+    adds: jsonb("adds"), // { playerId: rosterId }
+    drops: jsonb("drops"), // { playerId: rosterId }
+    draftPicks: jsonb("draft_picks"), // traded draft picks in this transaction
+    settings: jsonb("settings"), // waiver bid amount, etc
+    createdAt: bigint("created_at", { mode: "number" }), // Sleeper timestamp (ms)
   },
   (t) => ({
-    leagueWeekIdx: index('transactions_league_week_idx').on(t.leagueId, t.week),
-    typeIdx: index('transactions_type_idx').on(t.type),
-  })
-);
-
-export const nflState = pgTable('nfl_state', {
-  id: text('id').primaryKey(), // constant 'nfl'
-  season: text('season').notNull(),
-  week: integer('week').notNull(),
-  fetchedAt: timestamp('fetched_at', { withTimezone: false }).defaultNow().notNull(),
-});
-
-export const nflSeasons = pgTable('nfl_seasons', {
-  season: text('season').primaryKey(),
-  maxWeek: integer('max_week').notNull(),
-  note: text('note'),
-  createdAt: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: false }).defaultNow().notNull(),
-});
-
-export const metricSnapshots = pgTable(
-  'metric_snapshots',
-  {
-    id: uuid('id').defaultRandom().primaryKey(),
-    leagueId: text('league_id').notNull(),
-    managerId: text('manager_id').notNull(),
-    scope: text('scope').notNull(), // week:2024-03 or season:2024
-    metric: text('metric').notNull(),
-    value: numeric('value', { precision: 12, scale: 4 }).notNull(),
-    meta: jsonb('meta'),
-    createdAt: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
-  },
-  (t) => ({
-    leagueManagerMetricScopeIdx: uniqueIndex('metric_snapshots_unique').on(
+    leagueWeekIdx: index("transactions_league_week_idx").on(
       t.leagueId,
-      t.managerId,
-      t.metric,
-      t.scope,
+      t.week
     ),
   })
 );
 
-export const matchups = pgTable(
-  'matchups',
+export const assetEvents = pgTable(
+  "asset_events",
   {
-    leagueId: text('league_id').notNull(),
-    week: integer('week').notNull(),
-    rosterId: integer('roster_id').notNull(),
-    starters: jsonb('starters'),
-    players: jsonb('players'),
-    points: numeric('points', { precision: 10, scale: 2 }).notNull().default('0'),
+    id: uuid("id").primaryKey().defaultRandom(),
+    leagueId: text("league_id").notNull(),
+    season: text("season").notNull(),
+    week: integer("week").notNull(),
+    eventType: text("event_type").notNull(), // draft_selected, trade, waiver_add, waiver_drop, free_agent_add, free_agent_drop, commissioner, pick_trade
+    assetKind: text("asset_kind").notNull(), // player | pick
+    // Player fields
+    playerId: text("player_id"),
+    // Pick fields
+    pickSeason: text("pick_season"),
+    pickRound: integer("pick_round"),
+    pickOriginalRosterId: integer("pick_original_roster_id"),
+    // Movement
+    fromRosterId: integer("from_roster_id"),
+    toRosterId: integer("to_roster_id"),
+    fromUserId: text("from_user_id"),
+    toUserId: text("to_user_id"),
+    transactionId: text("transaction_id"),
+    details: jsonb("details"),
+    createdAt: bigint("created_at", { mode: "number" }),
   },
-  (t) => ({
-    pk: primaryKey({ columns: [t.leagueId, t.week, t.rosterId], name: 'matchups_pk' }),
-    leagueWeekIdx: index('matchups_league_week_idx').on(t.leagueId, t.week),
+  (ae) => ({
+    playerIdx: index("asset_events_player_idx").on(ae.leagueId, ae.playerId),
+    txIdx: index("asset_events_tx_idx").on(ae.transactionId),
   })
 );
 
-export const drafts = pgTable(
-  'drafts',
-  {
-    id: text('id').primaryKey(),
-    leagueId: text('league_id').notNull(),
-    season: text('season').notNull(),
-    startTime: timestamp('start_time', { withTimezone: false }),
-    settings: jsonb('settings'),
-  },
-  (t) => ({
-    leagueIdx: index('drafts_league_idx').on(t.leagueId),
-  })
-);
+// ============================================================
+// Draft Data
+// ============================================================
+
+export const drafts = pgTable("drafts", {
+  id: text("id").primaryKey(), // Sleeper draft_id
+  leagueId: text("league_id")
+    .notNull()
+    .references(() => leagues.id, { onDelete: "cascade" }),
+  season: text("season").notNull(),
+  type: text("type"), // snake, auction, linear
+  status: text("status"), // pre_draft, drafting, complete
+  startTime: bigint("start_time", { mode: "number" }),
+  settings: jsonb("settings"),
+});
 
 export const draftPicks = pgTable(
-  'draft_picks',
+  "draft_picks",
   {
-    draftId: text('draft_id').notNull(),
-    pickNo: integer('pick_no').notNull(),
-    round: integer('round').notNull(),
-    rosterId: integer('roster_id'),
-    playerId: text('player_id'),
-    isKeeper: boolean('is_keeper').default(false),
-    tradedFromRosterId: integer('traded_from_roster_id'),
+    draftId: text("draft_id")
+      .notNull()
+      .references(() => drafts.id, { onDelete: "cascade" }),
+    pickNo: integer("pick_no").notNull(),
+    round: integer("round").notNull(),
+    rosterId: integer("roster_id").notNull(),
+    playerId: text("player_id"),
+    isKeeper: boolean("is_keeper").default(false),
+    metadata: jsonb("metadata"),
   },
-  (t) => ({
-    pk: primaryKey({ columns: [t.draftId, t.pickNo], name: 'draft_picks_pk' }),
-    roundIdx: index('draft_picks_round_idx').on(t.draftId, t.round),
-    playerIdx: index('draft_picks_player_idx').on(t.playerId),
+  (dp) => ({
+    pk: primaryKey({ columns: [dp.draftId, dp.pickNo] }),
   })
 );
 
 export const tradedPicks = pgTable(
-  'traded_picks',
+  "traded_picks",
   {
-    id: uuid('id').defaultRandom().primaryKey(),
-    leagueId: text('league_id').notNull(),
-    season: text('season').notNull(),
-    round: integer('round').notNull(),
-    originalRosterId: integer('original_roster_id').notNull(),
-    currentOwnerId: text('current_owner_id').notNull(), // users.id
+    id: uuid("id").primaryKey().defaultRandom(),
+    leagueId: text("league_id")
+      .notNull()
+      .references(() => leagues.id, { onDelete: "cascade" }),
+    season: text("season").notNull(),
+    round: integer("round").notNull(),
+    originalRosterId: integer("original_roster_id").notNull(),
+    currentOwnerId: integer("current_owner_id").notNull(),
+    previousOwnerId: integer("previous_owner_id"),
   },
-  (t) => ({
-    leagueSeasonIdx: index('traded_picks_league_season_idx').on(t.leagueId, t.season),
+  (tp) => ({
+    leagueSeasonIdx: index("traded_picks_league_season_idx").on(
+      tp.leagueId,
+      tp.season
+    ),
   })
 );
 
-// Normalized events for asset timelines (players and future picks)
+// ============================================================
+// Scoring Data
+// ============================================================
+
 export const playerScores = pgTable(
-  'player_scores',
+  "player_scores",
   {
-    leagueId: text('league_id').notNull(),
-    week: integer('week').notNull(),
-    rosterId: integer('roster_id').notNull(),
-    playerId: text('player_id').notNull(),
-    points: numeric('points', { precision: 10, scale: 2 }).notNull().default('0'),
-    isStarter: boolean('is_starter').notNull().default(false),
+    leagueId: text("league_id").notNull(),
+    week: integer("week").notNull(),
+    rosterId: integer("roster_id").notNull(),
+    playerId: text("player_id").notNull(),
+    points: real("points").default(0),
+    isStarter: boolean("is_starter").default(false),
   },
-  (t) => ({
-    pk: primaryKey({ columns: [t.leagueId, t.week, t.rosterId, t.playerId], name: 'player_scores_pk' }),
-    leagueWeekIdx: index('player_scores_league_week_idx').on(t.leagueId, t.week),
-    playerIdx: index('player_scores_player_idx').on(t.playerId),
+  (ps) => ({
+    pk: primaryKey({
+      columns: [ps.leagueId, ps.week, ps.rosterId, ps.playerId],
+    }),
   })
 );
 
-export const assetEvents = pgTable(
-  'asset_events',
+export const matchups = pgTable(
+  "matchups",
   {
-    id: uuid('id').defaultRandom().primaryKey(),
-    leagueId: text('league_id').notNull(),
-    season: text('season'),
-    week: integer('week'),
-    eventTime: timestamp('event_time', { withTimezone: false }),
-    eventType: text('event_type').notNull(), // draft_selected|trade|waiver_add|waiver_drop|free_agent_add|free_agent_drop|commissioner|pick_trade|pick_selected
-    // Asset identity
-    assetKind: text('asset_kind').notNull(), // player|pick
-    playerId: text('player_id'),
-    pickSeason: text('pick_season'),
-    pickRound: integer('pick_round'),
-    pickOriginalRosterId: integer('pick_original_roster_id'),
-    // Ownership movement
-    fromUserId: text('from_user_id'),
-    toUserId: text('to_user_id'),
-    fromRosterId: integer('from_roster_id'),
-    toRosterId: integer('to_roster_id'),
-    // Links
-    transactionId: text('transaction_id'),
-    details: jsonb('details'),
-    createdAt: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+    leagueId: text("league_id").notNull(),
+    week: integer("week").notNull(),
+    rosterId: integer("roster_id").notNull(),
+    matchupId: integer("matchup_id"),
+    points: real("points").default(0),
+    starters: jsonb("starters"), // string[]
+    starterPoints: jsonb("starter_points"), // number[]
+    players: jsonb("players"), // string[]
+    playerPoints: jsonb("player_points"), // { playerId: points }
   },
-  (t) => ({
-    leagueIdx: index('asset_events_league_idx').on(t.leagueId),
-    playerIdx: index('asset_events_player_idx').on(t.assetKind, t.playerId),
-    pickIdx: index('asset_events_pick_idx').on(t.assetKind, t.pickSeason, t.pickRound, t.pickOriginalRosterId),
-    timeIdx: index('asset_events_time_idx').on(t.season, t.week, t.eventTime),
+  (m) => ({
+    pk: primaryKey({ columns: [m.leagueId, m.week, m.rosterId] }),
   })
 );
 
-export const enrichedTransactions = pgTable(
-  'enriched_transactions',
+// ============================================================
+// NFL Reference Data
+// ============================================================
+
+export const nflState = pgTable("nfl_state", {
+  id: text("id").primaryKey().default("nfl"), // singleton
+  season: integer("season").notNull(),
+  week: integer("week").notNull(),
+  seasonType: text("season_type"), // pre, regular, post
+  fetchedAt: timestamp("fetched_at", { mode: "date" }).defaultNow().notNull(),
+});
+
+export const nflSchedule = pgTable(
+  "nfl_schedule",
   {
-    id: text('id').primaryKey(), // Sleeper transaction ID or synthetic draft-pick ID
-    leagueId: text('league_id').notNull(),
-    type: text('type').notNull(), // trade, waiver, free_agent, draft_selection
-    status: text('status').notNull(),
-    timestamp: timestamp('timestamp', { withTimezone: false }).notNull(),
-
-    // The managers involved
-    managers: jsonb('managers').$type<{
-      rosterId: number;
-      userId: string;
-      displayName: string;
-      side: 'proposer' | 'consenter' | 'selector' | null;
-    }[]>(),
-
-    // All assets moving in this transaction, fully resolved
-    assets: jsonb('assets').$type<{
-      kind: 'player' | 'pick';
-      id: string; // player_id or pick_id
-      name: string; // Resolved name (Player Name or "2024 1st Rd")
-      fromRosterId: number | null;
-      toRosterId: number | null;
-      fromUserId: string | null;
-      toUserId: string | null;
-    }[]>(),
-
-    metadata: jsonb('metadata'), // Any extra context
-    createdAt: timestamp('created_at', { withTimezone: false }).defaultNow().notNull(),
+    season: integer("season").notNull(),
+    week: integer("week").notNull(),
+    homeTeam: text("home_team").notNull(),
+    awayTeam: text("away_team").notNull(),
+    homeScore: integer("home_score"),
+    awayScore: integer("away_score"),
+    gameDate: text("game_date"), // YYYY-MM-DD
   },
-  (t) => ({
-    leagueIdx: index('enriched_transactions_league_idx').on(t.leagueId),
-    typeIdx: index('enriched_transactions_type_idx').on(t.type),
-    timeIdx: index('enriched_transactions_timestamp_idx').on(t.timestamp),
+  (ns) => ({
+    pk: primaryKey({ columns: [ns.season, ns.week, ns.homeTeam] }),
   })
 );
 
-export const jobRuns = pgTable('job_runs', {
-  id: uuid('id').defaultRandom().primaryKey(),
-  type: text('type').notNull(),
-  ref: text('ref'),
-  status: text('status').default('running').notNull(),
-  total: integer('total'),
-  done: integer('done').default(0),
-  error: text('error'),
-  startedAt: timestamp('started_at', { withTimezone: false }).defaultNow().notNull(),
-  finishedAt: timestamp('finished_at', { withTimezone: false }),
-}, (t) => ({
-  typeRefIdx: index('job_runs_type_ref_idx').on(t.type, t.ref),
-  startedIdx: index('job_runs_started_idx').on(t.startedAt),
-}));
+export const nflInjuries = pgTable(
+  "nfl_injuries",
+  {
+    season: integer("season").notNull(),
+    week: integer("week").notNull(),
+    playerId: text("player_id").notNull(), // gsis_id or mapped to Sleeper ID
+    playerName: text("player_name"),
+    team: text("team"),
+    position: text("position"),
+    status: text("status"), // Out, Doubtful, Questionable, Probable, null (active)
+    practiceStatus: text("practice_status"),
+  },
+  (ni) => ({
+    pk: primaryKey({ columns: [ni.season, ni.week, ni.playerId] }),
+  })
+);
 
+// ============================================================
+// Analytics (computed)
+// ============================================================
+
+export const tradeGrades = pgTable(
+  "trade_grades",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    transactionId: text("transaction_id")
+      .notNull()
+      .references(() => transactions.id, { onDelete: "cascade" }),
+    rosterId: integer("roster_id").notNull(), // Which side of the trade
+    valueAtTrade: real("value_at_trade"), // FantasyCalc value sum at trade time
+    valueAfter30d: real("value_after_30d"),
+    valueAfter90d: real("value_after_90d"),
+    valueEndOfSeason: real("value_end_of_season"),
+    pointsGained: real("points_gained"), // Actual points produced by acquired assets
+    pointsLost: real("points_lost"), // Points produced by assets given away
+    grade: text("grade"), // A+, A, B+, B, C, D, F
+    computedAt: timestamp("computed_at", { mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (tg) => ({
+    txIdx: index("trade_grades_tx_idx").on(tg.transactionId),
+  })
+);
+
+export const managerMetrics = pgTable(
+  "manager_metrics",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    leagueId: text("league_id").notNull(),
+    managerId: text("manager_id").notNull(), // Sleeper user_id
+    metric: text("metric").notNull(), // draft_score, trade_score, waiver_score, lineup_score, overall_score
+    scope: text("scope").notNull(), // all_time, season:2024, etc
+    value: real("value").notNull(),
+    percentile: real("percentile"), // 0-100 within league
+    meta: jsonb("meta"),
+    computedAt: timestamp("computed_at", { mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (mm) => ({
+    uniqueMetric: uniqueIndex("manager_metrics_unique_idx").on(
+      mm.leagueId,
+      mm.managerId,
+      mm.metric,
+      mm.scope
+    ),
+  })
+);
+
+export const fantasyCalcValues = pgTable(
+  "fantasy_calc_values",
+  {
+    playerId: text("player_id").notNull(), // Mapped to Sleeper player_id
+    playerName: text("player_name"),
+    value: real("value").notNull(),
+    rank: integer("rank"),
+    positionRank: integer("position_rank"),
+    position: text("position"),
+    team: text("team"),
+    fetchedAt: timestamp("fetched_at", { mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (fcv) => ({
+    pk: primaryKey({ columns: [fcv.playerId, fcv.fetchedAt] }),
+  })
+);
+
+// ============================================================
+// System
+// ============================================================
+
+export const syncJobs = pgTable("sync_jobs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  type: text("type").notNull(), // league_sync, player_sync, nfl_data_sync
+  ref: text("ref"), // e.g. league_id
+  status: text("status").notNull().default("running"), // running, success, failed
+  total: integer("total").default(0),
+  done: integer("done").default(0),
+  error: text("error"),
+  startedAt: timestamp("started_at", { mode: "date" }).defaultNow().notNull(),
+  finishedAt: timestamp("finished_at", { mode: "date" }),
+});
