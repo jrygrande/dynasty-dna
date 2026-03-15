@@ -43,6 +43,7 @@ export async function syncPlayers(force = false): Promise<number> {
       .filter((p) => p.position && FANTASY_POSITIONS.has(p.position))
       .map((p) => ({
         id: p.player_id,
+        gsisId: p.gsis_id,
         name: p.full_name || `${p.first_name} ${p.last_name}`,
         firstName: p.first_name,
         lastName: p.last_name,
@@ -64,6 +65,7 @@ export async function syncPlayers(force = false): Promise<number> {
         target: schema.players.id,
         set: {
           name: sql`excluded.name`,
+          gsisId: sql`excluded.gsis_id`,
           firstName: sql`excluded.first_name`,
           lastName: sql`excluded.last_name`,
           position: sql`excluded.position`,

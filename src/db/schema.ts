@@ -175,6 +175,7 @@ export const rosters = pgTable(
 
 export const players = pgTable("players", {
   id: text("id").primaryKey(), // Sleeper player_id
+  gsisId: text("gsis_id"), // NFL GSIS ID — join key for nflverse data
   name: text("name").notNull(),
   firstName: text("first_name"),
   lastName: text("last_name"),
@@ -379,15 +380,40 @@ export const nflInjuries = pgTable(
   {
     season: integer("season").notNull(),
     week: integer("week").notNull(),
-    playerId: text("player_id").notNull(), // gsis_id or mapped to Sleeper ID
+    gsisId: text("gsis_id").notNull(), // NFL GSIS ID — join key to players table
+    gameType: text("game_type"), // REG, POST
     playerName: text("player_name"),
     team: text("team"),
     position: text("position"),
-    status: text("status"), // Out, Doubtful, Questionable, Probable, null (active)
-    practiceStatus: text("practice_status"),
+    reportStatus: text("report_status"), // Out, Doubtful, Questionable
+    reportPrimaryInjury: text("report_primary_injury"), // Knee, Ankle, Concussion, etc.
+    reportSecondaryInjury: text("report_secondary_injury"),
+    practiceStatus: text("practice_status"), // Did Not Participate, Limited, Full
+    practicePrimaryInjury: text("practice_primary_injury"),
+    practiceSecondaryInjury: text("practice_secondary_injury"),
+    dateModified: text("date_modified"),
   },
   (ni) => ({
-    pk: primaryKey({ columns: [ni.season, ni.week, ni.playerId] }),
+    pk: primaryKey({ columns: [ni.season, ni.week, ni.gsisId] }),
+    gsisIdx: index("nfl_injuries_gsis_idx").on(ni.gsisId),
+  })
+);
+
+export const nflWeeklyRosterStatus = pgTable(
+  "nfl_weekly_roster_status",
+  {
+    season: integer("season").notNull(),
+    week: integer("week").notNull(),
+    gsisId: text("gsis_id").notNull(),
+    status: text("status").notNull(), // ACT, RES, INA, DEV, CUT, etc.
+    statusAbbr: text("status_abbr"), // A01, R01, R48, P03, etc.
+    team: text("team"),
+    position: text("position"),
+    playerName: text("player_name"),
+  },
+  (rs) => ({
+    pk: primaryKey({ columns: [rs.season, rs.week, rs.gsisId] }),
+    gsisIdx: index("nfl_roster_status_gsis_idx").on(rs.gsisId),
   })
 );
 

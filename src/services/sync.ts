@@ -3,6 +3,8 @@ import { getDb, schema } from "@/db";
 import { eq } from "drizzle-orm";
 import { syncPlayers } from "@/services/playerSync";
 import { buildAssetEvents } from "@/services/assetEvents";
+import { syncRosterStatus } from "@/services/rosterStatusSync";
+import { syncInjuries } from "@/services/injurySync";
 
 interface SyncProgress {
   step: string;
@@ -270,6 +272,14 @@ export async function syncLeague(
   // Build asset events from transactions + drafts
   onProgress?.({ step: "asset_events", detail: "Building asset event timeline" });
   await buildAssetEvents(leagueId, league.season);
+
+  // Sync NFL roster status + injury data for this season (skips if already synced)
+  const seasonYear = parseInt(league.season, 10);
+  if (!isNaN(seasonYear)) {
+    onProgress?.({ step: "nfl_data", detail: "Syncing NFL roster status & injuries" });
+    await syncRosterStatus({ seasons: [seasonYear] });
+    await syncInjuries({ seasons: [seasonYear] });
+  }
 
   onProgress?.({ step: "complete", detail: "Sync complete" });
 }

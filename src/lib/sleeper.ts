@@ -180,6 +180,7 @@ export type SleeperPlayerMap = Record<
   string,
   {
     player_id: string;
+    gsis_id: string | null;
     full_name: string;
     first_name: string;
     last_name: string;
