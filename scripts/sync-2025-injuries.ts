@@ -25,6 +25,8 @@ const NFLVERSE_ROSTER_URL =
   "https://github.com/nflverse/nflverse-data/releases/download/weekly_rosters/roster_weekly_";
 const NFLVERSE_INJURY_URL =
   "https://github.com/nflverse/nflverse-data/releases/download/injuries/injuries_";
+const NFLVERSE_GAMES_URL =
+  "https://github.com/nflverse/nfldata/raw/master/data/games.csv";
 
 function parseCSVLine(line: string): string[] {
   const result: string[] = [];
@@ -219,6 +221,87 @@ async function syncInjuries(season: number, force: boolean): Promise<number> {
   return count;
 }
 
+// Cache for the full games CSV (downloaded once, used for all seasons)
+let gamesCSVCache: { headers: string[]; lines: string[] } | null = null;
+
+async function fetchGamesCSV(): Promise<{ headers: string[]; lines: string[] }> {
+  if (gamesCSVCache) return gamesCSVCache;
+  const res = await fetch(NFLVERSE_GAMES_URL);
+  if (!res.ok) throw new Error(`HTTP ${res.status} fetching games CSV`);
+  const csv = await res.text();
+  const lines = csv.split("\n");
+  gamesCSVCache = {
+    headers: parseCSVLine(lines[0]),
+    lines: lines.slice(1).filter((l) => l.trim()),
+  };
+  return gamesCSVCache;
+}
+
+async function syncSchedule(season: number, force: boolean): Promise<number> {
+  if (!force) {
+    const existing = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(schema.nflSchedule)
+      .where(eq(schema.nflSchedule.season, season));
+    if (Number(existing[0]?.count || 0) > 0) {
+      console.log(`  Schedule ${season}: already synced (use --force to resync)`);
+      return 0;
+    }
+  }
+
+  const { headers, lines } = await fetchGamesCSV();
+  const col = {
+    season: headers.indexOf("season"),
+    gameType: headers.indexOf("game_type"),
+    week: headers.indexOf("week"),
+    homeTeam: headers.indexOf("home_team"),
+    awayTeam: headers.indexOf("away_team"),
+    homeScore: headers.indexOf("home_score"),
+    awayScore: headers.indexOf("away_score"),
+    gameday: headers.indexOf("gameday"),
+  };
+
+  await db.delete(schema.nflSchedule).where(eq(schema.nflSchedule.season, season));
+
+  const BATCH_SIZE = 100;
+  let count = 0;
+  let batch: Array<typeof schema.nflSchedule.$inferInsert> = [];
+
+  for (const line of lines) {
+    const cols = parseCSVLine(line);
+    const s = parseInt(cols[col.season], 10);
+    if (s !== season) continue;
+    if (cols[col.gameType]?.trim() !== "REG") continue;
+    const homeTeam = cols[col.homeTeam]?.trim();
+    const awayTeam = cols[col.awayTeam]?.trim();
+    if (!homeTeam || !awayTeam) continue;
+
+    batch.push({
+      season,
+      week: parseInt(cols[col.week], 10),
+      homeTeam,
+      awayTeam,
+      homeScore: cols[col.homeScore] ? parseInt(cols[col.homeScore], 10) : null,
+      awayScore: cols[col.awayScore] ? parseInt(cols[col.awayScore], 10) : null,
+      gameDate: cols[col.gameday]?.trim() || null,
+    });
+
+    if (batch.length >= BATCH_SIZE) {
+      await db.insert(schema.nflSchedule).values(batch).onConflictDoNothing();
+      count += batch.length;
+      batch = [];
+    }
+  }
+
+  if (batch.length > 0) {
+    await db.insert(schema.nflSchedule).values(batch).onConflictDoNothing();
+    count += batch.length;
+  }
+
+  console.log(`  Schedule ${season}: ${count} games`);
+  return count;
+}
+
 async function main() {
   const args = process.argv.slice(2);
   const force = args.includes("--force");
@@ -239,14 +322,16 @@ async function main() {
 
   let totalRoster = 0;
   let totalInjury = 0;
+  let totalSchedule = 0;
 
   for (const season of seasons) {
     console.log(`Season ${season}:`);
     totalRoster += await syncRosterStatus(season, force);
     totalInjury += await syncInjuries(season, force);
+    totalSchedule += await syncSchedule(season, force);
   }
 
-  console.log(`\nDone! Roster status: ${totalRoster}, Injuries: ${totalInjury}`);
+  console.log(`\nDone! Roster status: ${totalRoster}, Injuries: ${totalInjury}, Schedule: ${totalSchedule}`);
 }
 
 main().catch(console.error);

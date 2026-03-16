@@ -19,6 +19,7 @@ interface WeekEntry {
   points: number;
   nflStatus: string | null;
   nflStatusAbbr: string | null;
+  isByeWeek: boolean;
 }
 
 interface PlayerInfo {
@@ -36,7 +37,8 @@ interface WeeklyLogData {
   availableSeasons: string[];
 }
 
-function nflStatusLabel(status: string | null): string {
+function nflStatusLabel(status: string | null, isByeWeek: boolean): string {
+  if (isByeWeek) return "BYE";
   if (!status) return "—";
   switch (status) {
     case "ACT": return "Active";
@@ -48,7 +50,8 @@ function nflStatusLabel(status: string | null): string {
   }
 }
 
-function nflStatusColor(status: string | null): string {
+function nflStatusColor(status: string | null, isByeWeek: boolean): string {
+  if (isByeWeek) return "text-sky-600 dark:text-sky-400";
   if (!status) return "text-muted-foreground";
   switch (status) {
     case "ACT": return "text-green-600 dark:text-green-400";
@@ -321,8 +324,8 @@ export default function PlayerDetailPage() {
                             </span>
                           </td>
                           <td className="px-4 py-3">
-                            <span className={`text-sm ${nflStatusColor(w.nflStatus)}`}>
-                              {nflStatusLabel(w.nflStatus)}
+                            <span className={`text-sm ${nflStatusColor(w.nflStatus, w.isByeWeek)}`}>
+                              {nflStatusLabel(w.nflStatus, w.isByeWeek)}
                             </span>
                           </td>
                           <td className="px-4 py-3 text-right font-mono text-sm">

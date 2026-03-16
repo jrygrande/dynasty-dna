@@ -64,10 +64,10 @@ export async function getInjuries(season: number): Promise<NFLVerseInjury[]> {
 }
 
 export async function getSchedule(season: number): Promise<NFLVerseGame[]> {
-  const url = `${NFLVERSE_BASE}/schedules/schedules.csv`;
+  const url = "https://github.com/nflverse/nfldata/raw/master/data/games.csv";
   const raw = await fetchCSV<Record<string, unknown>>(url);
   return raw
-    .filter((r) => Number(r.season) === season)
+    .filter((r) => Number(r.season) === season && String(r.game_type) === "REG")
     .map((r) => ({
       season: Number(r.season),
       week: Number(r.week),

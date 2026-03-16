@@ -5,6 +5,7 @@ import { syncPlayers } from "@/services/playerSync";
 import { buildAssetEvents } from "@/services/assetEvents";
 import { syncRosterStatus } from "@/services/rosterStatusSync";
 import { syncInjuries } from "@/services/injurySync";
+import { syncSchedule } from "@/services/scheduleSync";
 
 interface SyncProgress {
   step: string;
@@ -276,9 +277,10 @@ export async function syncLeague(
   // Sync NFL roster status + injury data for this season (skips if already synced)
   const seasonYear = parseInt(league.season, 10);
   if (!isNaN(seasonYear)) {
-    onProgress?.({ step: "nfl_data", detail: "Syncing NFL roster status & injuries" });
+    onProgress?.({ step: "nfl_data", detail: "Syncing NFL roster status, injuries & schedule" });
     await syncRosterStatus({ seasons: [seasonYear] });
     await syncInjuries({ seasons: [seasonYear] });
+    await syncSchedule({ seasons: [seasonYear] });
   }
 
   onProgress?.({ step: "complete", detail: "Sync complete" });
