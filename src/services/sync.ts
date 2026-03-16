@@ -1,321 +1,343 @@
-import { Sleeper } from '@/lib/sleeper';
-import { pMap } from '@/lib/concurrency';
-import { upsertLeague } from '@/repositories/leagues';
-import { upsertRoster } from '@/repositories/rosters';
-import { upsertUser } from '@/repositories/users';
-import { upsertTransactions } from '@/repositories/transactions';
-import { upsertMatchups } from '@/repositories/matchups';
-import { upsertDrafts, upsertDraftPicks, replaceTradedPicks } from '@/repositories/drafts';
-import { upsertPlayerScoresBulk } from '@/repositories/playerScores';
+import { Sleeper } from "@/lib/sleeper";
+import { getDb, schema } from "@/db";
+import { eq } from "drizzle-orm";
+import { syncPlayers } from "@/services/playerSync";
+import { buildAssetEvents } from "@/services/assetEvents";
+import { syncRosterStatus } from "@/services/rosterStatusSync";
+import { syncInjuries } from "@/services/injurySync";
+import { syncSchedule } from "@/services/scheduleSync";
 
-export type SyncResult = {
-  leagueId: string;
-  users: number;
-  rosters: number;
-  transactions: number;
-  matchups: number;
-  playerScores: number;
-  drafts: number;
-  draftPicks: number;
-  tradedPicks: number;
-};
+interface SyncProgress {
+  step: string;
+  detail?: string;
+}
 
-import { createJob, updateJobProgress, completeJob, failJob } from './jobs';
-import { getLeagueFamily } from './assets';
-import { updateLeagueSyncStatus } from '@/repositories/leagues';
+type ProgressCallback = (progress: SyncProgress) => void;
 
-export async function syncLeague(leagueId: string, opts?: { season?: string; weeks?: number[]; incremental?: boolean }): Promise<SyncResult> {
-  const startTime = Date.now();
-  console.log(`[Sync] Starting ${opts?.incremental ? 'incremental' : 'full'} sync for league ${leagueId}`);
+/**
+ * Sync all data for a single league season from Sleeper.
+ */
+export async function syncLeague(
+  leagueId: string,
+  onProgress?: ProgressCallback
+): Promise<void> {
+  const db = getDb();
 
-  // Mark sync as starting
-  await updateLeagueSyncStatus(leagueId, 'syncing');
+  // Ensure player metadata is available (skips if fresh)
+  onProgress?.({ step: "players", detail: "Checking player data freshness" });
+  await syncPlayers();
 
-  try {
-    // League core
-    const league = await Sleeper.getLeague(leagueId);
-    await upsertLeague({
-      id: league.league_id ?? leagueId,
-      name: league.name ?? 'Unknown League',
-      season: String(league.season ?? ''),
-      previousLeagueId: league.previous_league_id ?? null,
-      settings: league.settings ?? null,
+  onProgress?.({ step: "league", detail: "Fetching league info" });
+  const league = await Sleeper.getLeague(leagueId);
+
+  // Upsert league
+  await db
+    .insert(schema.leagues)
+    .values({
+      id: league.league_id,
+      name: league.name,
+      season: league.season,
+      previousLeagueId: league.previous_league_id,
+      status: league.status,
+      settings: league.settings,
+      scoringSettings: league.scoring_settings,
+      rosterPositions: league.roster_positions,
+      totalRosters: league.total_rosters,
+    })
+    .onConflictDoUpdate({
+      target: schema.leagues.id,
+      set: {
+        name: league.name,
+        status: league.status,
+        settings: league.settings,
+        scoringSettings: league.scoring_settings,
+        rosterPositions: league.roster_positions,
+        totalRosters: league.total_rosters,
+        lastSyncedAt: new Date(),
+      },
     });
 
-    // Users
-    const leagueUsers = await Sleeper.getLeagueUsers(leagueId);
-    for (const u of leagueUsers) {
-      await upsertUser({ id: u.user_id, username: u.username ?? `user_${u.user_id}`, displayName: u.display_name ?? null });
-    }
-
-    // Rosters
-    const leagueRosters = await Sleeper.getLeagueRosters(leagueId);
-    for (const r of leagueRosters) {
-      // r.owner_id may be null for orphaned; guard with empty string
-      await upsertRoster({ leagueId, rosterId: Number(r.roster_id), ownerId: r.owner_id ?? 'unknown' });
-    }
-
-    // Build rosterId -> owner userId map for traded picks mapping
-    const rosterOwnerById = new Map<number, string>();
-    for (const r of leagueRosters) {
-      const rid = Number(r.roster_id);
-      const owner = r.owner_id ?? 'unknown';
-      if (!Number.isNaN(rid)) rosterOwnerById.set(rid, owner);
-    }
-
-    // Determine weeks to pull
-    let weeks: number[];
-    if (opts?.weeks && opts.weeks.length) {
-      weeks = opts.weeks;
-    } else if (opts?.incremental) {
-      // For incremental sync, only sync current week and last 2 weeks
-      const state = await Sleeper.getState();
-      const currentWeek = Number(state.week ?? 18);
-      const startWeek = Math.max(1, currentWeek - 2);
-      weeks = Array.from({ length: currentWeek - startWeek + 1 }, (_, i) => startWeek + i);
-    } else {
-      const state = await Sleeper.getState();
-      const currentWeek = Number(state.week ?? 18);
-      weeks = Array.from({ length: Math.min(Math.max(currentWeek, 18), 18) }, (_, i) => i + 1);
-    }
-
-    let txCount = 0;
-    let matchupCount = 0;
-    let playerScoresCount = 0;
-    let draftsCount = 0;
-    let draftPicksCount = 0;
-    let tradedPicksCount = 0;
-
-    // Track job progress
-    const jobId = await createJob('league_sync', leagueId, weeks.length);
-
-    await pMap(weeks, async (week) => {
-      // Fetch Transactions and Matchups in parallel
-      const [txs, mus] = await Promise.all([
-        Sleeper.getTransactions(leagueId, week),
-        Sleeper.getLeagueMatchups(leagueId, week)
-      ]);
-
-      // Transactions
-      const txRows = txs.map((t: any) => ({
-        id: String(t.transaction_id ?? `${leagueId}-${week}-${Math.random()}`),
+  // Sync users
+  onProgress?.({ step: "users", detail: "Fetching league members" });
+  const users = await Sleeper.getLeagueUsers(leagueId);
+  for (const user of users) {
+    await db
+      .insert(schema.leagueUsers)
+      .values({
         leagueId,
-        week,
-        type: String(t.type ?? 'unknown'),
-        payload: t,
-      }));
-      const currentTxCount = await upsertTransactions(txRows);
-      txCount += currentTxCount;
-
-      // Matchups
-      const muRows = mus.map((m: any) => ({
-        leagueId,
-        week,
-        rosterId: Number(m.roster_id),
-        starters: m.starters ?? null,
-        players: m.players ?? null,
-        points: m.points ?? 0,
-      }));
-      const currentMatchupCount = await upsertMatchups(muRows);
-      matchupCount += currentMatchupCount;
-
-      // Player Scores - extract from matchup data
-      const playerScoreRows: Array<{
-        leagueId: string;
-        week: number;
-        rosterId: number;
-        playerId: string;
-        points: number;
-        isStarter: boolean;
-      }> = [];
-
-      for (const m of mus) {
-        const rosterId = Number(m.roster_id);
-        const starters = Array.isArray(m.starters) ? m.starters : [];
-        const startersPoints = Array.isArray(m.starters_points) ? m.starters_points : [];
-        const playersPoints = m.players_points && typeof m.players_points === 'object' ? m.players_points : {};
-
-        // Add starter scores
-        starters.forEach((playerId: string, index: number) => {
-          if (playerId && startersPoints[index] !== undefined) {
-            playerScoreRows.push({
-              leagueId,
-              week,
-              rosterId,
-              playerId: String(playerId),
-              points: Number(startersPoints[index]) || 0,
-              isStarter: true,
-            });
-          }
-        });
-
-        // Add bench player scores
-        Object.entries(playersPoints).forEach(([playerId, points]) => {
-          if (playerId && !starters.includes(playerId)) {
-            playerScoreRows.push({
-              leagueId,
-              week,
-              rosterId,
-              playerId: String(playerId),
-              points: Number(points) || 0,
-              isStarter: false,
-            });
-          }
-        });
-      }
-
-      if (playerScoreRows.length > 0) {
-        const currentScoresCount = await upsertPlayerScoresBulk(playerScoreRows);
-        playerScoresCount += currentScoresCount;
-      }
-
-      await updateJobProgress(jobId, week);
-    }, 4); // Process 4 weeks in parallel
-
-    // Drafts and Draft Picks (non-week scoped)
-    const leagueDrafts = await Sleeper.getDrafts(leagueId);
-    const toSafeDate = (v: any): Date | null => {
-      const n = Number(v);
-      if (!Number.isFinite(n) || n <= 0) return null;
-      const ms = n > 1e12 ? n : n * 1000;
-      const min = Date.UTC(2000, 0, 1);
-      const max = Date.UTC(2100, 0, 1);
-      if (ms < min || ms > max) return null;
-      return new Date(ms);
-    };
-    if (Array.isArray(leagueDrafts) && leagueDrafts.length) {
-      const draftRows = leagueDrafts.map((d: any) => ({
-        id: String(d.draft_id ?? d.id ?? ''),
-        leagueId,
-        season: String(d.season ?? league.season ?? ''),
-        startTime: toSafeDate(d.start_time ?? d.start ?? null),
-        settings: {
-          type: d.type ?? null,
-          status: d.status ?? null,
-          settings: d.settings ?? null,
+        userId: user.user_id,
+        displayName: user.display_name,
+        teamName: user.metadata?.team_name || null,
+        avatar: user.avatar,
+      })
+      .onConflictDoUpdate({
+        target: [schema.leagueUsers.leagueId, schema.leagueUsers.userId],
+        set: {
+          displayName: user.display_name,
+          teamName: user.metadata?.team_name || null,
+          avatar: user.avatar,
         },
-      }));
-      draftsCount += await upsertDrafts(draftRows);
+      });
+  }
 
-      for (const d of leagueDrafts) {
-        const did = String(d.draft_id ?? d.id ?? '');
-        if (!did) continue;
-        const picks = await Sleeper.getDraftPicks(did);
-        const pickRows = picks.map((p: any) => ({
-          draftId: did,
-          pickNo: Number(p.pick_no ?? p.pick ?? 0),
-          round: Number(p.round ?? 0),
-          rosterId: p.roster_id != null ? Number(p.roster_id) : null,
-          playerId: p.player_id != null ? String(p.player_id) : null,
-          isKeeper: Boolean(p.is_keeper ?? false),
-          tradedFromRosterId: p.metadata?.traded_from ? Number(p.metadata.traded_from) : null,
-        }));
-        draftPicksCount += await upsertDraftPicks(pickRows);
-      }
-    }
+  // Sync rosters
+  onProgress?.({ step: "rosters", detail: "Fetching rosters" });
+  const rosters = await Sleeper.getRosters(leagueId);
+  for (const roster of rosters) {
+    await db
+      .insert(schema.rosters)
+      .values({
+        leagueId,
+        rosterId: roster.roster_id,
+        ownerId: roster.owner_id,
+        players: roster.players,
+        starters: roster.starters,
+        reserve: roster.reserve,
+        wins: roster.settings?.wins || 0,
+        losses: roster.settings?.losses || 0,
+        ties: roster.settings?.ties || 0,
+        fpts:
+          (roster.settings?.fpts || 0) +
+          (roster.settings?.fpts_decimal || 0) / 100,
+        fptsAgainst:
+          (roster.settings?.fpts_against || 0) +
+          (roster.settings?.fpts_against_decimal || 0) / 100,
+        settings: roster.settings,
+      })
+      .onConflictDoUpdate({
+        target: [schema.rosters.leagueId, schema.rosters.rosterId],
+        set: {
+          ownerId: roster.owner_id,
+          players: roster.players,
+          starters: roster.starters,
+          reserve: roster.reserve,
+          wins: roster.settings?.wins || 0,
+          losses: roster.settings?.losses || 0,
+          ties: roster.settings?.ties || 0,
+          fpts:
+            (roster.settings?.fpts || 0) +
+            (roster.settings?.fpts_decimal || 0) / 100,
+          fptsAgainst:
+            (roster.settings?.fpts_against || 0) +
+            (roster.settings?.fpts_against_decimal || 0) / 100,
+          settings: roster.settings,
+        },
+      });
+  }
 
-    // Traded Picks (snapshot per season)
-    const tp = await Sleeper.getTradedPicks(leagueId);
-    if (Array.isArray(tp) && tp.length) {
-      // Group by season and replace per season for idempotency
-      const bySeason = new Map<string, any[]>();
-      for (const row of tp) {
-        const s = String(row.season ?? league.season ?? '');
-        if (!bySeason.has(s)) bySeason.set(s, []);
-        bySeason.get(s)!.push(row);
-      }
-      for (const [s, rows] of bySeason) {
-        const mapped = rows
-          .map((r: any) => {
-            const originalRosterId = Number(r.roster_id);
-            // owner may be user_id or roster_id; normalize to user_id
-            let currentOwnerUserId: string | undefined;
-            if (typeof r.owner_id === 'string') currentOwnerUserId = r.owner_id;
-            else if (typeof r.owner_id === 'number') currentOwnerUserId = rosterOwnerById.get(Number(r.owner_id));
-            else currentOwnerUserId = rosterOwnerById.get(Number(r.roster_id));
-            if (!originalRosterId || !currentOwnerUserId) return null;
-            return {
-              leagueId,
-              season: s,
-              round: Number(r.round ?? 0),
-              originalRosterId,
-              currentOwnerId: currentOwnerUserId,
-            };
+  // Sync drafts
+  onProgress?.({ step: "drafts", detail: "Fetching draft data" });
+  const drafts = await Sleeper.getDrafts(leagueId);
+  for (const draft of drafts) {
+    await db
+      .insert(schema.drafts)
+      .values({
+        id: draft.draft_id,
+        leagueId,
+        season: draft.season,
+        type: draft.type,
+        status: draft.status,
+        startTime: draft.start_time,
+        settings: draft.settings,
+      })
+      .onConflictDoUpdate({
+        target: schema.drafts.id,
+        set: {
+          status: draft.status,
+          settings: draft.settings,
+        },
+      });
+
+    if (draft.status === "complete") {
+      const picks = await Sleeper.getDraftPicks(draft.draft_id);
+      for (const pick of picks) {
+        await db
+          .insert(schema.draftPicks)
+          .values({
+            draftId: draft.draft_id,
+            pickNo: pick.pick_no,
+            round: pick.round,
+            rosterId: pick.roster_id,
+            playerId: pick.player_id,
+            isKeeper: pick.is_keeper || false,
+            metadata: pick.metadata,
           })
-          .filter(Boolean) as any[];
-        tradedPicksCount += await replaceTradedPicks(leagueId, s, mapped);
+          .onConflictDoNothing();
       }
     }
-    await completeJob(jobId);
+  }
 
-    // Mark sync as completed successfully
-    await updateLeagueSyncStatus(leagueId, 'idle', new Date());
-
-    const duration = ((Date.now() - startTime) / 1000).toFixed(2);
-    console.log(`[Sync] Completed sync for league ${leagueId} in ${duration}s (${txCount} txs, ${matchupCount} matchups, ${playerScoresCount} scores)`);
-
-    return {
+  // Sync traded picks
+  onProgress?.({ step: "traded_picks", detail: "Fetching traded picks" });
+  const tradedPicks = await Sleeper.getTradedPicks(leagueId);
+  // Delete existing and re-insert
+  await db
+    .delete(schema.tradedPicks)
+    .where(eq(schema.tradedPicks.leagueId, leagueId));
+  for (const tp of tradedPicks) {
+    await db.insert(schema.tradedPicks).values({
       leagueId,
-      users: leagueUsers.length,
-      rosters: leagueRosters.length,
-      transactions: txCount,
-      matchups: matchupCount,
-      playerScores: playerScoresCount,
-      drafts: draftsCount,
-      draftPicks: draftPicksCount,
-      tradedPicks: tradedPicksCount,
-    };
-  } catch (error) {
-    const duration = ((Date.now() - startTime) / 1000).toFixed(2);
-    console.error(`[Sync] Failed sync for league ${leagueId} after ${duration}s:`, error);
-    // Mark sync as failed
-    await updateLeagueSyncStatus(leagueId, 'failed');
-    throw error;
+      season: tp.season,
+      round: tp.round,
+      originalRosterId: tp.roster_id,
+      currentOwnerId: tp.owner_id,
+      previousOwnerId: tp.previous_owner_id,
+    });
   }
+
+  // Sync transactions (all weeks)
+  onProgress?.({ step: "transactions", detail: "Fetching transactions" });
+  const maxWeek = getMaxWeek(league.status);
+  for (let week = 1; week <= maxWeek; week++) {
+    const txs = await Sleeper.getTransactions(leagueId, week);
+    for (const tx of txs) {
+      if (tx.status !== "complete") continue;
+      await db
+        .insert(schema.transactions)
+        .values({
+          id: tx.transaction_id,
+          leagueId,
+          type: tx.type,
+          status: tx.status,
+          week: tx.leg,
+          rosterIds: tx.roster_ids,
+          adds: tx.adds,
+          drops: tx.drops,
+          draftPicks: tx.draft_picks,
+          settings: tx.settings,
+          createdAt: tx.created,
+        })
+        .onConflictDoNothing();
+    }
+  }
+
+  // Sync matchups (all weeks)
+  onProgress?.({ step: "matchups", detail: "Fetching matchups & scores" });
+  for (let week = 1; week <= maxWeek; week++) {
+    const matchups = await Sleeper.getMatchups(leagueId, week);
+    if (!matchups || matchups.length === 0) continue;
+
+    for (const m of matchups) {
+      await db
+        .insert(schema.matchups)
+        .values({
+          leagueId,
+          week,
+          rosterId: m.roster_id,
+          matchupId: m.matchup_id,
+          points: m.points || 0,
+          starters: m.starters,
+          starterPoints: m.starters_points,
+          players: m.players,
+          playerPoints: m.players_points,
+        })
+        .onConflictDoUpdate({
+          target: [
+            schema.matchups.leagueId,
+            schema.matchups.week,
+            schema.matchups.rosterId,
+          ],
+          set: {
+            matchupId: m.matchup_id,
+            points: m.points || 0,
+            starters: m.starters,
+            starterPoints: m.starters_points,
+            players: m.players,
+            playerPoints: m.players_points,
+          },
+        });
+
+      // Extract individual player scores from matchup data
+      if (m.players_points) {
+        const playerPoints =
+          typeof m.players_points === "object" ? m.players_points : {};
+        const starterSet = new Set(m.starters || []);
+
+        for (const [playerId, points] of Object.entries(playerPoints)) {
+          await db
+            .insert(schema.playerScores)
+            .values({
+              leagueId,
+              week,
+              rosterId: m.roster_id,
+              playerId,
+              points: Number(points) || 0,
+              isStarter: starterSet.has(playerId),
+            })
+            .onConflictDoNothing();
+        }
+      }
+    }
+  }
+
+  // Build asset events from transactions + drafts
+  onProgress?.({ step: "asset_events", detail: "Building asset event timeline" });
+  await buildAssetEvents(leagueId, league.season);
+
+  // Sync NFL roster status + injury data for this season (skips if already synced)
+  const seasonYear = parseInt(league.season, 10);
+  if (!isNaN(seasonYear)) {
+    onProgress?.({ step: "nfl_data", detail: "Syncing NFL roster status, injuries & schedule" });
+    await syncRosterStatus({ seasons: [seasonYear] });
+    await syncInjuries({ seasons: [seasonYear] });
+    await syncSchedule({ seasons: [seasonYear] });
+  }
+
+  onProgress?.({ step: "complete", detail: "Sync complete" });
 }
 
-export type SyncUserResult = {
-  userId: string;
-  username?: string;
-  leagues: { leagueId: string; result: SyncResult }[];
-};
-
-import { getUser, discoverDynastyLeaguesForUser } from './discovery';
-
-export async function syncUser(input: { username?: string; userId?: string }): Promise<SyncUserResult> {
-  const user = await getUser(input);
-  const leagueIds = await discoverDynastyLeaguesForUser(user.user_id);
-  const leagues: { leagueId: string; result: SyncResult }[] = [];
-  for (const id of leagueIds) {
-    const result = await syncLeague(id);
-    leagues.push({ leagueId: id, result });
-  }
-  return { userId: user.user_id, username: user.username, leagues };
+function getMaxWeek(status: string): number {
+  // For complete seasons, check all 18 weeks (17 game + 1 bye structure)
+  // For in-progress seasons, we'll check up to 18 and stop when empty
+  if (status === "complete") return 18;
+  if (status === "in_season") return 18;
+  return 0; // pre_draft or drafting — no matchups yet
 }
 
-export async function syncLeagueFamily(rootLeagueId: string, opts?: { incremental?: boolean }) {
-  const family = await getLeagueFamily(rootLeagueId);
-  const results: { leagueId: string; result: SyncResult }[] = await pMap(family, async (id) => {
-    const result = await syncLeague(id, opts); // Pass opts down to syncLeague
-    return { leagueId: id, result };
-  }, 3); // Process 3 leagues in parallel
+const COMPLETED_STALENESS_MS = 7 * 24 * 60 * 60 * 1000; // 7 days for completed seasons
 
-  // Update NFL State
-  const state = await Sleeper.getState();
-  const { upsertNFLState } = await import('@/repositories/state');
-  await upsertNFLState({ season: state.season, week: state.week });
-  console.log(`Updated NFL State: Season ${state.season}, Week ${state.week}`);
+/**
+ * Sync the entire league family (all seasons).
+ * Skips completed seasons that were synced within the last 7 days.
+ */
+export async function syncLeagueFamily(
+  leagueIds: string[],
+  onProgress?: ProgressCallback
+): Promise<void> {
+  const db = getDb();
 
-  // After syncing league data, run asset events sync
-  if (opts?.incremental) {
-    const { syncAssetEventsIncremental } = await import('./assets');
-    const assetEventsResult = await syncAssetEventsIncremental(rootLeagueId);
-    console.log(`Asset events incremental sync: ${assetEventsResult.eventsGenerated} events from ${assetEventsResult.transactionsProcessed} transactions`);
-  } else {
-    const { rebuildAssetEventsForLeagueFamily } = await import('./assets');
-    const assetEventsResult = await rebuildAssetEventsForLeagueFamily(rootLeagueId);
-    console.log(`Asset events full rebuild: ${assetEventsResult.events} events for ${assetEventsResult.leagues} leagues`);
+  for (let i = 0; i < leagueIds.length; i++) {
+    const leagueId = leagueIds[i];
+    onProgress?.({
+      step: "family",
+      detail: `Syncing season ${i + 1} of ${leagueIds.length}`,
+    });
+
+    // Check if we can skip this league (completed + recently synced)
+    const existing = await db
+      .select({
+        status: schema.leagues.status,
+        lastSyncedAt: schema.leagues.lastSyncedAt,
+      })
+      .from(schema.leagues)
+      .where(eq(schema.leagues.id, leagueId))
+      .limit(1);
+
+    if (existing.length > 0) {
+      const { status, lastSyncedAt } = existing[0];
+      if (
+        status === "complete" &&
+        lastSyncedAt &&
+        Date.now() - new Date(lastSyncedAt).getTime() < COMPLETED_STALENESS_MS
+      ) {
+        onProgress?.({
+          step: "family",
+          detail: `Season ${i + 1} of ${leagueIds.length} — skipped (recently synced)`,
+        });
+        continue;
+      }
+    }
+
+    await syncLeague(leagueId, onProgress);
   }
-
-  return { leagues: family, results };
 }
