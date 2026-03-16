@@ -44,9 +44,19 @@ Build a web application that measures dynasty fantasy football manager efficacy 
 
 | Source | Data | Endpoint Pattern | Rate Limits |
 |--------|------|-----------------|-------------|
-| Sleeper API | Leagues, rosters, users, transactions, drafts, matchups, NFL state | `api.sleeper.app/v1/...` | Undocumented; ~100 req/min appears safe |
+| Sleeper API | Leagues, rosters, users, transactions, drafts, matchups, NFL state, players | `api.sleeper.app/v1/...` | Undocumented; ~100 req/min appears safe |
 | FantasyCalc | Dynasty player valuations & rankings | `fantasycalc.com/api/...` | TBD — may need scraping fallback |
-| nflverse (GitHub) | NFL schedule, injuries, player metadata | GitHub CSV/parquet files | None (static files) |
+| nflverse (GitHub) | Weekly roster status, injuries, schedule, player ID crosswalk | GitHub CSV releases | None (static files) |
+
+#### nflverse Data Details
+
+| Dataset | URL | Key Columns | Notes |
+|---------|-----|-------------|-------|
+| Weekly Rosters | `nflverse-data/releases/.../roster_weekly_{season}.csv` | `gsis_id`, `sleeper_id`, `status`, `team`, `full_name` + 30 more | Primary source for NFL roster status; contains `sleeper_id` for player ID crosswalk |
+| Injuries | `nflverse-data/releases/.../injuries_{season}.csv` | `gsis_id`, `report_status`, `practice_status`, injury details | Only has `gsis_id` (no `sleeper_id`) — requires crosswalk from roster data |
+| Schedule | `nfldata/raw/master/data/games.csv` | `season`, `week`, `home_team`, `away_team`, scores | All-seasons file; filter to `game_type=REG` for bye week derivation |
+
+**Player ID crosswalk**: Sleeper's API often returns `gsis_id: null`. The nflverse weekly roster CSV provides both `sleeper_id` and `gsis_id`, enabling automatic backfill during roster sync. This is self-healing — each sync fills in any missing `gsis_id` values.
 
 ## Feature Roadmap
 
@@ -68,7 +78,20 @@ Build a web application that measures dynasty fantasy football manager efficacy 
 - [x] Asset event pipeline (denormalize transactions into per-asset movement records)
 - [x] Draft pick lineage tracking (pick → player → traded for picks → those picks draft players)
 
-### Phase 3: Manager Analytics
+### Phase 3: NFL Data & Player Insights ✅
+- [x] NFL weekly roster status sync from nflverse (ACT/RES/INA/DEV/CUT per player per week)
+- [x] NFL injury data sync from nflverse (report status, practice status, injury details)
+- [x] NFL schedule sync from nflverse (regular season games for bye week derivation)
+- [x] Player ID crosswalk: backfill `gsis_id` from nflverse `sleeper_id→gsis_id` mapping (self-healing on every sync)
+- [x] Fixed nflverse schedule URL (`schedules/schedules.csv` → `nfldata/games.csv`)
+- [x] Player detail page with weekly log (manager, started/benched, lineup slot, NFL status, points)
+- [x] Bye week detection derived from `nfl_schedule` (team not playing = bye)
+- [x] Mid-season trade handling for bye weeks (uses per-week team from roster status, not current team)
+- [x] Clickable player names on transactions and drafts pages (link to player detail)
+- [x] Combinable filters on player detail page (season, manager, started/benched)
+- [x] Summary stats on player detail page (weeks rostered, started, benched, PPG)
+
+### Phase 4: Manager Analytics
 - [ ] Lineup optimization score (actual vs. optimal lineup per week)
 - [ ] Trade grading (value at trade time vs. value N days/season later)
 - [ ] Draft grading (pick value vs. player performance)
@@ -76,13 +99,12 @@ Build a web application that measures dynasty fantasy football manager efficacy 
 - [ ] Manager DNA profile (composite score across all dimensions)
 - [ ] League-wide manager leaderboard with historical rankings
 
-### Phase 4: Asset Graph & Exploration
-- [ ] Player detail page (full league history, all transactions, scoring splits)
+### Phase 5: Asset Graph & Advanced Exploration
 - [ ] Transaction detail page (all assets in a trade, linked to other transactions)
 - [ ] Asset graph browser (navigate the web of trades/picks/players)
 - [ ] "What if" counterfactual analysis (what if you hadn't made that trade?)
 
-### Phase 5: Polish & Advanced Features
+### Phase 6: Polish & Advanced Features
 - [ ] FantasyCalc integration for forward-looking valuations
 - [ ] Responsive mobile design
 - [ ] League comparison (how does your league's activity compare to others?)
