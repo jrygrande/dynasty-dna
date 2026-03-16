@@ -16,6 +16,13 @@ const globalForDb = globalThis as unknown as {
 };
 
 export function getDb() {
+  // During build, Next.js may call route handlers for static analysis
+  // Only initialize DB if DATABASE_URL is actually available
+  if (!process.env.DATABASE_URL) {
+    // Return a mock for build-time - real connection happens at runtime
+    return {} as ReturnType<typeof drizzle>;
+  }
+
   if (!globalForDb.dbInstance) {
     const sql = neon(getDbUrl());
     globalForDb.dbInstance = drizzle(sql, { schema });
