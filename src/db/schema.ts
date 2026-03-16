@@ -54,6 +54,7 @@ export const rosters = pgTable(
 export const players = pgTable('players', {
   id: text('id').primaryKey(), // Sleeper player_id
   name: text('name').notNull(),
+  gsisId: text('gsis_id'), // NFL GSIS ID - join key for nflverse data
   position: text('position'),
   team: text('team'),
   status: text('status'),
@@ -224,5 +225,67 @@ export const assetEvents = pgTable(
     playerIdx: index('asset_events_player_idx').on(t.assetKind, t.playerId),
     pickIdx: index('asset_events_pick_idx').on(t.assetKind, t.pickSeason, t.pickRound, t.pickOriginalRosterId),
     timeIdx: index('asset_events_time_idx').on(t.season, t.week, t.eventTime),
+  })
+);
+
+// ============================================================
+// NFL Data (from nflverse)
+// ============================================================
+
+export const nflSchedule = pgTable(
+  'nfl_schedule',
+  {
+    season: integer('season').notNull(),
+    week: integer('week').notNull(),
+    homeTeam: text('home_team').notNull(),
+    awayTeam: text('away_team').notNull(),
+    homeScore: integer('home_score'),
+    awayScore: integer('away_score'),
+    gameDate: text('game_date'), // YYYY-MM-DD
+  },
+  (ns) => ({
+    pk: primaryKey({ columns: [ns.season, ns.week, ns.homeTeam] }),
+  })
+);
+
+export const nflInjuries = pgTable(
+  'nfl_injuries',
+  {
+    season: integer('season').notNull(),
+    week: integer('week').notNull(),
+    gsisId: text('gsis_id').notNull(), // NFL GSIS ID - join key to players table
+    gameType: text('game_type'), // REG, POST
+    playerName: text('player_name'),
+    team: text('team'),
+    position: text('position'),
+    reportStatus: text('report_status'), // Out, Doubtful, Questionable
+    reportPrimaryInjury: text('report_primary_injury'), // Knee, Ankle, Concussion, etc.
+    reportSecondaryInjury: text('report_secondary_injury'),
+    practiceStatus: text('practice_status'), // Did Not Participate, Limited, Full
+    practicePrimaryInjury: text('practice_primary_injury'),
+    practiceSecondaryInjury: text('practice_secondary_injury'),
+    dateModified: text('date_modified'),
+  },
+  (ni) => ({
+    pk: primaryKey({ columns: [ni.season, ni.week, ni.gsisId] }),
+    gsisIdx: index('nfl_injuries_gsis_idx').on(ni.gsisId),
+  })
+);
+
+export const nflWeeklyRosterStatus = pgTable(
+  'nfl_weekly_roster_status',
+  {
+    season: integer('season').notNull(),
+    week: integer('week').notNull(),
+    gsisId: text('gsis_id').notNull(),
+    status: text('status').notNull(), // ACT, RES, INA, DEV, CUT, etc.
+    statusAbbr: text('status_abbr'), // A01, R01, R48, P03, etc.
+    team: text('team'),
+    position: text('position'),
+    playerName: text('player_name'),
+  },
+  (rs) => ({
+    pk: primaryKey({ columns: [rs.season, rs.week, rs.gsisId] }),
+    gsisIdx: index('nfl_roster_status_gsis_idx').on(rs.gsisId),
   })
 );
