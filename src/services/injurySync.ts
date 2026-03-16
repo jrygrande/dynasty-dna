@@ -82,7 +82,7 @@ function parseCSVLine(line: string): string[] {
  * Check if a season's injury data has already been synced.
  */
 async function isSeasonSynced(season: number): Promise<boolean> {
-  const db = getDb();
+  const db = await getDb();
   const result = await db
     .select({ count: sql<number>`count(*)` })
     .from(schema.nflInjuries)
@@ -118,7 +118,7 @@ async function syncInjurySeason(
 
   if (rows.length === 0) return 0;
 
-  const db = getDb();
+  const db = await getDb();
 
   // Delete existing data for this season (idempotent rebuild)
   await db
@@ -212,7 +212,7 @@ export async function getPlayerInjuryStatus(
   primaryInjury: string | null;
   practiceStatus: string | null;
 } | null> {
-  const db = getDb();
+  const db = await getDb();
   const result = await db
     .select()
     .from(schema.nflInjuries)

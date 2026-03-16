@@ -29,7 +29,7 @@ function parseCSVLine(line: string): string[] {
 }
 
 async function isSeasonSynced(season: number): Promise<boolean> {
-  const db = getDb();
+  const db = await getDb();
   const result = await db
     .select({ count: sql<number>`count(*)` })
     .from(schema.nflSchedule)
@@ -84,7 +84,7 @@ async function syncScheduleSeason(
 
   if (rows.length === 0) return 0;
 
-  const db = getDb();
+  const db = await getDb();
 
   // Delete existing data for this season
   await db.delete(schema.nflSchedule).where(eq(schema.nflSchedule.season, season));
@@ -148,7 +148,7 @@ export async function getTeamByeWeeks(
   season: number,
   team: string
 ): Promise<Set<number>> {
-  const db = getDb();
+  const db = await getDb();
   const games = await db
     .select({ week: schema.nflSchedule.week })
     .from(schema.nflSchedule)

@@ -50,7 +50,7 @@ interface RosterRow {
  * Check if a season's roster status data has already been synced.
  */
 async function isSeasonSynced(season: number): Promise<boolean> {
-  const db = getDb();
+  const db = await getDb();
   const result = await db
     .select({ count: sql<number>`count(*)` })
     .from(schema.nflWeeklyRosterStatus)
@@ -130,7 +130,7 @@ async function syncRosterStatusSeason(
 
   if (rows.length === 0) return 0;
 
-  const db = getDb();
+  const db = await getDb();
 
   // Delete existing data for this season (idempotent rebuild)
   await db
@@ -231,7 +231,7 @@ export async function getPlayerRosterStatus(
   statusAbbr: string | null;
   team: string | null;
 } | null> {
-  const db = getDb();
+  const db = await getDb();
   const result = await db
     .select()
     .from(schema.nflWeeklyRosterStatus)

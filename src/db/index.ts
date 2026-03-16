@@ -1,6 +1,9 @@
 import { drizzle } from 'drizzle-orm/neon-http';
 import { sql } from 'drizzle-orm';
 import { neon } from '@neondatabase/serverless';
+import * as schema from './schema';
+
+export { schema };
 
 let dbInstance: ReturnType<typeof drizzle> | undefined;
 
