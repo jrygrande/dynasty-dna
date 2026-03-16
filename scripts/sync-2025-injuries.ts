@@ -82,6 +82,7 @@ async function syncRosterStatus(season: number, force: boolean): Promise<number>
     season: headers.indexOf("season"),
     week: headers.indexOf("week"),
     gsisId: headers.indexOf("gsis_id"),
+    sleeperId: headers.indexOf("sleeper_id"),
     status: headers.indexOf("status"),
     statusAbbr: headers.indexOf("status_description_abbr"),
     team: headers.indexOf("team"),
@@ -94,10 +95,11 @@ async function syncRosterStatus(season: number, force: boolean): Promise<number>
     .delete(schema.nflWeeklyRosterStatus)
     .where(eq(schema.nflWeeklyRosterStatus.season, season));
 
-  // Parse and batch insert
+  // Parse and batch insert + build sleeper→gsis crosswalk
   const BATCH_SIZE = 200;
   let count = 0;
   let batch: Array<typeof schema.nflWeeklyRosterStatus.$inferInsert> = [];
+  const sleeperToGsis = new Map<string, string>();
 
   for (let i = 1; i < lines.length; i++) {
     const line = lines[i].trim();
@@ -105,6 +107,12 @@ async function syncRosterStatus(season: number, force: boolean): Promise<number>
     const cols = parseCSVLine(line);
     const gsisId = cols[col.gsisId]?.trim();
     if (!gsisId) continue;
+
+    // Build crosswalk
+    const sleeperId = col.sleeperId >= 0 ? cols[col.sleeperId]?.trim() : "";
+    if (sleeperId && gsisId) {
+      sleeperToGsis.set(sleeperId, gsisId);
+    }
 
     batch.push({
       season: parseInt(cols[col.season], 10),
@@ -127,6 +135,18 @@ async function syncRosterStatus(season: number, force: boolean): Promise<number>
   if (batch.length > 0) {
     await db.insert(schema.nflWeeklyRosterStatus).values(batch).onConflictDoNothing();
     count += batch.length;
+  }
+
+  // Backfill gsis_id into players table
+  let backfilled = 0;
+  for (const [sleeperId, gsisId] of sleeperToGsis) {
+    const result = await db.execute(
+      sql`UPDATE ${schema.players} SET gsis_id = ${gsisId}, updated_at = now() WHERE id = ${sleeperId} AND (gsis_id IS NULL OR gsis_id != ${gsisId})`
+    );
+    if (Number(result.rowCount || 0) > 0) backfilled++;
+  }
+  if (backfilled > 0) {
+    console.log(`  Backfilled gsis_id for ${backfilled} players`);
   }
 
   console.log(`  Roster status ${season}: ${count} records`);

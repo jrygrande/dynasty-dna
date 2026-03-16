@@ -295,6 +295,11 @@ export async function GET(
       // (shouldn't happen since bye = no roster row, but defensive)
       const teamByes = byeWeekMap.get(`${seasonNum}|${nflStatus.team}`);
       if (teamByes?.has(s.week)) isByeWeek = true;
+    } else if (!player?.gsisId && player?.team) {
+      // Fallback: no gsis_id at all — use player's current team from Sleeper
+      // Won't handle mid-season trades, but better than no bye detection
+      const teamByes = byeWeekMap.get(`${seasonNum}|${player.team}`);
+      if (teamByes?.has(s.week)) isByeWeek = true;
     }
 
     return {

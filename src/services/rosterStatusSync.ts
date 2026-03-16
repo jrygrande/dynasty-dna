@@ -91,6 +91,7 @@ async function syncRosterStatusSeason(
     season: headers.indexOf("season"),
     week: headers.indexOf("week"),
     gsisId: headers.indexOf("gsis_id"),
+    sleeperId: headers.indexOf("sleeper_id"),
     status: headers.indexOf("status"),
     statusAbbr: headers.indexOf("status_description_abbr"),
     team: headers.indexOf("team"),
@@ -98,8 +99,9 @@ async function syncRosterStatusSeason(
     playerName: headers.indexOf("full_name"),
   };
 
-  // Parse all rows
+  // Parse all rows + build sleeper→gsis crosswalk
   const rows: RosterRow[] = [];
+  const sleeperToGsis = new Map<string, string>();
   for (let i = 1; i < lines.length; i++) {
     const line = lines[i].trim();
     if (!line) continue;
@@ -107,6 +109,12 @@ async function syncRosterStatusSeason(
     const cols = parseCSVLine(line);
     const gsisId = cols[colIdx.gsisId]?.trim();
     if (!gsisId) continue; // Skip rows without GSIS ID
+
+    // Build crosswalk map (sleeper_id → gsis_id)
+    const sleeperId = colIdx.sleeperId >= 0 ? cols[colIdx.sleeperId]?.trim() : "";
+    if (sleeperId && gsisId) {
+      sleeperToGsis.set(sleeperId, gsisId);
+    }
 
     rows.push({
       season: parseInt(cols[colIdx.season], 10),
@@ -152,6 +160,25 @@ async function syncRosterStatusSeason(
       .onConflictDoNothing();
 
     count += values.length;
+  }
+
+  // Backfill gsis_id into players table using sleeper_id crosswalk
+  if (sleeperToGsis.size > 0) {
+    const BACKFILL_BATCH = 50;
+    const entries = Array.from(sleeperToGsis.entries());
+    let backfilled = 0;
+    for (let i = 0; i < entries.length; i += BACKFILL_BATCH) {
+      const batch = entries.slice(i, i + BACKFILL_BATCH);
+      for (const [sleeperId, gsisId] of batch) {
+        const result = await db.execute(
+          sql`UPDATE ${schema.players} SET gsis_id = ${gsisId}, updated_at = now() WHERE id = ${sleeperId} AND (gsis_id IS NULL OR gsis_id != ${gsisId})`
+        );
+        if (result.rowCount && result.rowCount > 0) backfilled++;
+      }
+    }
+    if (backfilled > 0) {
+      console.log(`  Backfilled gsis_id for ${backfilled} players from ${season} roster data`);
+    }
   }
 
   return count;
