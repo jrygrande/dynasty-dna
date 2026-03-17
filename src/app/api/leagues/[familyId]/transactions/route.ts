@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, schema } from "@/db";
 import { eq, and, sql, inArray } from "drizzle-orm";
+import { findOriginalSlot, calculatePickNumber } from "@/lib/draft";
 
 export async function GET(
   req: NextRequest,
@@ -115,26 +116,30 @@ export async function GET(
   // Build league → season map
   const leagueSeasonMap = new Map(members.map((m) => [m.leagueId, m.season]));
 
-  // Collect roster owner info for all relevant leagues
+  // Collect roster owner info for all relevant leagues (batched)
   const rosterOwnerMap = new Map<string, Map<number, string>>(); // leagueId → rosterId → displayName
-  for (const leagueId of leagueIds) {
-    const users = await db
-      .select()
-      .from(schema.leagueUsers)
-      .where(eq(schema.leagueUsers.leagueId, leagueId));
-    const rosters = await db
-      .select()
-      .from(schema.rosters)
-      .where(eq(schema.rosters.leagueId, leagueId));
+  const allUsers = await db
+    .select()
+    .from(schema.leagueUsers)
+    .where(inArray(schema.leagueUsers.leagueId, leagueIds));
+  const allRosters = await db
+    .select()
+    .from(schema.rosters)
+    .where(inArray(schema.rosters.leagueId, leagueIds));
 
-    const userMap = new Map(users.map((u) => [u.userId, u.displayName]));
-    const rosterMap = new Map<number, string>();
-    for (const r of rosters) {
-      if (r.ownerId) {
-        rosterMap.set(r.rosterId, userMap.get(r.ownerId) || r.ownerId);
-      }
-    }
-    rosterOwnerMap.set(leagueId, rosterMap);
+  // Group users by league
+  const usersByLeague = new Map<string, Map<string, string>>();
+  for (const u of allUsers) {
+    if (!usersByLeague.has(u.leagueId)) usersByLeague.set(u.leagueId, new Map());
+    usersByLeague.get(u.leagueId)!.set(u.userId, u.displayName || u.userId);
+  }
+
+  // Build rosterOwnerMap from batched results
+  for (const r of allRosters) {
+    if (!r.ownerId) continue;
+    if (!rosterOwnerMap.has(r.leagueId)) rosterOwnerMap.set(r.leagueId, new Map());
+    const userMap = usersByLeague.get(r.leagueId);
+    rosterOwnerMap.get(r.leagueId)!.set(r.rosterId, userMap?.get(r.ownerId) || r.ownerId);
   }
 
   // Fetch trade grades for trade transactions
@@ -265,23 +270,10 @@ export async function GET(
         const teams = Object.keys(slotMap).length;
         const isSnake = draft.type === "snake";
 
-        // Find slot for this roster_id
-        let originalSlot: number | null = null;
-        for (const [slot, rosterId] of Object.entries(slotMap)) {
-          if (rosterId === tuple.roster_id) {
-            originalSlot = parseInt(slot, 10);
-            break;
-          }
-        }
+        const originalSlot = findOriginalSlot(slotMap, tuple.roster_id);
         if (originalSlot === null) continue;
 
-        // Calculate pickNo
-        let pickNo: number;
-        if (isSnake && tuple.round % 2 === 0) {
-          pickNo = (tuple.round - 1) * teams + (teams + 1 - originalSlot);
-        } else {
-          pickNo = (tuple.round - 1) * teams + originalSlot;
-        }
+        const pickNo = calculatePickNumber(tuple.round, originalSlot, teams, isSnake);
 
         const picksForDraft = draftPicksMap.get(draft.id);
         const resolvedPlayerId = picksForDraft?.get(pickNo);
@@ -355,6 +347,8 @@ export async function GET(
           round: dp.round,
           originalRosterId: dp.roster_id,
           originalOwnerName,
+          fromRosterId: dp.previous_owner_id,
+          toRosterId: dp.owner_id,
           from: rosterMap.get(dp.previous_owner_id) || `Roster ${dp.previous_owner_id}`,
           to: rosterMap.get(dp.owner_id) || `Roster ${dp.owner_id}`,
           ...(resolved ? { resolvedPlayerId: resolved.playerId, resolvedPlayerName: resolved.playerName } : {}),

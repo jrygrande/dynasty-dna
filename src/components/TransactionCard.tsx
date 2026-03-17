@@ -19,6 +19,8 @@ interface TransactionPick {
   round: number;
   originalRosterId: number;
   originalOwnerName?: string;
+  fromRosterId: number;
+  toRosterId: number;
   from: string;
   to: string;
   resolvedPlayerId?: string;
@@ -162,10 +164,10 @@ function TradeCard({ tx, familyId }: { tx: TransactionData; familyId?: string })
     const received = tx.adds.filter((a) => a.rosterId === rosterId);
     const sent = tx.drops.filter((d) => d.rosterId === rosterId);
     const picksReceived = tx.draftPicks.filter(
-      (p) => p.to === manager?.name
+      (p) => p.toRosterId === rosterId
     );
     const picksSent = tx.draftPicks.filter(
-      (p) => p.from === manager?.name
+      (p) => p.fromRosterId === rosterId
     );
     const grade = gradesByRoster.get(rosterId);
 

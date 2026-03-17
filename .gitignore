@@ -31,3 +31,6 @@ data/*.sqlite*
 *.db
 .vercel
 .env*.local
+
+# Generated calibration output
+docs/trade-grade-calibration.md

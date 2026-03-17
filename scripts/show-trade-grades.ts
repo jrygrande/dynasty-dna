@@ -14,6 +14,7 @@ import {
   effectiveValue,
   GRADE_CONFIG,
 } from "../src/services/tradeGrading";
+import { syncFantasyCalcValues } from "../src/services/fantasyCalcSync";
 
 // Patch getDb to use our script's DB connection
 import * as dbModule from "../src/db";
@@ -66,10 +67,18 @@ async function run() {
   const hasSuperFlex = rosterPositions.includes("SUPER_FLEX");
   console.log(`Format: ${hasSuperFlex ? "SUPERFLEX (numQbs=2)" : "1QB (numQbs=1)"}`);
 
-  // Re-grade all leagues
+  // Sync FantasyCalc once for the whole family, then reuse the timestamp
+  const syncedAt = await syncFantasyCalcValues(familyLeagueIds[0], { force: true });
+  if (!syncedAt) {
+    console.error("Failed to sync FantasyCalc values");
+    process.exit(1);
+  }
+  console.log(`FantasyCalc synced once at ${syncedAt.toISOString()}`);
+
+  // Re-grade all leagues (reusing the single sync)
   let totalGraded = 0;
   for (const member of members) {
-    const count = await gradeLeagueTrades(member.leagueId, familyId);
+    const count = await gradeLeagueTrades(member.leagueId, familyId, { syncedAt });
     totalGraded += count;
     console.log(`  Graded ${count} sides in ${member.season} (${member.leagueId})`);
   }
