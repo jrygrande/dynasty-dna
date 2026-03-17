@@ -55,6 +55,9 @@ export async function GET(
     .from(schema.leagueFamilyMembers)
     .where(eq(schema.leagueFamilyMembers.familyId, resolvedFamilyId));
 
+  // All league IDs in the family (needed for cross-season draft pick resolution)
+  const allLeagueIds = members.map((m) => m.leagueId);
+
   // Filter by season if specified
   const filteredMembers = seasonParam
     ? members.filter((m) => m.season === seasonParam)
@@ -219,7 +222,7 @@ export async function GET(
       .from(schema.drafts)
       .where(
         and(
-          inArray(schema.drafts.leagueId, leagueIds),
+          inArray(schema.drafts.leagueId, allLeagueIds),
           inArray(schema.drafts.season, Array.from(pickSeasons))
         )
       );
