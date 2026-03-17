@@ -30,10 +30,10 @@ export async function POST(req: NextRequest) {
 
     if (allLeagueIds.length === 0) {
       // Fallback: sync just the requested league
-      await syncLeague(leagueId);
+      await syncLeague(leagueId, undefined, familyId);
     } else {
       // Sync all seasons in the family
-      await syncLeagueFamily(allLeagueIds);
+      await syncLeagueFamily(allLeagueIds, undefined, familyId);
     }
 
     return NextResponse.json({

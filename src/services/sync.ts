@@ -6,6 +6,8 @@ import { buildAssetEvents } from "@/services/assetEvents";
 import { syncRosterStatus } from "@/services/rosterStatusSync";
 import { syncInjuries } from "@/services/injurySync";
 import { syncSchedule } from "@/services/scheduleSync";
+import { syncFantasyCalcValues } from "@/services/fantasyCalcSync";
+import { gradeLeagueTrades } from "@/services/tradeGrading";
 
 interface SyncProgress {
   step: string;
@@ -16,10 +18,12 @@ type ProgressCallback = (progress: SyncProgress) => void;
 
 /**
  * Sync all data for a single league season from Sleeper.
+ * If familyId is provided, also syncs FantasyCalc values and grades trades.
  */
 export async function syncLeague(
   leagueId: string,
-  onProgress?: ProgressCallback
+  onProgress?: ProgressCallback,
+  familyId?: string
 ): Promise<void> {
   const db = getDb();
 
@@ -139,12 +143,14 @@ export async function syncLeague(
         status: draft.status,
         startTime: draft.start_time,
         settings: draft.settings,
+        slotToRosterId: draft.slot_to_roster_id,
       })
       .onConflictDoUpdate({
         target: schema.drafts.id,
         set: {
           status: draft.status,
           settings: draft.settings,
+          slotToRosterId: draft.slot_to_roster_id,
         },
       });
 
@@ -283,6 +289,16 @@ export async function syncLeague(
     await syncSchedule({ seasons: [seasonYear] });
   }
 
+  // Sync FantasyCalc dynasty trade values
+  onProgress?.({ step: "values", detail: "Syncing dynasty trade values" });
+  const syncedAt = await syncFantasyCalcValues(leagueId);
+
+  // Grade trades (requires familyId)
+  if (familyId) {
+    onProgress?.({ step: "trade_grades", detail: "Grading trades" });
+    await gradeLeagueTrades(leagueId, familyId, { syncedAt: syncedAt ?? undefined });
+  }
+
   onProgress?.({ step: "complete", detail: "Sync complete" });
 }
 
@@ -302,7 +318,8 @@ const COMPLETED_STALENESS_MS = 7 * 24 * 60 * 60 * 1000; // 7 days for completed 
  */
 export async function syncLeagueFamily(
   leagueIds: string[],
-  onProgress?: ProgressCallback
+  onProgress?: ProgressCallback,
+  familyId?: string
 ): Promise<void> {
   const db = getDb();
 
@@ -338,6 +355,6 @@ export async function syncLeagueFamily(
       }
     }
 
-    await syncLeague(leagueId, onProgress);
+    await syncLeague(leagueId, onProgress, familyId);
   }
 }
