@@ -134,6 +134,176 @@ export async function GET(
     rosterOwnerMap.set(leagueId, rosterMap);
   }
 
+  // Fetch trade grades for trade transactions
+  const tradeTransactionIds = transactions
+    .filter((tx) => tx.type === "trade")
+    .map((tx) => tx.id);
+
+  const tradeGradesMap = new Map<
+    string,
+    Array<{
+      rosterId: number;
+      grade: string | null;
+      blendedScore: number | null;
+      productionWeight: number | null;
+      productionWeeks: number | null;
+      fantasyCalcValue: number | null;
+    }>
+  >();
+
+  if (tradeTransactionIds.length > 0) {
+    const grades = await db
+      .select({
+        transactionId: schema.tradeGrades.transactionId,
+        rosterId: schema.tradeGrades.rosterId,
+        grade: schema.tradeGrades.grade,
+        blendedScore: schema.tradeGrades.blendedScore,
+        productionWeight: schema.tradeGrades.productionWeight,
+        productionWeeks: schema.tradeGrades.productionWeeks,
+        fantasyCalcValue: schema.tradeGrades.fantasyCalcValue,
+      })
+      .from(schema.tradeGrades)
+      .where(inArray(schema.tradeGrades.transactionId, tradeTransactionIds));
+
+    for (const g of grades) {
+      const existing = tradeGradesMap.get(g.transactionId) || [];
+      existing.push({
+        rosterId: g.rosterId,
+        grade: g.grade,
+        blendedScore: g.blendedScore,
+        productionWeight: g.productionWeight,
+        productionWeeks: g.productionWeeks,
+        fantasyCalcValue: g.fantasyCalcValue,
+      });
+      tradeGradesMap.set(g.transactionId, existing);
+    }
+  }
+
+  // Resolve draft picks to the players who were actually drafted
+  // Collect all unique (season, roster_id, round) tuples from trade draft picks
+  const pickTuples: Array<{ season: string; round: number; roster_id: number }> = [];
+  const tradeTxs = transactions.filter((tx) => tx.type === "trade");
+  const pickSeasons = new Set<string>();
+
+  for (const tx of tradeTxs) {
+    const dps = (tx.draftPicks || []) as Array<{
+      season: string;
+      round: number;
+      roster_id: number;
+      previous_owner_id: number;
+      owner_id: number;
+    }>;
+    for (const dp of dps) {
+      pickTuples.push({ season: dp.season, round: dp.round, roster_id: dp.roster_id });
+      pickSeasons.add(dp.season);
+    }
+  }
+
+  // Build a map: "season:round:roster_id" → { playerId, playerName }
+  const resolvedPickMap = new Map<string, { playerId: string; playerName: string }>();
+  // season → draft (hoisted for use in response formatting)
+  type DraftInfo = { id: string; leagueId: string; season: string; type: string | null; status: string | null; slotToRosterId: unknown };
+  const seasonToDraft = new Map<string, DraftInfo>();
+
+  if (pickSeasons.size > 0) {
+    // Get drafts for these seasons in these leagues
+    const relevantDrafts = await db
+      .select({
+        id: schema.drafts.id,
+        leagueId: schema.drafts.leagueId,
+        season: schema.drafts.season,
+        type: schema.drafts.type,
+        status: schema.drafts.status,
+        slotToRosterId: schema.drafts.slotToRosterId,
+      })
+      .from(schema.drafts)
+      .where(
+        and(
+          inArray(schema.drafts.leagueId, leagueIds),
+          inArray(schema.drafts.season, Array.from(pickSeasons))
+        )
+      );
+
+    // Only use completed drafts
+    const completeDrafts = relevantDrafts.filter((d) => d.status === "complete" && d.slotToRosterId);
+    // Build season → draft info (key by the draft's own season field)
+    for (const d of completeDrafts) {
+      seasonToDraft.set(d.season, d);
+    }
+
+    if (completeDrafts.length > 0) {
+      // Get all draft picks for these drafts
+      const draftIds = completeDrafts.map((d) => d.id);
+      const allDraftPicks = await db
+        .select({
+          draftId: schema.draftPicks.draftId,
+          pickNo: schema.draftPicks.pickNo,
+          playerId: schema.draftPicks.playerId,
+        })
+        .from(schema.draftPicks)
+        .where(inArray(schema.draftPicks.draftId, draftIds));
+
+      // draftId → pickNo → playerId
+      const draftPicksMap = new Map<string, Map<number, string>>();
+      for (const dp of allDraftPicks) {
+        if (!dp.playerId) continue;
+        if (!draftPicksMap.has(dp.draftId)) draftPicksMap.set(dp.draftId, new Map());
+        draftPicksMap.get(dp.draftId)!.set(dp.pickNo, dp.playerId);
+      }
+
+      // Collect resolved player IDs to fetch names
+      const resolvedPlayerIds = new Set<string>();
+
+      for (const tuple of pickTuples) {
+        const draft = seasonToDraft.get(tuple.season);
+        if (!draft || !draft.slotToRosterId) continue;
+
+        const slotMap = draft.slotToRosterId as Record<string, number>;
+        const teams = Object.keys(slotMap).length;
+        const isSnake = draft.type === "snake";
+
+        // Find slot for this roster_id
+        let originalSlot: number | null = null;
+        for (const [slot, rosterId] of Object.entries(slotMap)) {
+          if (rosterId === tuple.roster_id) {
+            originalSlot = parseInt(slot, 10);
+            break;
+          }
+        }
+        if (originalSlot === null) continue;
+
+        // Calculate pickNo
+        let pickNo: number;
+        if (isSnake && tuple.round % 2 === 0) {
+          pickNo = (tuple.round - 1) * teams + (teams + 1 - originalSlot);
+        } else {
+          pickNo = (tuple.round - 1) * teams + originalSlot;
+        }
+
+        const picksForDraft = draftPicksMap.get(draft.id);
+        const resolvedPlayerId = picksForDraft?.get(pickNo);
+        if (resolvedPlayerId) {
+          resolvedPlayerIds.add(resolvedPlayerId);
+          const key = `${tuple.season}:${tuple.round}:${tuple.roster_id}`;
+          resolvedPickMap.set(key, { playerId: resolvedPlayerId, playerName: resolvedPlayerId });
+        }
+      }
+
+      // Fetch player names for resolved picks
+      if (resolvedPlayerIds.size > 0) {
+        const resolvedPlayers = await db
+          .select({ id: schema.players.id, name: schema.players.name })
+          .from(schema.players)
+          .where(inArray(schema.players.id, Array.from(resolvedPlayerIds)));
+        const nameMap = new Map(resolvedPlayers.map((p) => [p.id, p.name]));
+        for (const [key, val] of resolvedPickMap) {
+          const name = nameMap.get(val.playerId);
+          if (name) val.playerName = name;
+        }
+      }
+    }
+  }
+
   // Format response
   const formattedTxs = transactions.map((tx) => {
     const adds = (tx.adds || {}) as Record<string, number>;
@@ -170,14 +340,27 @@ export async function GET(
         rosterId,
         managerName: rosterMap.get(rosterId) || `Roster ${rosterId}`,
       })),
-      draftPicks: draftPicks.map((dp) => ({
-        season: dp.season,
-        round: dp.round,
-        originalRosterId: dp.roster_id,
-        from: rosterMap.get(dp.previous_owner_id) || `Roster ${dp.previous_owner_id}`,
-        to: rosterMap.get(dp.owner_id) || `Roster ${dp.owner_id}`,
-      })),
+      draftPicks: draftPicks.map((dp) => {
+        const pickKey = `${dp.season}:${dp.round}:${dp.roster_id}`;
+        const resolved = resolvedPickMap.get(pickKey);
+        // Look up original owner name from the draft's league roster map
+        const draft = seasonToDraft.get(dp.season);
+        const draftLeagueRosterMap = draft ? rosterOwnerMap.get(draft.leagueId) : undefined;
+        const originalOwnerName = draftLeagueRosterMap?.get(dp.roster_id) || null;
+        return {
+          season: dp.season,
+          round: dp.round,
+          originalRosterId: dp.roster_id,
+          originalOwnerName,
+          from: rosterMap.get(dp.previous_owner_id) || `Roster ${dp.previous_owner_id}`,
+          to: rosterMap.get(dp.owner_id) || `Roster ${dp.owner_id}`,
+          ...(resolved ? { resolvedPlayerId: resolved.playerId, resolvedPlayerName: resolved.playerName } : {}),
+        };
+      }),
       settings: tx.settings,
+      ...(tx.type === "trade" && tradeGradesMap.has(tx.id)
+        ? { grades: tradeGradesMap.get(tx.id) }
+        : {}),
     };
   });
 

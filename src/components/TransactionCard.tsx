@@ -18,13 +18,25 @@ interface TransactionPick {
   season: string;
   round: number;
   originalRosterId: number;
+  originalOwnerName?: string;
   from: string;
   to: string;
+  resolvedPlayerId?: string;
+  resolvedPlayerName?: string;
 }
 
 interface TransactionManager {
   rosterId: number;
   name: string;
+}
+
+interface TradeGrade {
+  rosterId: number;
+  grade: string | null;
+  blendedScore: number | null;
+  productionWeight: number | null;
+  productionWeeks: number | null;
+  fantasyCalcValue: number | null;
 }
 
 export interface TransactionData {
@@ -38,6 +50,7 @@ export interface TransactionData {
   drops: TransactionDrop[];
   draftPicks: TransactionPick[];
   settings: Record<string, unknown> | null;
+  grades?: TradeGrade[];
 }
 
 function PlayerLink({ playerId, playerName, familyId, className }: {
@@ -100,6 +113,36 @@ function TypeBadge({ type }: { type: string }) {
   );
 }
 
+function GradeBadge({ grade }: { grade: string }) {
+  const styles: Record<string, string> = {
+    "A+": "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
+    A: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
+    "B+": "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400",
+    B: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400",
+    C: "bg-gray-100 text-gray-800 dark:bg-gray-700/30 dark:text-gray-400",
+    D: "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400",
+    "D-": "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400",
+    F: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400",
+  };
+
+  return (
+    <span
+      className={`px-1.5 py-0.5 text-xs font-bold rounded ${styles[grade] || "bg-gray-100 text-gray-800"}`}
+    >
+      {grade}
+    </span>
+  );
+}
+
+function GradeContext({ productionWeight }: { productionWeight: number | null }) {
+  if (productionWeight === null || productionWeight === undefined) return null;
+  const pct = Math.round(productionWeight * 100);
+  const label = pct === 0 ? "Value-only (no games yet)" : `${pct}% production-based`;
+  return (
+    <span className="text-[10px] text-muted-foreground">{label}</span>
+  );
+}
+
 export function TransactionCard({ tx, familyId }: { tx: TransactionData; familyId?: string }) {
   if (tx.type === "trade") {
     return <TradeCard tx={tx} familyId={familyId} />;
@@ -110,6 +153,9 @@ export function TransactionCard({ tx, familyId }: { tx: TransactionData; familyI
 function TradeCard({ tx, familyId }: { tx: TransactionData; familyId?: string }) {
   // Group adds/drops/picks by roster to show two-column trade layout
   const rosterIds = tx.managers.map((m) => m.rosterId);
+  const gradesByRoster = new Map(
+    (tx.grades || []).map((g) => [g.rosterId, g])
+  );
 
   const sides = rosterIds.map((rosterId) => {
     const manager = tx.managers.find((m) => m.rosterId === rosterId);
@@ -121,6 +167,7 @@ function TradeCard({ tx, familyId }: { tx: TransactionData; familyId?: string })
     const picksSent = tx.draftPicks.filter(
       (p) => p.from === manager?.name
     );
+    const grade = gradesByRoster.get(rosterId);
 
     return {
       rosterId,
@@ -129,6 +176,7 @@ function TradeCard({ tx, familyId }: { tx: TransactionData; familyId?: string })
       sent,
       picksReceived,
       picksSent,
+      grade,
     };
   });
 
@@ -147,7 +195,20 @@ function TradeCard({ tx, familyId }: { tx: TransactionData; familyId?: string })
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {sides.map((side) => (
           <div key={side.rosterId} className="space-y-2">
-            <p className="text-sm font-semibold">{side.managerName}</p>
+            <div className="flex items-center gap-2">
+              <p className="text-sm font-semibold">{side.managerName}</p>
+              {side.grade?.grade && <GradeBadge grade={side.grade.grade} />}
+            </div>
+            {side.grade && (
+              <div className="flex items-center gap-2">
+                <GradeContext productionWeight={side.grade.productionWeight} />
+                {side.grade.fantasyCalcValue != null && side.grade.fantasyCalcValue > 0 && (
+                  <span className="text-[10px] text-muted-foreground">
+                    {Math.round(side.grade.fantasyCalcValue).toLocaleString()} value received
+                  </span>
+                )}
+              </div>
+            )}
             {side.received.length > 0 && (
               <div>
                 <p className="text-xs text-muted-foreground mb-1">Received</p>
@@ -166,6 +227,16 @@ function TradeCard({ tx, familyId }: { tx: TransactionData; familyId?: string })
                 {side.picksReceived.map((p, i) => (
                   <p key={i} className="text-sm text-green-600 dark:text-green-400">
                     + {p.season} {p.round}{getRoundSuffix(p.round)} Round Pick
+                    {p.originalOwnerName && p.originalOwnerName !== side.managerName && (
+                      <span className="text-xs text-muted-foreground ml-1">
+                        ({p.originalOwnerName}&apos;s)
+                      </span>
+                    )}
+                    {p.resolvedPlayerName && (
+                      <span className="text-xs text-muted-foreground ml-1">
+                        &rarr; <PlayerLink playerId={p.resolvedPlayerId!} playerName={p.resolvedPlayerName} familyId={familyId} className="text-xs text-muted-foreground" />
+                      </span>
+                    )}
                   </p>
                 ))}
               </div>
@@ -188,6 +259,16 @@ function TradeCard({ tx, familyId }: { tx: TransactionData; familyId?: string })
                 {side.picksSent.map((p, i) => (
                   <p key={i} className="text-sm text-red-600 dark:text-red-400">
                     - {p.season} {p.round}{getRoundSuffix(p.round)} Round Pick
+                    {p.originalOwnerName && p.originalOwnerName !== side.managerName && (
+                      <span className="text-xs text-muted-foreground ml-1">
+                        ({p.originalOwnerName}&apos;s)
+                      </span>
+                    )}
+                    {p.resolvedPlayerName && (
+                      <span className="text-xs text-muted-foreground ml-1">
+                        &rarr; <PlayerLink playerId={p.resolvedPlayerId!} playerName={p.resolvedPlayerName} familyId={familyId} className="text-xs text-muted-foreground" />
+                      </span>
+                    )}
                   </p>
                 ))}
               </div>
