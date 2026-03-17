@@ -121,11 +121,11 @@ export async function GET(
   const allUsers = await db
     .select()
     .from(schema.leagueUsers)
-    .where(inArray(schema.leagueUsers.leagueId, leagueIds));
+    .where(inArray(schema.leagueUsers.leagueId, allLeagueIds));
   const allRosters = await db
     .select()
     .from(schema.rosters)
-    .where(inArray(schema.rosters.leagueId, leagueIds));
+    .where(inArray(schema.rosters.leagueId, allLeagueIds));
 
   // Group users by league
   const usersByLeague = new Map<string, Map<string, string>>();
