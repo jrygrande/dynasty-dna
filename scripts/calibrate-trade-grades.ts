@@ -391,35 +391,75 @@ async function run() {
   const BATCH_SIZE = 50;
   for (let i = 0; i < withSleeperId.length; i += BATCH_SIZE) {
     const batch = withSleeperId.slice(i, i + BATCH_SIZE);
-    await db.insert(schema.fantasyCalcValues).values(
-      batch.map((v) => ({
-        playerId: v.player.sleeperId!,
-        playerName: v.player.name,
-        value: v.value,
-        rank: v.overallRank,
-        positionRank: v.positionRank,
-        position: v.player.position,
-        team: v.player.maybeTeam,
-        fetchedAt,
-      }))
-    );
+    await db
+      .insert(schema.fantasyCalcValues)
+      .values(
+        batch.map((v) => ({
+          playerId: v.player.sleeperId!,
+          isSuperFlex: hasSuperFlex,
+          ppr,
+          playerName: v.player.name,
+          value: v.value,
+          rank: v.overallRank,
+          positionRank: v.positionRank,
+          position: v.player.position,
+          team: v.player.maybeTeam,
+          fetchedAt,
+        })),
+      )
+      .onConflictDoUpdate({
+        target: [
+          schema.fantasyCalcValues.playerId,
+          schema.fantasyCalcValues.isSuperFlex,
+          schema.fantasyCalcValues.ppr,
+        ],
+        set: {
+          playerName: sql`excluded.player_name`,
+          value: sql`excluded.value`,
+          rank: sql`excluded.rank`,
+          positionRank: sql`excluded.position_rank`,
+          position: sql`excluded.position`,
+          team: sql`excluded.team`,
+          fetchedAt: sql`excluded.fetched_at`,
+        },
+      });
   }
 
   // Also insert PICK entries (use name as ID since no sleeperId)
   for (let i = 0; i < pickEntries.length; i += BATCH_SIZE) {
     const batch = pickEntries.slice(i, i + BATCH_SIZE);
-    await db.insert(schema.fantasyCalcValues).values(
-      batch.map((v) => ({
-        playerId: `PICK_${v.player.name.replace(/\s+/g, "_")}`,
-        playerName: v.player.name,
-        value: v.value,
-        rank: v.overallRank,
-        positionRank: v.positionRank,
-        position: "PICK",
-        team: null,
-        fetchedAt,
-      }))
-    );
+    await db
+      .insert(schema.fantasyCalcValues)
+      .values(
+        batch.map((v) => ({
+          playerId: `PICK_${v.player.name.replace(/\s+/g, "_")}`,
+          isSuperFlex: hasSuperFlex,
+          ppr,
+          playerName: v.player.name,
+          value: v.value,
+          rank: v.overallRank,
+          positionRank: v.positionRank,
+          position: "PICK",
+          team: null,
+          fetchedAt,
+        })),
+      )
+      .onConflictDoUpdate({
+        target: [
+          schema.fantasyCalcValues.playerId,
+          schema.fantasyCalcValues.isSuperFlex,
+          schema.fantasyCalcValues.ppr,
+        ],
+        set: {
+          playerName: sql`excluded.player_name`,
+          value: sql`excluded.value`,
+          rank: sql`excluded.rank`,
+          positionRank: sql`excluded.position_rank`,
+          position: sql`excluded.position`,
+          team: sql`excluded.team`,
+          fetchedAt: sql`excluded.fetched_at`,
+        },
+      });
   }
 
   console.log(
