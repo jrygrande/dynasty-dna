@@ -1,7 +1,7 @@
 import { getDb, schema } from "@/db";
 import { eq, and, inArray } from "drizzle-orm";
 import { syncFantasyCalcValues } from "@/services/fantasyCalcSync";
-import { findOriginalSlot, calculatePickNumber } from "@/lib/draft";
+import { findOriginalSlot, calculatePickNumber, resolveDraftPicks } from "@/lib/draft";
 
 // ============================================================
 // Grade Configuration
@@ -377,6 +377,20 @@ export async function computeSeasonalRanks(
   }
 
   if (gsisToPlayerId.size > 0) {
+    // Filter roster status to only relevant seasons
+    const relevantSeasons = [
+      ...new Set(Array.from(leagueSeasonMap.values()).map((s) => parseInt(s, 10))),
+    ].filter((s) => !isNaN(s));
+
+    const statusConditions = [
+      eq(schema.nflWeeklyRosterStatus.status, "ACT"),
+    ];
+    if (relevantSeasons.length > 0) {
+      statusConditions.push(
+        inArray(schema.nflWeeklyRosterStatus.season, relevantSeasons),
+      );
+    }
+
     const statusRows = await db
       .select({
         gsisId: schema.nflWeeklyRosterStatus.gsisId,
@@ -384,7 +398,7 @@ export async function computeSeasonalRanks(
         week: schema.nflWeeklyRosterStatus.week,
       })
       .from(schema.nflWeeklyRosterStatus)
-      .where(eq(schema.nflWeeklyRosterStatus.status, "ACT"));
+      .where(and(...statusConditions));
 
     for (const row of statusRows) {
       const playerId = gsisToPlayerId.get(row.gsisId);
@@ -465,11 +479,11 @@ export function computeProductionScores(
   seasonalActiveWeeks: Map<string, Map<string, number>>,
   playerPositions: Map<string, string>,
   pickResolver?: PickResolver,
+  tradeSeason?: number,
 ): Map<number, ProductionResult> {
   const results = new Map<number, ProductionResult>();
-  const tradeDate = new Date(trade.createdAt);
-  const tradeYear = tradeDate.getFullYear();
-  const tradeSeason = tradeDate.getMonth() < 3 ? tradeYear - 1 : tradeYear;
+  const resolvedSeason =
+    tradeSeason ?? fallbackTradeSeason(trade.createdAt);
   const currentYear = new Date().getFullYear();
 
   // Resolve draft pick players for production scoring
@@ -513,7 +527,7 @@ export function computeProductionScores(
     for (const playerId of receivedPlayerIds) {
       const score = playerProductionScore(
         playerId,
-        tradeSeason,
+        resolvedSeason,
         currentYear,
         seasonalRanks,
         seasonalActiveWeeks,
@@ -521,7 +535,7 @@ export function computeProductionScores(
       );
       productionReceived += score;
       // Count actual active NFL roster weeks across post-trade seasons
-      for (let season = tradeSeason; season <= currentYear; season++) {
+      for (let season = resolvedSeason; season <= currentYear; season++) {
         const awMap = seasonalActiveWeeks.get(String(season));
         weeksUsed += awMap?.get(playerId) ?? 0;
       }
@@ -531,7 +545,7 @@ export function computeProductionScores(
     for (const playerId of sentPlayerIds) {
       productionSent += playerProductionScore(
         playerId,
-        tradeSeason,
+        resolvedSeason,
         currentYear,
         seasonalRanks,
         seasonalActiveWeeks,
@@ -550,6 +564,13 @@ export function computeProductionScores(
   }
 
   return results;
+}
+
+/** Fallback: derive trade season from timestamp when league season is unavailable */
+function fallbackTradeSeason(createdAt: number): number {
+  const d = new Date(createdAt);
+  const year = d.getFullYear();
+  return d.getMonth() < 3 ? year - 1 : year;
 }
 
 // ============================================================
@@ -571,6 +592,21 @@ export async function gradeLeagueTrades(
     return 0;
   }
 
+  // Read league settings to determine sf/ppr for snapshot query
+  const [leagueSettings] = await db
+    .select({
+      scoringSettings: schema.leagues.scoringSettings,
+      rosterPositions: schema.leagues.rosterPositions,
+    })
+    .from(schema.leagues)
+    .where(eq(schema.leagues.id, leagueId))
+    .limit(1);
+
+  const scoring = leagueSettings?.scoringSettings as Record<string, number> | null;
+  const ppr = scoring?.rec ?? 0.5;
+  const rosterPositions = (leagueSettings?.rosterPositions as string[]) || [];
+  const isSuperFlex = rosterPositions.includes("SUPER_FLEX");
+
   // Get all family league IDs and their seasons
   const familyMembers = await db
     .select({
@@ -587,89 +623,27 @@ export async function gradeLeagueTrades(
     familyMembers.map((m) => [m.leagueId, m.season]),
   );
 
-  // Use the snapshot from the sync we just performed
+  // Use snapshot filtered by league's sf/ppr settings (not fetchedAt)
   const snapshotRows = await db
     .select({
       playerId: schema.fantasyCalcValues.playerId,
       value: schema.fantasyCalcValues.value,
     })
     .from(schema.fantasyCalcValues)
-    .where(eq(schema.fantasyCalcValues.fetchedAt, syncedAt));
+    .where(
+      and(
+        eq(schema.fantasyCalcValues.isSuperFlex, isSuperFlex),
+        eq(schema.fantasyCalcValues.ppr, ppr),
+      ),
+    );
 
   const snapshot = new Map<string, number>();
   for (const row of snapshotRows) {
     snapshot.set(row.playerId, effectiveValue(row.value));
   }
 
-  // Load drafts with slotToRosterId for pick resolution
-  const familyDrafts = await db
-    .select({
-      id: schema.drafts.id,
-      season: schema.drafts.season,
-      status: schema.drafts.status,
-      type: schema.drafts.type,
-      slotToRosterId: schema.drafts.slotToRosterId,
-      leagueId: schema.drafts.leagueId,
-    })
-    .from(schema.drafts)
-    .where(inArray(schema.drafts.leagueId, familyLeagueIds));
-
-  const leagueRosterCounts = await db
-    .select({
-      id: schema.leagues.id,
-      totalRosters: schema.leagues.totalRosters,
-    })
-    .from(schema.leagues)
-    .where(inArray(schema.leagues.id, familyLeagueIds));
-
-  const rosterCountMap = new Map(
-    leagueRosterCounts.map((l) => [l.id, l.totalRosters || 12]),
-  );
-
-  const draftsBySeason = new Map<
-    string,
-    {
-      slotToRosterId: Record<string, number> | null;
-      draftId: string;
-      status: string;
-      type: string;
-      totalRosters: number;
-    }
-  >();
-  for (const d of familyDrafts) {
-    draftsBySeason.set(d.season, {
-      slotToRosterId: d.slotToRosterId as Record<string, number> | null,
-      draftId: d.id,
-      status: d.status || "",
-      type: d.type || "snake",
-      totalRosters: rosterCountMap.get(d.leagueId) || 12,
-    });
-  }
-
-  const completedDraftIds = familyDrafts
-    .filter((d) => d.status === "complete")
-    .map((d) => d.id);
-
-  const allDraftPicks =
-    completedDraftIds.length > 0
-      ? await db
-          .select({
-            draftId: schema.draftPicks.draftId,
-            pickNo: schema.draftPicks.pickNo,
-            playerId: schema.draftPicks.playerId,
-          })
-          .from(schema.draftPicks)
-          .where(inArray(schema.draftPicks.draftId, completedDraftIds))
-      : [];
-
-  const draftPicksMap = new Map<string, Map<number, string>>();
-  for (const dp of allDraftPicks) {
-    if (!dp.playerId) continue;
-    if (!draftPicksMap.has(dp.draftId)) {
-      draftPicksMap.set(dp.draftId, new Map());
-    }
-    draftPicksMap.get(dp.draftId)!.set(dp.pickNo, dp.playerId);
-  }
+  // Load drafts + draft picks via shared helper
+  const { draftsBySeason, draftPicksMap } = await resolveDraftPicks(familyLeagueIds);
 
   // Compute round averages from FantasyCalc PICK entries
   const roundAverages = new Map<number, number>();
@@ -681,7 +655,8 @@ export async function gradeLeagueTrades(
     .from(schema.fantasyCalcValues)
     .where(
       and(
-        eq(schema.fantasyCalcValues.fetchedAt, syncedAt),
+        eq(schema.fantasyCalcValues.isSuperFlex, isSuperFlex),
+        eq(schema.fantasyCalcValues.ppr, ppr),
         eq(schema.fantasyCalcValues.position, "PICK"),
       ),
     );
@@ -768,6 +743,12 @@ export async function gradeLeagueTrades(
     );
     const pw = productionWeight(weeksElapsed);
 
+    // Use the league's season field instead of month-based heuristic
+    const leagueSeason = leagueSeasonMap.get(trade.leagueId);
+    const tradeSeason = leagueSeason
+      ? parseInt(leagueSeason, 10)
+      : fallbackTradeSeason(tradeTimestamp);
+
     // Value scores
     const valueScores = computeValueScores(
       { adds, drops, draftPicks, rosterIds },
@@ -792,6 +773,7 @@ export async function gradeLeagueTrades(
           seasonalActiveWeeks,
           playerPositions,
           pickResolver,
+          tradeSeason,
         );
       } catch (e) {
         console.warn(

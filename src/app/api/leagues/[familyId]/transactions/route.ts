@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, schema } from "@/db";
 import { eq, and, sql, inArray } from "drizzle-orm";
-import { findOriginalSlot, calculatePickNumber } from "@/lib/draft";
+import { findOriginalSlot, calculatePickNumber, resolveDraftPicks } from "@/lib/draft";
 
 export async function GET(
   req: NextRequest,
@@ -188,7 +188,7 @@ export async function GET(
   }
 
   // Resolve draft picks to the players who were actually drafted
-  // Collect all unique (season, roster_id, round) tuples from trade draft picks
+  // Collect all unique seasons from trade draft picks
   const pickTuples: Array<{ season: string; round: number; roster_id: number }> = [];
   const tradeTxs = transactions.filter((tx) => tx.type === "trade");
   const pickSeasons = new Set<string>();
@@ -209,92 +209,73 @@ export async function GET(
 
   // Build a map: "season:round:roster_id" → { playerId, playerName }
   const resolvedPickMap = new Map<string, { playerId: string; playerName: string }>();
-  // season → draft (hoisted for use in response formatting)
-  type DraftInfo = { id: string; leagueId: string; season: string; type: string | null; status: string | null; slotToRosterId: unknown };
-  const seasonToDraft = new Map<string, DraftInfo>();
+  // season → draft info (for response formatting)
+  const seasonToDraft = new Map<string, { id: string; leagueId: string; type: string | null }>();
 
   if (pickSeasons.size > 0) {
-    // Get drafts for these seasons in these leagues
-    const relevantDrafts = await db
+    // Use shared resolveDraftPicks helper
+    const { draftsBySeason, draftPicksMap } = await resolveDraftPicks(
+      allLeagueIds,
+      { seasons: Array.from(pickSeasons) },
+    );
+
+    // Build seasonToDraft for response formatting (need leagueId for roster owner lookup)
+    const draftsForSeasons = await db
       .select({
         id: schema.drafts.id,
         leagueId: schema.drafts.leagueId,
         season: schema.drafts.season,
         type: schema.drafts.type,
         status: schema.drafts.status,
-        slotToRosterId: schema.drafts.slotToRosterId,
       })
       .from(schema.drafts)
       .where(
         and(
           inArray(schema.drafts.leagueId, allLeagueIds),
-          inArray(schema.drafts.season, Array.from(pickSeasons))
-        )
+          inArray(schema.drafts.season, Array.from(pickSeasons)),
+        ),
       );
-
-    // Only use completed drafts
-    const completeDrafts = relevantDrafts.filter((d) => d.status === "complete" && d.slotToRosterId);
-    // Build season → draft info (key by the draft's own season field)
-    for (const d of completeDrafts) {
-      seasonToDraft.set(d.season, d);
+    for (const d of draftsForSeasons) {
+      if (d.status === "complete") {
+        seasonToDraft.set(d.season, { id: d.id, leagueId: d.leagueId, type: d.type });
+      }
     }
 
-    if (completeDrafts.length > 0) {
-      // Get all draft picks for these drafts
-      const draftIds = completeDrafts.map((d) => d.id);
-      const allDraftPicks = await db
-        .select({
-          draftId: schema.draftPicks.draftId,
-          pickNo: schema.draftPicks.pickNo,
-          playerId: schema.draftPicks.playerId,
-        })
-        .from(schema.draftPicks)
-        .where(inArray(schema.draftPicks.draftId, draftIds));
+    // Collect resolved player IDs to fetch names
+    const resolvedPlayerIds = new Set<string>();
 
-      // draftId → pickNo → playerId
-      const draftPicksMap = new Map<string, Map<number, string>>();
-      for (const dp of allDraftPicks) {
-        if (!dp.playerId) continue;
-        if (!draftPicksMap.has(dp.draftId)) draftPicksMap.set(dp.draftId, new Map());
-        draftPicksMap.get(dp.draftId)!.set(dp.pickNo, dp.playerId);
+    for (const tuple of pickTuples) {
+      const draftInfo = draftsBySeason.get(tuple.season);
+      if (!draftInfo || !draftInfo.slotToRosterId || draftInfo.status !== "complete") continue;
+
+      const slotMap = draftInfo.slotToRosterId;
+      const teams = draftInfo.totalRosters;
+      const isSnake = draftInfo.type === "snake";
+
+      const originalSlot = findOriginalSlot(slotMap, tuple.roster_id);
+      if (originalSlot === null) continue;
+
+      const pickNo = calculatePickNumber(tuple.round, originalSlot, teams, isSnake);
+
+      const picksForDraft = draftPicksMap.get(draftInfo.draftId);
+      const resolvedPlayerId = picksForDraft?.get(pickNo);
+      if (resolvedPlayerId) {
+        resolvedPlayerIds.add(resolvedPlayerId);
+        const key = `${tuple.season}:${tuple.round}:${tuple.roster_id}`;
+        resolvedPickMap.set(key, { playerId: resolvedPlayerId, playerName: resolvedPlayerId });
       }
+    }
 
-      // Collect resolved player IDs to fetch names
-      const resolvedPlayerIds = new Set<string>();
-
-      for (const tuple of pickTuples) {
-        const draft = seasonToDraft.get(tuple.season);
-        if (!draft || !draft.slotToRosterId) continue;
-
-        const slotMap = draft.slotToRosterId as Record<string, number>;
-        const teams = Object.keys(slotMap).length;
-        const isSnake = draft.type === "snake";
-
-        const originalSlot = findOriginalSlot(slotMap, tuple.roster_id);
-        if (originalSlot === null) continue;
-
-        const pickNo = calculatePickNumber(tuple.round, originalSlot, teams, isSnake);
-
-        const picksForDraft = draftPicksMap.get(draft.id);
-        const resolvedPlayerId = picksForDraft?.get(pickNo);
-        if (resolvedPlayerId) {
-          resolvedPlayerIds.add(resolvedPlayerId);
-          const key = `${tuple.season}:${tuple.round}:${tuple.roster_id}`;
-          resolvedPickMap.set(key, { playerId: resolvedPlayerId, playerName: resolvedPlayerId });
-        }
-      }
-
-      // Fetch player names for resolved picks
-      if (resolvedPlayerIds.size > 0) {
-        const resolvedPlayers = await db
-          .select({ id: schema.players.id, name: schema.players.name })
-          .from(schema.players)
-          .where(inArray(schema.players.id, Array.from(resolvedPlayerIds)));
-        const nameMap = new Map(resolvedPlayers.map((p) => [p.id, p.name]));
-        for (const [key, val] of resolvedPickMap) {
-          const name = nameMap.get(val.playerId);
-          if (name) val.playerName = name;
-        }
+    // Fetch player names for resolved picks
+    if (resolvedPlayerIds.size > 0) {
+      const resolvedPlayers = await db
+        .select({ id: schema.players.id, name: schema.players.name })
+        .from(schema.players)
+        .where(inArray(schema.players.id, Array.from(resolvedPlayerIds)));
+      const nameMap = new Map(resolvedPlayers.map((p) => [p.id, p.name]));
+      for (const [key, val] of resolvedPickMap) {
+        const name = nameMap.get(val.playerId);
+        if (name) val.playerName = name;
       }
     }
   }

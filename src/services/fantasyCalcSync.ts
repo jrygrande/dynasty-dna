@@ -1,12 +1,13 @@
 import { getDb, schema } from "@/db";
-import { eq, sql } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { getFantasyCalcValues } from "@/lib/fantasycalc";
 
 const STALENESS_MS = 12 * 60 * 60 * 1000; // 12 hours
 
 /**
  * Sync FantasyCalc dynasty trade values for a league's settings.
- * Skips if data is less than 12 hours old.
+ * Upserts by (playerId, isSuperFlex, ppr) — each config gets one row per player.
+ * Skips if data for this config is less than 12 hours old.
  * Returns the fetchedAt timestamp, or null if no data.
  */
 export async function syncFantasyCalcValues(
@@ -37,17 +38,23 @@ export async function syncFantasyCalcValues(
 
   // Detect superflex: check for SUPER_FLEX in roster positions
   const rosterPositions = (league.rosterPositions as string[]) || [];
-  const hasSuperFlex = rosterPositions.includes("SUPER_FLEX");
-  const numQbs = hasSuperFlex ? 2 : 1;
+  const isSuperFlex = rosterPositions.includes("SUPER_FLEX");
+  const numQbs = isSuperFlex ? 2 : 1;
 
   const numTeams = league.totalRosters || 12;
 
-  // Staleness check
+  // Staleness check per config key (isSuperFlex + ppr)
   const [latestRow] = await db
     .select({
       latest: sql<string>`max(${schema.fantasyCalcValues.fetchedAt})`,
     })
-    .from(schema.fantasyCalcValues);
+    .from(schema.fantasyCalcValues)
+    .where(
+      and(
+        eq(schema.fantasyCalcValues.isSuperFlex, isSuperFlex),
+        eq(schema.fantasyCalcValues.ppr, ppr),
+      ),
+    );
 
   if (latestRow?.latest && !opts?.force) {
     const lastFetch = new Date(latestRow.latest);
@@ -75,43 +82,83 @@ export async function syncFantasyCalcValues(
 
   const fetchedAt = new Date();
 
-  // Batch insert players
+  // Batch upsert players
   const BATCH_SIZE = 50;
   for (let i = 0; i < withSleeperId.length; i += BATCH_SIZE) {
     const batch = withSleeperId.slice(i, i + BATCH_SIZE);
-    await db.insert(schema.fantasyCalcValues).values(
-      batch.map((v) => ({
-        playerId: v.player.sleeperId!,
-        playerName: v.player.name,
-        value: v.value,
-        rank: v.overallRank,
-        positionRank: v.positionRank,
-        position: v.player.position,
-        team: v.player.maybeTeam,
-        fetchedAt,
-      }))
-    );
+    await db
+      .insert(schema.fantasyCalcValues)
+      .values(
+        batch.map((v) => ({
+          playerId: v.player.sleeperId!,
+          isSuperFlex,
+          ppr,
+          playerName: v.player.name,
+          value: v.value,
+          rank: v.overallRank,
+          positionRank: v.positionRank,
+          position: v.player.position,
+          team: v.player.maybeTeam,
+          fetchedAt,
+        })),
+      )
+      .onConflictDoUpdate({
+        target: [
+          schema.fantasyCalcValues.playerId,
+          schema.fantasyCalcValues.isSuperFlex,
+          schema.fantasyCalcValues.ppr,
+        ],
+        set: {
+          playerName: sql`excluded.player_name`,
+          value: sql`excluded.value`,
+          rank: sql`excluded.rank`,
+          positionRank: sql`excluded.position_rank`,
+          position: sql`excluded.position`,
+          team: sql`excluded.team`,
+          fetchedAt: sql`excluded.fetched_at`,
+        },
+      });
   }
 
-  // Batch insert PICK entries (use name as ID since no sleeperId)
+  // Batch upsert PICK entries (use name as ID since no sleeperId)
   for (let i = 0; i < pickEntries.length; i += BATCH_SIZE) {
     const batch = pickEntries.slice(i, i + BATCH_SIZE);
-    await db.insert(schema.fantasyCalcValues).values(
-      batch.map((v) => ({
-        playerId: `PICK_${v.player.name.replace(/\s+/g, "_")}`,
-        playerName: v.player.name,
-        value: v.value,
-        rank: v.overallRank,
-        positionRank: v.positionRank,
-        position: "PICK",
-        team: null,
-        fetchedAt,
-      }))
-    );
+    await db
+      .insert(schema.fantasyCalcValues)
+      .values(
+        batch.map((v) => ({
+          playerId: `PICK_${v.player.name.replace(/\s+/g, "_")}`,
+          isSuperFlex,
+          ppr,
+          playerName: v.player.name,
+          value: v.value,
+          rank: v.overallRank,
+          positionRank: v.positionRank,
+          position: "PICK",
+          team: null,
+          fetchedAt,
+        })),
+      )
+      .onConflictDoUpdate({
+        target: [
+          schema.fantasyCalcValues.playerId,
+          schema.fantasyCalcValues.isSuperFlex,
+          schema.fantasyCalcValues.ppr,
+        ],
+        set: {
+          playerName: sql`excluded.player_name`,
+          value: sql`excluded.value`,
+          rank: sql`excluded.rank`,
+          positionRank: sql`excluded.position_rank`,
+          position: sql`excluded.position`,
+          team: sql`excluded.team`,
+          fetchedAt: sql`excluded.fetched_at`,
+        },
+      });
   }
 
   console.log(
-    `[fantasyCalcSync] Synced ${withSleeperId.length} players + ${pickEntries.length} picks (ppr=${ppr}, qbs=${numQbs}, teams=${numTeams})`
+    `[fantasyCalcSync] Synced ${withSleeperId.length} players + ${pickEntries.length} picks (ppr=${ppr}, sf=${isSuperFlex}, teams=${numTeams})`,
   );
   return fetchedAt;
 }

@@ -291,12 +291,12 @@ export async function syncLeague(
 
   // Sync FantasyCalc dynasty trade values
   onProgress?.({ step: "values", detail: "Syncing dynasty trade values" });
-  await syncFantasyCalcValues(leagueId);
+  const syncedAt = await syncFantasyCalcValues(leagueId);
 
   // Grade trades (requires familyId)
   if (familyId) {
     onProgress?.({ step: "trade_grades", detail: "Grading trades" });
-    await gradeLeagueTrades(leagueId, familyId);
+    await gradeLeagueTrades(leagueId, familyId, { syncedAt: syncedAt ?? undefined });
   }
 
   onProgress?.({ step: "complete", detail: "Sync complete" });
