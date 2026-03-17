@@ -148,6 +148,7 @@ export interface SleeperDraft {
   status: string;
   start_time: number;
   settings: Record<string, unknown>;
+  slot_to_roster_id?: Record<string, number>;
 }
 
 export interface SleeperDraftPick {

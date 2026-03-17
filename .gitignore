@@ -30,3 +30,4 @@ tsconfig.tsbuildinfo
 data/*.sqlite*
 *.db
 .vercel
+.env*.local

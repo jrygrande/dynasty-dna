@@ -267,6 +267,7 @@ export const drafts = pgTable("drafts", {
   status: text("status"), // pre_draft, drafting, complete
   startTime: bigint("start_time", { mode: "number" }),
   settings: jsonb("settings"),
+  slotToRosterId: jsonb("slot_to_roster_id"), // { slot: rosterId }
 });
 
 export const draftPicks = pgTable(
@@ -428,13 +429,16 @@ export const tradeGrades = pgTable(
     transactionId: text("transaction_id")
       .notNull()
       .references(() => transactions.id, { onDelete: "cascade" }),
-    rosterId: integer("roster_id").notNull(), // Which side of the trade
-    valueAtTrade: real("value_at_trade"), // FantasyCalc value sum at trade time
-    valueAfter30d: real("value_after_30d"),
-    valueAfter90d: real("value_after_90d"),
-    valueEndOfSeason: real("value_end_of_season"),
-    pointsGained: real("points_gained"), // Actual points produced by acquired assets
-    pointsLost: real("points_lost"), // Points produced by assets given away
+    rosterId: integer("roster_id").notNull(),
+    // FantasyCalc component
+    valueScore: real("value_score"), // normalized 0-100, based on % of total trade value received
+    fantasyCalcValue: real("fantasy_calc_value"), // raw sum of FantasyCalc values received
+    // Production component
+    productionScore: real("production_score"), // normalized 0-100, based on PPG vs positional average
+    productionWeeks: integer("production_weeks"), // how many weeks of data used
+    // Blended result
+    blendedScore: real("blended_score"), // weighted combination of value + production
+    productionWeight: real("production_weight"), // 0-1, how much production influenced this grade
     grade: text("grade"), // A+, A, B+, B, C, D, F
     computedAt: timestamp("computed_at", { mode: "date" })
       .defaultNow()
@@ -442,6 +446,10 @@ export const tradeGrades = pgTable(
   },
   (tg) => ({
     txIdx: index("trade_grades_tx_idx").on(tg.transactionId),
+    uniqueTrade: uniqueIndex("trade_grades_unique_idx").on(
+      tg.transactionId,
+      tg.rosterId
+    ),
   })
 );
 
