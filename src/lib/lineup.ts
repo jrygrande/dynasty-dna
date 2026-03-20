@@ -44,9 +44,9 @@ export function solveOptimalLineup(
     }
   }
 
-  // Sort players by points descending
+  // Sort players by points descending (include 0-point players so positional slots get filled)
   const sortedPlayers = Object.entries(playerPoints)
-    .filter(([, pts]) => pts > 0)
+    .filter(([, pts]) => pts >= 0)
     .sort(([, a], [, b]) => b - a);
 
   const assigned = new Set<string>();

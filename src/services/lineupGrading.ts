@@ -507,7 +507,12 @@ export async function gradeLeagueLineups(
   const scores = results.map((r) => r.score).sort((a, b) => a - b);
 
   for (const roster of results) {
-    if (!roster.ownerId) continue;
+    if (!roster.ownerId) {
+      console.warn(
+        `[lineupGrading] Roster ${roster.rosterId} has no ownerId — skipping metric write`,
+      );
+      continue;
+    }
 
     // Compute percentile within league
     const rank = scores.filter((s) => s < roster.score).length;

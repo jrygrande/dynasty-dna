@@ -3,7 +3,10 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { LineupEfficiencyCard } from "@/components/LineupEfficiencyCard";
+import {
+  LineupEfficiencyCard,
+  type RosterGrade,
+} from "@/components/LineupEfficiencyCard";
 
 interface Roster {
   rosterId: number;
@@ -43,7 +46,7 @@ export default function LeagueOverviewPage() {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [selectedSeason, setSelectedSeason] = useState<string | null>(null);
-  const [lineupGrades, setLineupGrades] = useState<Array<Record<string, unknown>> | null>(null);
+  const [lineupGrades, setLineupGrades] = useState<RosterGrade[] | null>(null);
 
   useEffect(() => {
     loadLeagueData();
@@ -248,7 +251,7 @@ export default function LeagueOverviewPage() {
         {/* Lineup Efficiency */}
         {lineupGrades && lineupGrades.length > 0 && (
           <div className="mt-8">
-            <LineupEfficiencyCard rosters={lineupGrades as never} />
+            <LineupEfficiencyCard rosters={lineupGrades} />
           </div>
         )}
       </main>

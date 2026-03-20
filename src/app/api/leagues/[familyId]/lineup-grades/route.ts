@@ -11,6 +11,12 @@ export async function GET(
   const db = getDb();
   const familyId = params.familyId;
   const seasonParam = req.nextUrl.searchParams.get("season");
+  if (seasonParam && !/^\d{4}$/.test(seasonParam)) {
+    return NextResponse.json(
+      { error: "Invalid season parameter" },
+      { status: 400 },
+    );
+  }
 
   // Resolve family
   const resolvedFamilyId = await resolveFamily(familyId);

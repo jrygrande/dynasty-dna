@@ -19,7 +19,7 @@ interface WeekData {
   slotBreakdown: SlotBreakdown;
 }
 
-interface RosterGrade {
+export interface RosterGrade {
   rosterId: number;
   ownerId: string;
   displayName: string;
@@ -35,6 +35,8 @@ interface RosterGrade {
 interface LineupEfficiencyCardProps {
   rosters: RosterGrade[];
 }
+
+const PARENT_COLUMN_COUNT = 7; // Manager, Grade, Efficiency, Pts Left, Perfect Wks, Insights, expand arrow
 
 const GRADE_COLORS: Record<string, string> = {
   "A+": "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
@@ -91,7 +93,7 @@ function RosterRow({ roster }: { roster: RosterGrade }) {
       </tr>
       {expanded && (
         <tr>
-          <td colSpan={7} className="px-4 py-2 bg-muted/10">
+          <td colSpan={PARENT_COLUMN_COUNT} className="px-4 py-2 bg-muted/10">
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>

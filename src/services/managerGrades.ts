@@ -43,6 +43,16 @@ function scoreToGrade(score: number): string {
   return "F";
 }
 
+/**
+ * Compute percentile for a score within a sorted (ascending) array of scores.
+ * Returns 50 for single-element arrays.
+ */
+function computePercentile(entry: { score: number }, sortedAsc: { score: number }[]): number {
+  if (sortedAsc.length <= 1) return 50;
+  const rank = sortedAsc.filter((s) => s.score < entry.score).length;
+  return Math.round((rank / (sortedAsc.length - 1)) * 1000) / 10;
+}
+
 // ============================================================
 // Rollup: all_time per-metric + overall_score
 // ============================================================
@@ -100,7 +110,12 @@ export async function rollupManagerGrades(familyId: string): Promise<void> {
     const season =
       leagueSeasonMap.get(row.leagueId) ??
       parseInt(row.scope.replace("season:", ""), 10);
-    if (isNaN(season)) continue;
+    if (isNaN(season)) {
+      console.warn(
+        `[managerGrades] Could not parse season from scope "${row.scope}" for league ${row.leagueId}`,
+      );
+      continue;
+    }
 
     const key = `${row.managerId}::${row.metric}`;
     if (!grouped.has(key)) grouped.set(key, []);
@@ -199,11 +214,7 @@ export async function rollupManagerGrades(familyId: string): Promise<void> {
   for (const [metric, scores] of metricScores) {
     const sorted = [...scores].sort((a, b) => a.score - b.score);
     for (const entry of sorted) {
-      const rank = sorted.filter((s) => s.score < entry.score).length;
-      const percentile =
-        sorted.length > 1
-          ? Math.round((rank / (sorted.length - 1)) * 1000) / 10
-          : 50;
+      const percentile = computePercentile(entry, sorted);
 
       // Find the leagueId for this manager's all_time row
       const managerMetrics = managerAllTime.get(entry.managerId);
@@ -255,7 +266,11 @@ export async function rollupManagerGrades(familyId: string): Promise<void> {
         (values.reduce((sum, v) => sum + v.score, 0) / values.length) * 10,
       ) / 10;
 
-    const recentLeagueId = managerRecentLeague.get(managerId) ?? leagueIds[0];
+    // Fallback to the most recent season's league (deterministic)
+    const mostRecentLeagueId = [...members].sort(
+      (a, b) => parseInt(b.season, 10) - parseInt(a.season, 10),
+    )[0].leagueId;
+    const recentLeagueId = managerRecentLeague.get(managerId) ?? mostRecentLeagueId;
 
     const metricBreakdown = Object.fromEntries(
       Array.from(metrics.entries()).map(([metric, data]) => [
@@ -304,11 +319,7 @@ export async function rollupManagerGrades(familyId: string): Promise<void> {
   // 7. Update overall_score percentiles
   const sortedOverall = [...overallScores].sort((a, b) => a.score - b.score);
   for (const entry of sortedOverall) {
-    const rank = sortedOverall.filter((s) => s.score < entry.score).length;
-    const percentile =
-      sortedOverall.length > 1
-        ? Math.round((rank / (sortedOverall.length - 1)) * 1000) / 10
-        : 50;
+    const percentile = computePercentile(entry, sortedOverall);
 
     await db
       .update(schema.managerMetrics)
