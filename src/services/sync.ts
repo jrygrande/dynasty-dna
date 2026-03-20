@@ -280,13 +280,25 @@ export async function syncLeague(
   onProgress?.({ step: "asset_events", detail: "Building asset event timeline" });
   await buildAssetEvents(leagueId, league.season);
 
-  // Sync NFL roster status + injury data for this season (skips if already synced)
+  // Sync NFL roster status + injury data
+  // If part of a family, sync all family seasons to backfill historical nflverse data
   const seasonYear = parseInt(league.season, 10);
   if (!isNaN(seasonYear)) {
-    onProgress?.({ step: "nfl_data", detail: "Syncing NFL roster status, injuries & schedule" });
-    await syncRosterStatus({ seasons: [seasonYear] });
-    await syncInjuries({ seasons: [seasonYear] });
-    await syncSchedule({ seasons: [seasonYear] });
+    let seasons = [seasonYear];
+    if (familyId) {
+      const members = await db
+        .select({ season: schema.leagueFamilyMembers.season })
+        .from(schema.leagueFamilyMembers)
+        .where(eq(schema.leagueFamilyMembers.familyId, familyId));
+      const familySeasons = members.map(m => parseInt(m.season, 10)).filter(s => !isNaN(s));
+      if (familySeasons.length > 0) {
+        seasons = [...new Set(familySeasons)];
+      }
+    }
+    onProgress?.({ step: "nfl_data", detail: `Syncing NFL roster status, injuries & schedule (${seasons.length} seasons)` });
+    await syncRosterStatus({ seasons });
+    await syncInjuries({ seasons });
+    await syncSchedule({ seasons });
   }
 
   // Sync FantasyCalc dynasty trade values
