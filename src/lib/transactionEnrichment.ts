@@ -221,14 +221,20 @@ export async function enrichTransactions(
 
     for (const tuple of pickTuples) {
       const draftInfo = draftsBySeason.get(tuple.season);
-      if (!draftInfo || !draftInfo.slotToRosterId || draftInfo.status !== "complete") continue;
+      if (!draftInfo || !draftInfo.slotToRosterId || draftInfo.status !== "complete") {
+        console.warn(`[pick-resolution] Missing or incomplete draft info for season ${tuple.season}`);
+        continue;
+      }
 
       const slotMap = draftInfo.slotToRosterId;
       const teams = draftInfo.totalRosters;
       const isSnake = draftInfo.type === "snake";
 
       const originalSlot = findOriginalSlot(slotMap, tuple.roster_id);
-      if (originalSlot === null) continue;
+      if (originalSlot === null) {
+        console.warn(`[pick-resolution] Could not find original slot for roster_id=${tuple.roster_id}, season=${tuple.season}, round=${tuple.round}`);
+        continue;
+      }
 
       const pickNo = calculatePickNumber(tuple.round, originalSlot, teams, isSnake);
 
@@ -238,6 +244,8 @@ export async function enrichTransactions(
         resolvedPlayerIds.add(resolvedPlayerId);
         const key = `${tuple.season}:${tuple.round}:${tuple.roster_id}`;
         resolvedPickMap.set(key, { playerId: resolvedPlayerId, playerName: resolvedPlayerId });
+      } else {
+        console.warn(`[pick-resolution] No player found for pickNo=${pickNo}, season=${tuple.season}`);
       }
     }
 
