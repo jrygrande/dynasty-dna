@@ -1,6 +1,6 @@
 import { Sleeper } from "@/lib/sleeper";
 import { getDb, schema } from "@/db";
-import { sql } from "drizzle-orm";
+import { sql, isNull } from "drizzle-orm";
 
 const FANTASY_POSITIONS = new Set(["QB", "RB", "WR", "TE", "K", "DEF"]);
 const STALENESS_MS = 24 * 60 * 60 * 1000; // 24 hours
@@ -81,5 +81,86 @@ export async function syncPlayers(force = false): Promise<number> {
     count += values.length;
   }
 
+  // Backfill missing gsisIds from nflverse data via name matching
+  await backfillGsisIds();
+
   return count;
+}
+
+/**
+ * Backfill missing gsisIds by matching player names against nflWeeklyRosterStatus.
+ * Uses exact name match, disambiguating by position when multiple candidates exist.
+ */
+async function backfillGsisIds(): Promise<number> {
+  const db = getDb();
+
+  // Get players missing gsisId
+  const missing = await db
+    .select({
+      id: schema.players.id,
+      name: schema.players.name,
+      position: schema.players.position,
+    })
+    .from(schema.players)
+    .where(isNull(schema.players.gsisId));
+
+  if (missing.length === 0) return 0;
+
+  // Get distinct (gsisId, name, position) from nflverse roster status
+  const rosterEntries = await db
+    .selectDistinct({
+      gsisId: schema.nflWeeklyRosterStatus.gsisId,
+      name: schema.nflWeeklyRosterStatus.playerName,
+      position: schema.nflWeeklyRosterStatus.position,
+    })
+    .from(schema.nflWeeklyRosterStatus);
+
+  // Build lookup: lowercase name → [{gsisId, position}]
+  const nameMap = new Map<string, Array<{ gsisId: string; position: string | null }>>();
+  for (const r of rosterEntries) {
+    if (!r.name) continue;
+    const key = r.name.toLowerCase().trim();
+    if (!nameMap.has(key)) nameMap.set(key, []);
+    nameMap.get(key)!.push({ gsisId: r.gsisId, position: r.position });
+  }
+
+  // Match players
+  const updates: Array<{ id: string; gsisId: string }> = [];
+  for (const p of missing) {
+    const key = p.name.toLowerCase().trim();
+    const candidates = nameMap.get(key);
+    if (!candidates || candidates.length === 0) continue;
+
+    const uniqueGsis = [...new Set(candidates.map((c) => c.gsisId))];
+    if (uniqueGsis.length === 1) {
+      updates.push({ id: p.id, gsisId: uniqueGsis[0] });
+    } else {
+      // Disambiguate by position
+      const posMatch = candidates.filter((c) => c.position === p.position);
+      const posGsis = [...new Set(posMatch.map((c) => c.gsisId))];
+      if (posGsis.length === 1) {
+        updates.push({ id: p.id, gsisId: posGsis[0] });
+      }
+    }
+  }
+
+  console.log(`[backfillGsisIds] Matched ${updates.length} of ${missing.length} players missing gsisId`);
+
+  // Batch update
+  const BATCH_SIZE = 50;
+  for (let i = 0; i < updates.length; i += BATCH_SIZE) {
+    const batch = updates.slice(i, i + BATCH_SIZE);
+    try {
+      for (const u of batch) {
+        await db
+          .update(schema.players)
+          .set({ gsisId: u.gsisId })
+          .where(sql`${schema.players.id} = ${u.id}`);
+      }
+    } catch (err) {
+      console.error(`[backfillGsisIds] Error updating batch starting at index ${i}:`, err);
+    }
+  }
+
+  return updates.length;
 }
