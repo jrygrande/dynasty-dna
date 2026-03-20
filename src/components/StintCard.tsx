@@ -12,6 +12,7 @@ interface StintStats {
   ppgWhenStarted: number;
   ppgWhenActive: number;
   totalPoints: number;
+  hasNflData: boolean;
 }
 
 export interface StintData {
@@ -86,9 +87,13 @@ export function StintCard({ stint, assetKind, defaultExpanded = false }: StintCa
         <div className="mt-1 border rounded-md p-3 bg-card">
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             <StatCell label="Started" value={`${Math.round(stint.stats.pctStarted * 100)}%`} sub={`${stint.stats.gamesStarted} / ${stint.stats.totalWeeks} weeks`} />
-            <StatCell label="NFL Active" value={`${Math.round(stint.stats.pctActive * 100)}%`} sub={`${stint.stats.gamesActive} / ${stint.stats.totalGames} games`} />
+            {stint.stats.hasNflData && (
+              <StatCell label="NFL Active" value={`${Math.round(stint.stats.pctActive * 100)}%`} sub={`${stint.stats.gamesActive} / ${stint.stats.totalGames} games`} />
+            )}
             <StatCell label="PPG (started)" value={stint.stats.ppgWhenStarted.toFixed(1)} />
-            <StatCell label="PPG (active)" value={stint.stats.ppgWhenActive.toFixed(1)} />
+            {stint.stats.hasNflData && (
+              <StatCell label="PPG (active)" value={stint.stats.ppgWhenActive.toFixed(1)} />
+            )}
             <StatCell label="Total Points" value={stint.stats.totalPoints.toFixed(1)} />
             <StatCell label="Weeks" value={String(stint.stats.totalWeeks)} />
           </div>
