@@ -42,6 +42,12 @@ function formatEnrichedTx(tx: Awaited<ReturnType<typeof enrichTransactions>>[0])
   return tx;
 }
 
+function isDraftDetails(obj: unknown): obj is { pickNo: number; round: number; isKeeper: boolean } {
+  if (typeof obj !== "object" || obj === null) return false;
+  const o = obj as Record<string, unknown>;
+  return typeof o.pickNo === "number" && typeof o.round === "number" && typeof o.isKeeper === "boolean";
+}
+
 // ============================================================
 // Route handler
 // ============================================================
@@ -366,7 +372,7 @@ export async function GET(
 
   for (let i = 0; i < events.length; i++) {
     const e = events[i];
-    const details = e.details as Record<string, unknown> | null;
+    const details = e.details;
 
     const eventData: EventData = {
       id: e.id,
@@ -375,14 +381,8 @@ export async function GET(
       eventType: e.eventType,
       createdAt: e.createdAt,
       transaction: e.transactionId ? enrichedTxMap.get(e.transactionId) || null : null,
-      ...(e.eventType === "draft_selected" && details
-        ? {
-            draftDetails: {
-              pickNo: (details.pickNo as number) || 0,
-              round: (details.round as number) || 0,
-              isKeeper: (details.isKeeper as boolean) || false,
-            },
-          }
+      ...(e.eventType === "draft_selected" && isDraftDetails(details)
+        ? { draftDetails: { pickNo: details.pickNo, round: details.round, isKeeper: details.isKeeper } }
         : {}),
     };
 
