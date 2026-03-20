@@ -8,9 +8,9 @@ import { solveOptimalLineup } from "@/lib/lineup";
 
 const SLOT_SCORES = {
   followedGood: 1.0, // correct & smart
-  followedBad: 0.8, // smart but unlucky
-  brokeGood: 1.2, // insightful call
-  brokeBad: 0.3, // bad gut call
+  followedBad: 0.3, // smart but unlucky
+  brokeGood: 2.0, // insightful call
+  brokeBad: -0.5, // bad gut call
 };
 
 const GRADE_THRESHOLDS: Record<string, number> = {
