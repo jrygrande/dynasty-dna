@@ -116,10 +116,15 @@ export default function TimelinePage() {
       {/* Mobile tabs (< md) */}
       {timelines.length > 1 && (
         <div className="md:hidden border-b overflow-x-auto">
-          <div className="flex">
-            {timelines.map((t, i) => (
+          <div className="flex" role="tablist">
+            {timelines.map((t, i) => {
+              const label = t.kind === "player" ? "Player" : `${t.pickSeason} R${t.pickRound}`;
+              return (
               <button
                 key={assetKey(t)}
+                role="tab"
+                aria-selected={activeTab === i}
+                aria-label={label}
                 onClick={() => setActiveTab(i)}
                 className={`px-4 py-2 text-sm whitespace-nowrap border-b-2 transition-colors ${
                   activeTab === i
@@ -127,9 +132,7 @@ export default function TimelinePage() {
                     : "border-transparent text-muted-foreground"
                 }`}
               >
-                {t.kind === "player"
-                  ? `Player`
-                  : `${t.pickSeason} R${t.pickRound}`}
+                {label}
                 {i > 0 && (
                   <span
                     onClick={(e) => {
@@ -142,7 +145,8 @@ export default function TimelinePage() {
                   </span>
                 )}
               </button>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
