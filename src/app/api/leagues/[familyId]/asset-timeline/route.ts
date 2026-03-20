@@ -24,6 +24,7 @@ interface StintData {
     ppgWhenStarted: number;
     ppgWhenActive: number;
     totalPoints: number;
+    hasNflData: boolean;
   } | null;
 }
 
@@ -61,6 +62,14 @@ export async function GET(
       { error: "Provide playerId or pickSeason+pickRound+pickOriginalRosterId" },
       { status: 400 }
     );
+  }
+
+  // Validate numeric params
+  if (pickRound && isNaN(parseInt(pickRound, 10))) {
+    return NextResponse.json({ error: "pickRound must be a number" }, { status: 400 });
+  }
+  if (pickOriginalRosterId && isNaN(parseInt(pickOriginalRosterId, 10))) {
+    return NextResponse.json({ error: "pickOriginalRosterId must be a number" }, { status: 400 });
   }
 
   // Resolve family
@@ -329,16 +338,19 @@ export async function GET(
         ? activeStartedScoring.reduce((sum, r) => sum + (r.points || 0), 0) / activeStartedScoring.length
         : 0;
 
+      const hasNflData = nflStatusRows.length > 0;
+
       stint.stats = {
         totalWeeks,
         gamesStarted,
         gamesActive,
         totalGames,
         pctStarted: totalWeeks > 0 ? gamesStarted / totalWeeks : 0,
-        pctActive: totalGames > 0 ? gamesActive / totalGames : 0,
+        pctActive: hasNflData && totalGames > 0 ? gamesActive / totalGames : 0,
         ppgWhenStarted: gamesStarted > 0 ? starterPoints / gamesStarted : 0,
-        ppgWhenActive,
+        ppgWhenActive: hasNflData ? ppgWhenActive : 0,
         totalPoints,
+        hasNflData,
       };
     }
   }
