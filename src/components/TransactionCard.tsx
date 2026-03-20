@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { AssetIdentifier } from "./AssetTimeline";
 
 interface TransactionAdd {
   playerId: string;
@@ -145,14 +146,30 @@ function GradeContext({ productionWeight }: { productionWeight: number | null })
   );
 }
 
-export function TransactionCard({ tx, familyId }: { tx: TransactionData; familyId?: string }) {
+export function TransactionCard({ tx, familyId, onAssetClick }: {
+  tx: TransactionData;
+  familyId?: string;
+  onAssetClick?: (asset: AssetIdentifier) => void;
+}) {
   if (tx.type === "trade") {
-    return <TradeCard tx={tx} familyId={familyId} />;
+    return <TradeCard tx={tx} familyId={familyId} onAssetClick={onAssetClick} />;
   }
   return <SimpleTransactionCard tx={tx} familyId={familyId} />;
 }
 
-function TradeCard({ tx, familyId }: { tx: TransactionData; familyId?: string }) {
+function TimelineIcon({ onClick }: { onClick: () => void }) {
+  return (
+    <span
+      onClick={(e) => { e.preventDefault(); e.stopPropagation(); onClick(); }}
+      className="text-xs text-muted-foreground hover:text-foreground ml-1 cursor-pointer inline-block"
+      title="Open timeline"
+    >
+      &#x2197;
+    </span>
+  );
+}
+
+function TradeCard({ tx, familyId, onAssetClick }: { tx: TransactionData; familyId?: string; onAssetClick?: (asset: AssetIdentifier) => void }) {
   // Group adds/drops/picks by roster to show two-column trade layout
   const rosterIds = tx.managers.map((m) => m.rosterId);
   const gradesByRoster = new Map(
@@ -217,6 +234,9 @@ function TradeCard({ tx, familyId }: { tx: TransactionData; familyId?: string })
                 {side.received.map((a) => (
                   <p key={a.playerId} className="text-sm text-green-600 dark:text-green-400">
                     + <PlayerLink playerId={a.playerId} playerName={a.playerName} familyId={familyId} />
+                    {onAssetClick && (
+                      <TimelineIcon onClick={() => onAssetClick({ kind: "player", playerId: a.playerId })} />
+                    )}
                   </p>
                 ))}
               </div>
@@ -239,6 +259,9 @@ function TradeCard({ tx, familyId }: { tx: TransactionData; familyId?: string })
                         &rarr; <PlayerLink playerId={p.resolvedPlayerId!} playerName={p.resolvedPlayerName} familyId={familyId} className="text-xs text-muted-foreground" />
                       </span>
                     )}
+                    {onAssetClick && (
+                      <TimelineIcon onClick={() => onAssetClick({ kind: "pick", pickSeason: p.season, pickRound: p.round, pickOriginalRosterId: p.originalRosterId })} />
+                    )}
                   </p>
                 ))}
               </div>
@@ -249,6 +272,9 @@ function TradeCard({ tx, familyId }: { tx: TransactionData; familyId?: string })
                 {side.sent.map((d) => (
                   <p key={d.playerId} className="text-sm text-red-600 dark:text-red-400">
                     - <PlayerLink playerId={d.playerId} playerName={d.playerName} familyId={familyId} />
+                    {onAssetClick && (
+                      <TimelineIcon onClick={() => onAssetClick({ kind: "player", playerId: d.playerId })} />
+                    )}
                   </p>
                 ))}
               </div>
@@ -270,6 +296,9 @@ function TradeCard({ tx, familyId }: { tx: TransactionData; familyId?: string })
                       <span className="text-xs text-muted-foreground ml-1">
                         &rarr; <PlayerLink playerId={p.resolvedPlayerId!} playerName={p.resolvedPlayerName} familyId={familyId} className="text-xs text-muted-foreground" />
                       </span>
+                    )}
+                    {onAssetClick && (
+                      <TimelineIcon onClick={() => onAssetClick({ kind: "pick", pickSeason: p.season, pickRound: p.round, pickOriginalRosterId: p.originalRosterId })} />
                     )}
                   </p>
                 ))}

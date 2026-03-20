@@ -183,12 +183,18 @@ export default function PlayerDetailPage() {
           >
             &larr; League
           </Link>
-          <div>
+          <div className="flex-1">
             <h1 className="text-2xl font-bold">{player.name}</h1>
             <div className="text-sm text-muted-foreground">
               {player.position} {player.team ? `— ${player.team}` : ""}
             </div>
           </div>
+          <Link
+            href={`/league/${familyId}/timeline?playerId=${playerId}`}
+            className="text-sm text-muted-foreground hover:text-foreground ml-auto"
+          >
+            Timeline &rarr;
+          </Link>
         </div>
       </header>
 
