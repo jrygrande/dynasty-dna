@@ -39,6 +39,15 @@ export default function TimelinePage() {
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const columnRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const rafIdRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (rafIdRef.current !== null) {
+        cancelAnimationFrame(rafIdRef.current);
+      }
+    };
+  }, []);
 
   const handleAssetClick = useCallback(
     (asset: AssetIdentifier) => {
@@ -62,7 +71,8 @@ export default function TimelinePage() {
       setActiveTab(timelines.length); // new index
 
       // Scroll into view after render
-      requestAnimationFrame(() => {
+      rafIdRef.current = requestAnimationFrame(() => {
+        rafIdRef.current = null;
         const el = columnRefs.current.get(key);
         if (el) el.scrollIntoView({ behavior: "smooth", inline: "start" });
       });
