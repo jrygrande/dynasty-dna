@@ -75,7 +75,7 @@ export function StintCard({ stint, assetKind, defaultExpanded = false }: StintCa
         {hasStats && !expanded && stint.stats && (
           <div className="flex gap-4 mt-1 text-xs text-muted-foreground">
             <span>{stint.stats.totalWeeks} weeks</span>
-            <span>{Math.round(stint.stats.pctStarted * 100)}% started</span>
+            <span>{Math.round(Math.min(stint.stats.pctStarted, 1) * 100)}% started</span>
             <span>{stint.stats.ppgWhenStarted.toFixed(1)} PPG</span>
             <span>{stint.stats.totalPoints.toFixed(1)} pts</span>
           </div>
@@ -86,7 +86,7 @@ export function StintCard({ stint, assetKind, defaultExpanded = false }: StintCa
       {expanded && stint.stats && (
         <div className="mt-1 border rounded-md p-3 bg-card">
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-            <StatCell label="Started" value={`${Math.round(stint.stats.pctStarted * 100)}%`} sub={`${stint.stats.gamesStarted} / ${stint.stats.totalWeeks} weeks`} />
+            <StatCell label="Started" value={`${Math.round(Math.min(stint.stats.pctStarted, 1) * 100)}%`} sub={`${stint.stats.gamesStarted} / ${stint.stats.totalWeeks} weeks`} />
             {stint.stats.hasNflData && (
               <StatCell label="NFL Active" value={`${Math.round(stint.stats.pctActive * 100)}%`} sub={`${stint.stats.gamesActive} / ${stint.stats.totalGames} games`} />
             )}
