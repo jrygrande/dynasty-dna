@@ -9,6 +9,7 @@ import { syncSchedule } from "@/services/scheduleSync";
 import { syncFantasyCalcValues } from "@/services/fantasyCalcSync";
 import { gradeLeagueTrades } from "@/services/tradeGrading";
 import { gradeLeagueLineups } from "@/services/lineupGrading";
+import { rollupManagerGrades } from "@/services/managerGrades";
 
 interface SyncProgress {
   step: string;
@@ -373,5 +374,11 @@ export async function syncLeagueFamily(
     }
 
     await syncLeague(leagueId, onProgress, familyId);
+  }
+
+  // Roll up all_time + overall_score after all per-league grading is done
+  if (familyId) {
+    onProgress?.({ step: "manager_grades", detail: "Computing career manager grades" });
+    await rollupManagerGrades(familyId);
   }
 }
