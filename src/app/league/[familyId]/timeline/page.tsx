@@ -72,12 +72,18 @@ export default function TimelinePage() {
 
   const handleClose = useCallback(
     (idx: number) => {
-      setTimelines((prev) => prev.filter((_, i) => i !== idx));
-      if (activeTab >= idx && activeTab > 0) {
-        setActiveTab(activeTab - 1);
-      }
+      setTimelines((prev) => {
+        const newTimelines = prev.filter((_, i) => i !== idx);
+        setActiveTab((current) =>
+          Math.min(
+            current >= idx && current > 0 ? current - 1 : current,
+            newTimelines.length - 1
+          )
+        );
+        return newTimelines;
+      });
     },
-    [activeTab]
+    []
   );
 
   // Register column ref
