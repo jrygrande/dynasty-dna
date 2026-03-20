@@ -8,6 +8,8 @@ import { syncInjuries } from "@/services/injurySync";
 import { syncSchedule } from "@/services/scheduleSync";
 import { syncFantasyCalcValues } from "@/services/fantasyCalcSync";
 import { gradeLeagueTrades } from "@/services/tradeGrading";
+import { gradeLeagueLineups } from "@/services/lineupGrading";
+import { rollupManagerGrades } from "@/services/managerGrades";
 
 interface SyncProgress {
   step: string;
@@ -311,6 +313,14 @@ export async function syncLeague(
     await gradeLeagueTrades(leagueId, familyId, { syncedAt: syncedAt ?? undefined });
   }
 
+  // Grade lineups (non-critical — don't block sync on failure)
+  onProgress?.({ step: "lineup_grades", detail: "Grading lineups" });
+  try {
+    await gradeLeagueLineups(leagueId);
+  } catch (err) {
+    console.warn(`[sync] Lineup grading failed for ${leagueId}:`, err);
+  }
+
   onProgress?.({ step: "complete", detail: "Sync complete" });
 }
 
@@ -368,5 +378,15 @@ export async function syncLeagueFamily(
     }
 
     await syncLeague(leagueId, onProgress, familyId);
+  }
+
+  // Roll up all_time + overall_score after all per-league grading is done
+  if (familyId) {
+    onProgress?.({ step: "manager_grades", detail: "Computing career manager grades" });
+    try {
+      await rollupManagerGrades(familyId);
+    } catch (err) {
+      console.warn(`[sync] Manager grade rollup failed for family ${familyId}:`, err);
+    }
   }
 }

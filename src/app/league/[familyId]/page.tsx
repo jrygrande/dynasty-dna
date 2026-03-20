@@ -3,6 +3,10 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
+import {
+  LineupEfficiencyCard,
+  type RosterGrade,
+} from "@/components/LineupEfficiencyCard";
 
 interface Roster {
   rosterId: number;
@@ -42,6 +46,7 @@ export default function LeagueOverviewPage() {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [selectedSeason, setSelectedSeason] = useState<string | null>(null);
+  const [lineupGrades, setLineupGrades] = useState<RosterGrade[] | null>(null);
 
   useEffect(() => {
     loadLeagueData();
@@ -55,6 +60,11 @@ export default function LeagueOverviewPage() {
       const result = await res.json();
       setData(result);
       setLoading(false);
+      // Fetch lineup grades in background
+      fetch(`/api/leagues/${familyId}/lineup-grades${seasonQuery}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((r) => setLineupGrades(r?.rosters || null))
+        .catch(() => setLineupGrades(null));
     } else if (res.status === 404) {
       // League not synced yet — auto-sync it
       setSyncing(true);
@@ -237,6 +247,13 @@ export default function LeagueOverviewPage() {
             </table>
           </div>
         </section>
+
+        {/* Lineup Efficiency */}
+        {lineupGrades && lineupGrades.length > 0 && (
+          <div className="mt-8">
+            <LineupEfficiencyCard rosters={lineupGrades} />
+          </div>
+        )}
       </main>
     </div>
   );
