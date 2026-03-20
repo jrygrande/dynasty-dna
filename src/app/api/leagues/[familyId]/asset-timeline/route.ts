@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, schema } from "@/db";
-import { and, inArray, sql } from "drizzle-orm";
+import { eq, and, inArray, sql } from "drizzle-orm";
 import { enrichTransactions, buildRosterOwnerMap } from "@/lib/transactionEnrichment";
 import { resolveFamily } from "@/lib/familyResolution";
 
