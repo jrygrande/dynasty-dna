@@ -8,6 +8,7 @@ import { syncInjuries } from "@/services/injurySync";
 import { syncSchedule } from "@/services/scheduleSync";
 import { syncFantasyCalcValues } from "@/services/fantasyCalcSync";
 import { gradeLeagueTrades } from "@/services/tradeGrading";
+import { gradeLeagueLineups } from "@/services/lineupGrading";
 
 interface SyncProgress {
   step: string;
@@ -310,6 +311,10 @@ export async function syncLeague(
     onProgress?.({ step: "trade_grades", detail: "Grading trades" });
     await gradeLeagueTrades(leagueId, familyId, { syncedAt: syncedAt ?? undefined });
   }
+
+  // Grade lineups
+  onProgress?.({ step: "lineup_grades", detail: "Grading lineups" });
+  await gradeLeagueLineups(leagueId);
 
   onProgress?.({ step: "complete", detail: "Sync complete" });
 }
