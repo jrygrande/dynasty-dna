@@ -453,6 +453,42 @@ export const tradeGrades = pgTable(
   })
 );
 
+export const draftGrades = pgTable(
+  "draft_grades",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    draftId: text("draft_id")
+      .notNull()
+      .references(() => drafts.id, { onDelete: "cascade" }),
+    pickNo: integer("pick_no").notNull(),
+    rosterId: integer("roster_id").notNull(),
+    playerId: text("player_id"),
+    // FantasyCalc component
+    valueScore: real("value_score"),
+    playerValue: real("player_value"),
+    benchmarkValue: real("benchmark_value"),
+    // Production component
+    productionScore: real("production_score"),
+    playerProduction: real("player_production"),
+    benchmarkProduction: real("benchmark_production"),
+    // Blended result
+    blendedScore: real("blended_score"),
+    productionWeight: real("production_weight"),
+    grade: text("grade"),
+    benchmarkSize: integer("benchmark_size"),
+    computedAt: timestamp("computed_at", { mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (dg) => ({
+    draftIdx: index("draft_grades_draft_idx").on(dg.draftId),
+    uniquePick: uniqueIndex("draft_grades_unique_idx").on(
+      dg.draftId,
+      dg.pickNo,
+    ),
+  })
+);
+
 export const managerMetrics = pgTable(
   "manager_metrics",
   {

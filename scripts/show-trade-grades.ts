@@ -11,9 +11,11 @@ import * as schema from "../src/db/schema";
 import {
   gradeLeagueTrades,
   resolvePickValue,
+} from "../src/services/tradeGrading";
+import {
   effectiveValue,
   GRADE_CONFIG,
-} from "../src/services/tradeGrading";
+} from "../src/services/gradingCore";
 import { syncFantasyCalcValues } from "../src/services/fantasyCalcSync";
 
 // Patch getDb to use our script's DB connection

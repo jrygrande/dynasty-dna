@@ -4,6 +4,13 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 
+interface PickGrade {
+  grade: string;
+  blendedScore: number | null;
+  valueScore: number | null;
+  productionScore: number | null;
+}
+
 interface DraftPick {
   pickNo: number;
   round: number;
@@ -13,6 +20,15 @@ interface DraftPick {
   playerName: string;
   position: string | null;
   isKeeper: boolean | null;
+  grade: PickGrade | null;
+}
+
+interface ManagerGradeSummary {
+  rosterId: number;
+  managerName: string;
+  avgScore: number;
+  grade: string;
+  picksGraded: number;
 }
 
 interface DraftData {
@@ -22,6 +38,7 @@ interface DraftData {
   rounds: number;
   picks: DraftPick[];
   rosterNames: Record<string, string>;
+  managerGrades: ManagerGradeSummary[];
 }
 
 interface DraftsResponse {
@@ -37,6 +54,8 @@ const POSITION_COLORS: Record<string, string> = {
   K: "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400",
   DEF: "bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400",
 };
+
+import { GradeBadge } from "@/components/GradeBadge";
 
 export default function DraftsPage() {
   const params = useParams();
@@ -129,6 +148,34 @@ export default function DraftsPage() {
   );
 }
 
+function ManagerGradeCards({ grades }: { grades: ManagerGradeSummary[] }) {
+  if (grades.length === 0) return null;
+
+  return (
+    <div className="mb-4">
+      <h3 className="text-sm font-medium text-muted-foreground mb-2">
+        Manager Draft Grades
+      </h3>
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
+        {grades.map((mg) => (
+          <div
+            key={mg.rosterId}
+            className="flex items-center gap-2 p-2 rounded-lg border bg-card"
+          >
+            <GradeBadge grade={mg.grade} />
+            <div className="min-w-0">
+              <p className="text-sm font-medium truncate">{mg.managerName}</p>
+              <p className="text-xs text-muted-foreground">
+                {mg.picksGraded} picks
+              </p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function DraftBoard({ draft, familyId }: { draft: DraftData; familyId: string }) {
   // Build grid: rows = rounds, columns = pick order within round
   const picksByRound = new Map<number, DraftPick[]>();
@@ -152,6 +199,8 @@ function DraftBoard({ draft, familyId }: { draft: DraftData; familyId: string })
           {draft.type} &middot; {draft.rounds} rounds
         </span>
       </div>
+
+      <ManagerGradeCards grades={draft.managerGrades || []} />
 
       <div className="border rounded-lg overflow-x-auto">
         <table className="w-full text-sm">
@@ -201,6 +250,9 @@ function DraftBoard({ draft, familyId }: { draft: DraftData; familyId: string })
                             <span className="font-medium text-sm truncate">
                               {pick.playerName}
                             </span>
+                          )}
+                          {pick.grade && (
+                            <GradeBadge grade={pick.grade.grade} size="xs" />
                           )}
                         </div>
                         <p className="text-xs text-muted-foreground truncate">

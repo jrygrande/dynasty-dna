@@ -2,78 +2,29 @@ import { getDb, schema } from "@/db";
 import { eq, and, inArray } from "drizzle-orm";
 import { syncFantasyCalcValues } from "@/services/fantasyCalcSync";
 import { findOriginalSlot, calculatePickNumber, resolveDraftPicks } from "@/lib/draft";
+import {
+  GRADE_CONFIG,
+  productionWeight,
+  scoreToGrade,
+  normalizeScore,
+  playerProductionScore,
+  computeSeasonalRanks,
+  loadLeagueScoringConfig,
+  loadFamilyLeagueMap,
+  loadFantasyCalcSnapshot,
+} from "@/services/gradingCore";
 
 // ============================================================
-// Grade Configuration
+// Draft pick resolution
 // ============================================================
-
-export const GRADE_CONFIG = {
-  blendCap: 0.9,
-  blendHalflife: 0.8,
-  valueScaling: 10000,
-  productionScaling: 300,
-  thresholds: {
-    "A+": 72,
-    A: 64,
-    "B+": 58,
-    B: 54,
-    C: 44,
-    D: 40,
-    "D-": 34,
-  } as Record<string, number>,
-};
-
-// ============================================================
-// Value floor (FantasyCalc values already encode non-linearity)
-// The VALUE_FLOOR clips noise from low-value assets — analogous to
-// the positional RANK_FLOOR below but applied to FantasyCalc values.
-// ============================================================
-
-const VALUE_FLOOR = 300;
-
-export function effectiveValue(raw: number): number {
-  return Math.max(0, raw - VALUE_FLOOR);
-}
-
-// ============================================================
-// Rank-based production curve
-// ============================================================
-
-const RANK_DECAY = 0.08;
-
-/** Players ranked outside the relevant starter pool produce no meaningful signal */
-const RANK_FLOOR: Record<string, number> = {
-  QB: 32,
-  RB: 30,
-  WR: 48,
-  TE: 24,
-};
 
 /** Fallback pick values when FantasyCalc has no PICK entries */
-const DEFAULT_ROUND_AVERAGES: Record<number, number> = {
+export const DEFAULT_ROUND_AVERAGES: Record<number, number> = {
   1: 6000,
   2: 2500,
   3: 1000,
   4: 250,
 };
-
-export function rankToProductionValue(
-  rank: number,
-  activeWeeks: number,
-  position: string,
-  totalWeeks: number = 18,
-): number {
-  const maxRank = RANK_FLOOR[position];
-  if (maxRank && rank > maxRank) return 0;
-
-  const rankValue = 100 * Math.exp(-RANK_DECAY * (rank - 1));
-  const availability = Math.min(1, activeWeeks / totalWeeks);
-  return rankValue * availability;
-}
-
-// ============================================================
-// Draft pick resolution
-// ============================================================
 
 export interface PickResolution {
   value: number;
@@ -131,34 +82,6 @@ export function resolvePickValue(
   }
 
   return { value: 0, resolved: "missing" };
-}
-
-// ============================================================
-// Blend helpers
-// ============================================================
-
-export function productionWeight(weeksElapsed: number): number {
-  const years = weeksElapsed / 52;
-  if (years <= 0) return 0;
-  return (
-    GRADE_CONFIG.blendCap * years / (years + GRADE_CONFIG.blendHalflife)
-  );
-}
-
-function clamp(val: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, val));
-}
-
-function scoreToGrade(score: number): string {
-  const t = GRADE_CONFIG.thresholds;
-  if (score >= t["A+"]) return "A+";
-  if (score >= t["A"]) return "A";
-  if (score >= t["B+"]) return "B+";
-  if (score >= t["B"]) return "B";
-  if (score >= t["C"]) return "C";
-  if (score >= t["D"]) return "D";
-  if (score >= t["D-"]) return "D-";
-  return "F";
 }
 
 // ============================================================
@@ -240,177 +163,15 @@ export function computeValueScores(
     }
 
     const diff = valueReceived - valueSent;
-    const valueScore =
-      50 + clamp(diff / GRADE_CONFIG.valueScaling, -1, 1) * 50;
+    const valueScore = normalizeScore(diff, GRADE_CONFIG.valueScaling);
 
     results.set(rosterId, {
-      valueScore: clamp(valueScore, 0, 100),
+      valueScore,
       rawValue: valueReceived,
     });
   }
 
   return results;
-}
-
-// ============================================================
-// Seasonal ranks (pre-computed once per grading run)
-// ============================================================
-
-export async function computeSeasonalRanks(
-  familyLeagueIds: string[],
-  leagueSeasonMap: Map<string, string>,
-): Promise<{
-  ranks: Map<string, Map<string, number>>; // "season:position" → (playerId → rank)
-  games: Map<string, Map<string, number>>; // "season" → (playerId → gamesPlayed)
-  activeWeeks: Map<string, Map<string, number>>; // "season" → (playerId → activeWeekCount)
-  positions: Map<string, string>; // playerId → position
-}> {
-  const db = getDb();
-  const ranks = new Map<string, Map<string, number>>();
-  const games = new Map<string, Map<string, number>>();
-  const activeWeeks = new Map<string, Map<string, number>>();
-  const positions = new Map<string, string>();
-
-  if (familyLeagueIds.length === 0) return { ranks, games, activeWeeks, positions };
-
-  const scoreRows = await db
-    .select({
-      playerId: schema.playerScores.playerId,
-      points: schema.playerScores.points,
-      week: schema.playerScores.week,
-      leagueId: schema.playerScores.leagueId,
-      position: schema.players.position,
-    })
-    .from(schema.playerScores)
-    .innerJoin(
-      schema.players,
-      eq(schema.playerScores.playerId, schema.players.id),
-    )
-    .where(
-      and(
-        inArray(schema.playerScores.leagueId, familyLeagueIds),
-        inArray(schema.players.position, ["QB", "RB", "WR", "TE"]),
-      ),
-    );
-
-  // Group by season → player → { totalPoints, weeks set }
-  const seasonPlayerStats = new Map<
-    string,
-    Map<string, { totalPoints: number; weeks: Set<number>; position: string }>
-  >();
-
-  for (const row of scoreRows) {
-    const season = leagueSeasonMap.get(row.leagueId);
-    if (!season || !row.position) continue;
-
-    positions.set(row.playerId, row.position);
-
-    if (!seasonPlayerStats.has(season)) {
-      seasonPlayerStats.set(season, new Map());
-    }
-    const playerMap = seasonPlayerStats.get(season)!;
-
-    if (!playerMap.has(row.playerId)) {
-      playerMap.set(row.playerId, {
-        totalPoints: 0,
-        weeks: new Set(),
-        position: row.position,
-      });
-    }
-    const stats = playerMap.get(row.playerId)!;
-    stats.totalPoints += row.points || 0;
-    stats.weeks.add(row.week);
-  }
-
-  // For each season, compute PPG ranks per position + games played
-  for (const [season, playerMap] of seasonPlayerStats) {
-    // Build games map for this season
-    if (!games.has(season)) {
-      games.set(season, new Map());
-    }
-    const seasonGames = games.get(season)!;
-
-    // Group by position for ranking
-    const byPosition = new Map<
-      string,
-      Array<{ playerId: string; ppg: number }>
-    >();
-
-    for (const [playerId, stats] of playerMap) {
-      const gamesPlayed = stats.weeks.size;
-      seasonGames.set(playerId, gamesPlayed);
-
-      // Filter to players with >= 3 scored weeks
-      if (gamesPlayed < 3) continue;
-
-      const ppg = stats.totalPoints / gamesPlayed;
-      if (!byPosition.has(stats.position)) {
-        byPosition.set(stats.position, []);
-      }
-      byPosition.get(stats.position)!.push({ playerId, ppg });
-    }
-
-    // Rank by PPG within position
-    for (const [position, players] of byPosition) {
-      players.sort((a, b) => b.ppg - a.ppg);
-      const key = `${season}:${position}`;
-      if (!ranks.has(key)) {
-        ranks.set(key, new Map());
-      }
-      const rankMap = ranks.get(key)!;
-      for (let i = 0; i < players.length; i++) {
-        rankMap.set(players[i].playerId, i + 1);
-      }
-    }
-  }
-
-  // Pre-compute active NFL roster weeks per player per season
-  // Join gsisId from players table to map back to Sleeper player IDs
-  const playerGsisRows = await db
-    .select({ id: schema.players.id, gsisId: schema.players.gsisId })
-    .from(schema.players)
-    .where(inArray(schema.players.position, ["QB", "RB", "WR", "TE"]));
-
-  const gsisToPlayerId = new Map<string, string>();
-  for (const row of playerGsisRows) {
-    if (row.gsisId) gsisToPlayerId.set(row.gsisId, row.id);
-  }
-
-  if (gsisToPlayerId.size > 0) {
-    // Filter roster status to only relevant seasons
-    const relevantSeasons = [
-      ...new Set(Array.from(leagueSeasonMap.values()).map((s) => parseInt(s, 10))),
-    ].filter((s) => !isNaN(s));
-
-    const statusConditions = [
-      eq(schema.nflWeeklyRosterStatus.status, "ACT"),
-    ];
-    if (relevantSeasons.length > 0) {
-      statusConditions.push(
-        inArray(schema.nflWeeklyRosterStatus.season, relevantSeasons),
-      );
-    }
-
-    const statusRows = await db
-      .select({
-        gsisId: schema.nflWeeklyRosterStatus.gsisId,
-        season: schema.nflWeeklyRosterStatus.season,
-        week: schema.nflWeeklyRosterStatus.week,
-      })
-      .from(schema.nflWeeklyRosterStatus)
-      .where(and(...statusConditions));
-
-    for (const row of statusRows) {
-      const playerId = gsisToPlayerId.get(row.gsisId);
-      if (!playerId) continue;
-      const seasonStr = String(row.season);
-      if (!activeWeeks.has(seasonStr)) activeWeeks.set(seasonStr, new Map());
-      const seasonMap = activeWeeks.get(seasonStr)!;
-      seasonMap.set(playerId, (seasonMap.get(playerId) || 0) + 1);
-    }
-  }
-
-  return { ranks, games, activeWeeks, positions };
 }
 
 // ============================================================
@@ -427,38 +188,6 @@ type PickResolver = (pick: {
   round: number;
   roster_id: number;
 }) => PickResolution;
-
-function playerProductionScore(
-  playerId: string,
-  tradeSeason: number,
-  currentYear: number,
-  seasonalRanks: Map<string, Map<string, number>>,
-  seasonalActiveWeeks: Map<string, Map<string, number>>,
-  playerPositions: Map<string, string>,
-): number {
-  const position = playerPositions.get(playerId);
-  if (!position) return 0;
-
-  let total = 0;
-
-  // Sum across all post-trade seasons
-  for (let season = tradeSeason; season <= currentYear; season++) {
-    const seasonStr = String(season);
-    const rankKey = `${seasonStr}:${position}`;
-    const rankMap = seasonalRanks.get(rankKey);
-    const awMap = seasonalActiveWeeks.get(seasonStr);
-
-    if (!rankMap) continue;
-
-    const rank = rankMap.get(playerId);
-    if (rank === undefined) continue;
-
-    const activeWeekCount = awMap?.get(playerId) ?? 0;
-    total += rankToProductionValue(rank, activeWeekCount, position);
-  }
-
-  return total;
-}
 
 export function computeProductionScores(
   trade: {
@@ -487,8 +216,8 @@ export function computeProductionScores(
   const currentYear = new Date().getFullYear();
 
   // Resolve draft pick players for production scoring
-  const pickReceivedPlayers = new Map<number, string[]>(); // rosterId → playerIds received via picks
-  const pickSentPlayers = new Map<number, string[]>(); // rosterId → playerIds sent via picks
+  const pickReceivedPlayers = new Map<number, string[]>();
+  const pickSentPlayers = new Map<number, string[]>();
   if (pickResolver && trade.draftPicks) {
     for (const dp of trade.draftPicks) {
       const resolution = pickResolver({
@@ -497,11 +226,9 @@ export function computeProductionScores(
         roster_id: dp.roster_id,
       });
       if (resolution.resolved === "player" && resolution.playerId) {
-        // owner_id received this pick's player
         const received = pickReceivedPlayers.get(dp.owner_id) || [];
         received.push(resolution.playerId);
         pickReceivedPlayers.set(dp.owner_id, received);
-        // previous_owner_id sent this pick's player
         const sent = pickSentPlayers.get(dp.previous_owner_id) || [];
         sent.push(resolution.playerId);
         pickSentPlayers.set(dp.previous_owner_id, sent);
@@ -510,13 +237,11 @@ export function computeProductionScores(
   }
 
   for (const rosterId of trade.rosterIds) {
-    // Players received
     const receivedPlayerIds = Object.entries(trade.adds)
       .filter(([, rid]) => rid === rosterId)
       .map(([pid]) => pid);
     receivedPlayerIds.push(...(pickReceivedPlayers.get(rosterId) || []));
 
-    // Players sent
     const sentPlayerIds = Object.entries(trade.drops)
       .filter(([, rid]) => rid === rosterId)
       .map(([pid]) => pid);
@@ -534,7 +259,6 @@ export function computeProductionScores(
         playerPositions,
       );
       productionReceived += score;
-      // Count actual active NFL roster weeks across post-trade seasons
       for (let season = resolvedSeason; season <= currentYear; season++) {
         const awMap = seasonalActiveWeeks.get(String(season));
         weeksUsed += awMap?.get(playerId) ?? 0;
@@ -554,11 +278,10 @@ export function computeProductionScores(
     }
 
     const delta = productionReceived - productionSent;
-    const productionScore =
-      50 + clamp(delta / GRADE_CONFIG.productionScaling, -1, 1) * 50;
+    const productionScore = normalizeScore(delta, GRADE_CONFIG.productionScaling);
 
     results.set(rosterId, {
-      productionScore: clamp(productionScore, 0, 100),
+      productionScore,
       weeksUsed,
     });
   }
@@ -567,7 +290,7 @@ export function computeProductionScores(
 }
 
 /** Fallback: derive trade season from timestamp when league season is unavailable */
-function fallbackTradeSeason(createdAt: number): number {
+export function fallbackTradeSeason(createdAt: number): number {
   const d = new Date(createdAt);
   const year = d.getFullYear();
   return d.getMonth() < 3 ? year - 1 : year;
@@ -584,68 +307,20 @@ export async function gradeLeagueTrades(
 ): Promise<number> {
   const db = getDb();
 
-  // Reuse a previously-synced timestamp if provided (avoids redundant syncs
-  // when grading multiple leagues in the same family)
   const syncedAt = opts?.syncedAt ?? await syncFantasyCalcValues(leagueId, { force: true });
   if (!syncedAt) {
     console.warn("[tradeGrading] Failed to sync FantasyCalc values");
     return 0;
   }
 
-  // Read league settings to determine sf/ppr for snapshot query
-  const [leagueSettings] = await db
-    .select({
-      scoringSettings: schema.leagues.scoringSettings,
-      rosterPositions: schema.leagues.rosterPositions,
-    })
-    .from(schema.leagues)
-    .where(eq(schema.leagues.id, leagueId))
-    .limit(1);
-
-  const scoring = leagueSettings?.scoringSettings as Record<string, number> | null;
-  const ppr = scoring?.rec ?? 0.5;
-  const rosterPositions = (leagueSettings?.rosterPositions as string[]) || [];
-  const isSuperFlex = rosterPositions.includes("SUPER_FLEX");
-
-  // Get all family league IDs and their seasons
-  const familyMembers = await db
-    .select({
-      leagueId: schema.leagueFamilyMembers.leagueId,
-      season: schema.leagueFamilyMembers.season,
-    })
-    .from(schema.leagueFamilyMembers)
-    .where(eq(schema.leagueFamilyMembers.familyId, familyId));
-
-  const familyLeagueIds = familyMembers.map((m) => m.leagueId);
+  const { ppr, isSuperFlex } = await loadLeagueScoringConfig(leagueId);
+  const { familyLeagueIds, leagueSeasonMap } = await loadFamilyLeagueMap(familyId);
   if (familyLeagueIds.length === 0) return 0;
 
-  const leagueSeasonMap = new Map<string, string>(
-    familyMembers.map((m) => [m.leagueId, m.season]),
-  );
+  const snapshot = await loadFantasyCalcSnapshot(isSuperFlex, ppr);
 
-  // Use snapshot filtered by league's sf/ppr settings (not fetchedAt)
-  const snapshotRows = await db
-    .select({
-      playerId: schema.fantasyCalcValues.playerId,
-      value: schema.fantasyCalcValues.value,
-    })
-    .from(schema.fantasyCalcValues)
-    .where(
-      and(
-        eq(schema.fantasyCalcValues.isSuperFlex, isSuperFlex),
-        eq(schema.fantasyCalcValues.ppr, ppr),
-      ),
-    );
-
-  const snapshot = new Map<string, number>();
-  for (const row of snapshotRows) {
-    snapshot.set(row.playerId, effectiveValue(row.value));
-  }
-
-  // Load drafts + draft picks via shared helper
   const { draftsBySeason, draftPicksMap } = await resolveDraftPicks(familyLeagueIds);
 
-  // Compute round averages from FantasyCalc PICK entries
   const roundAverages = new Map<number, number>();
   const pickValRows = await db
     .select({
@@ -706,11 +381,9 @@ export async function gradeLeagueTrades(
       roundAverages,
     );
 
-  // Pre-compute seasonal ranks once for all trades (also returns player positions)
   const { ranks: seasonalRanks, activeWeeks: seasonalActiveWeeks, positions: playerPositions } =
     await computeSeasonalRanks(familyLeagueIds, leagueSeasonMap);
 
-  // Get all trade transactions for this league
   const trades = await db
     .select()
     .from(schema.transactions)
@@ -743,20 +416,17 @@ export async function gradeLeagueTrades(
     );
     const pw = productionWeight(weeksElapsed);
 
-    // Use the league's season field instead of month-based heuristic
     const leagueSeason = leagueSeasonMap.get(trade.leagueId);
     const tradeSeason = leagueSeason
       ? parseInt(leagueSeason, 10)
       : fallbackTradeSeason(tradeTimestamp);
 
-    // Value scores
     const valueScores = computeValueScores(
       { adds, drops, draftPicks, rosterIds },
       snapshot,
       pickResolver,
     );
 
-    // Production scores (skip for very recent trades)
     let productionScores: Map<number, ProductionResult> | null = null;
     if (weeksElapsed > 0) {
       try {
@@ -783,7 +453,6 @@ export async function gradeLeagueTrades(
       }
     }
 
-    // Blend and upsert for each side
     for (const rosterId of rosterIds) {
       const vs = valueScores.get(rosterId);
       const ps = productionScores?.get(rosterId);

@@ -15,6 +15,13 @@
       "when": 1773770328246,
       "tag": "0001_outgoing_micromax",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1774096704551,
+      "tag": "0002_lonely_princess_powerful",
+      "breakpoints": true
     }
   ]
 }

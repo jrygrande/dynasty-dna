@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, schema } from "@/db";
 import { eq, inArray } from "drizzle-orm";
+import { scoreToGrade } from "@/services/gradingCore";
 
 export async function GET(
   req: NextRequest,
@@ -75,6 +76,16 @@ export async function GET(
       .from(schema.draftPicks)
       .where(eq(schema.draftPicks.draftId, draft.id));
 
+    // Load draft grades for this draft
+    const grades = await db
+      .select()
+      .from(schema.draftGrades)
+      .where(eq(schema.draftGrades.draftId, draft.id));
+
+    const gradeByPick = new Map(
+      grades.map((g) => [g.pickNo, g]),
+    );
+
     // Get player names
     const playerIds = picks
       .map((p) => p.playerId)
@@ -120,6 +131,7 @@ export async function GET(
         const player = pick.playerId
           ? playerNames.get(pick.playerId)
           : null;
+        const grade = gradeByPick.get(pick.pickNo);
         return {
           pickNo: pick.pickNo,
           round: pick.round,
@@ -130,8 +142,46 @@ export async function GET(
           playerName: player?.name || pick.playerId || "Unknown",
           position: player?.position || null,
           isKeeper: pick.isKeeper,
+          grade: grade
+            ? {
+                grade: grade.grade,
+                blendedScore: grade.blendedScore,
+                valueScore: grade.valueScore,
+                productionScore: grade.productionScore,
+              }
+            : null,
         };
       });
+
+    // Compute per-manager draft grade summaries
+    const managerGrades = new Map<
+      number,
+      { totalScore: number; count: number }
+    >();
+    for (const pick of formattedPicks) {
+      if (!pick.grade) continue;
+      const agg = managerGrades.get(pick.rosterId) ?? {
+        totalScore: 0,
+        count: 0,
+      };
+      agg.totalScore += pick.grade.blendedScore ?? 0;
+      agg.count++;
+      managerGrades.set(pick.rosterId, agg);
+    }
+
+    const managerGradeSummaries = Array.from(managerGrades.entries())
+      .map(([rosterId, agg]) => {
+        const avgScore = agg.count > 0 ? agg.totalScore / agg.count : 0;
+        return {
+          rosterId,
+          managerName:
+            rosterOwnerMap.get(rosterId) || `Roster ${rosterId}`,
+          avgScore: Math.round(avgScore * 10) / 10,
+          grade: scoreToGrade(avgScore),
+          picksGraded: agg.count,
+        };
+      })
+      .sort((a, b) => b.avgScore - a.avgScore);
 
     const maxRound = Math.max(...picks.map((p) => p.round), 0);
 
@@ -142,6 +192,7 @@ export async function GET(
       rounds: maxRound,
       picks: formattedPicks,
       rosterNames: Object.fromEntries(rosterOwnerMap),
+      managerGrades: managerGradeSummaries,
     });
   }
 
@@ -150,9 +201,7 @@ export async function GET(
 
   return NextResponse.json({
     drafts: result,
-    seasons: members
-      .map((m) => m.season)
-      .filter((v, i, a) => a.indexOf(v) === i)
+    seasons: [...new Set(members.map((m) => m.season))]
       .sort((a, b) => Number(b) - Number(a)),
   });
 }
