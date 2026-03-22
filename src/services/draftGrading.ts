@@ -30,24 +30,20 @@ const DRAFT_GRADE_CONFIG = {
   bonusStartPercentile: 0.4,
   bonusProductionThreshold: 40,
   bonusMaxPoints: 20,
+  bonusExcessCap: 200,
 };
 
-function draftValueScaling(pickPercentile: number): number {
-  const { valueScalingMax: max, valueScalingMin: min } = DRAFT_GRADE_CONFIG;
-  return max * Math.pow(min / max, pickPercentile);
-}
-
-function draftProductionScaling(pickPercentile: number): number {
-  const { productionScalingMax: max, productionScalingMin: min } = DRAFT_GRADE_CONFIG;
+function adaptiveScaling(pickPercentile: number, max: number, min: number): number {
   return max * Math.pow(min / max, pickPercentile);
 }
 
 function latePickProductionBonus(pickPercentile: number, production: number): number {
-  if (pickPercentile < DRAFT_GRADE_CONFIG.bonusStartPercentile) return 0;
-  if (production <= DRAFT_GRADE_CONFIG.bonusProductionThreshold) return 0;
-  const lateMultiplier = (pickPercentile - 0.4) / 0.6;
-  const excess = Math.min(production - 40, 200);
-  return lateMultiplier * (excess / 200) * DRAFT_GRADE_CONFIG.bonusMaxPoints;
+  const { bonusStartPercentile, bonusProductionThreshold, bonusMaxPoints, bonusExcessCap } = DRAFT_GRADE_CONFIG;
+  if (pickPercentile < bonusStartPercentile) return 0;
+  if (production <= bonusProductionThreshold) return 0;
+  const lateMultiplier = (pickPercentile - bonusStartPercentile) / (1 - bonusStartPercentile);
+  const excess = Math.min(production - bonusProductionThreshold, bonusExcessCap);
+  return lateMultiplier * (excess / bonusExcessCap) * bonusMaxPoints;
 }
 
 // ============================================================
@@ -177,8 +173,9 @@ export async function gradeLeagueDrafts(
         benchmarkValues.reduce((sum, bv) => sum + bv.value, 0) / benchmarkValues.length;
 
       // Adaptive scaling based on pick position
-      const vScaling = draftValueScaling(pickPercentile);
-      const pScaling = draftProductionScaling(pickPercentile);
+      const { valueScalingMax, valueScalingMin, productionScalingMax, productionScalingMin } = DRAFT_GRADE_CONFIG;
+      const vScaling = adaptiveScaling(pickPercentile, valueScalingMax, valueScalingMin);
+      const pScaling = adaptiveScaling(pickPercentile, productionScalingMax, productionScalingMin);
 
       const valueDiff = pickedValue - avgBenchmarkValue;
       const valueScore = normalizeScore(valueDiff, vScaling);
@@ -193,20 +190,15 @@ export async function gradeLeagueDrafts(
         playerPositions,
       );
 
-      const benchmarkProductions = benchmarkValues.map((bv) =>
-        playerProductionScore(
+      const avgBenchmarkProduction = benchmarkValues.reduce((sum, bv) =>
+        sum + playerProductionScore(
           bv.playerId,
           draftSeason,
           currentYear,
           seasonalRanks,
           seasonalActiveWeeks,
           playerPositions,
-        ),
-      );
-      const avgBenchmarkProduction = benchmarkProductions.length > 0
-        ? benchmarkProductions.reduce((sum, p) => sum + p, 0) /
-          benchmarkProductions.length
-        : 0;
+        ), 0) / benchmarkValues.length;
 
       const productionDiff = pickedProduction - avgBenchmarkProduction;
       const productionScore = normalizeScore(productionDiff, pScaling);
