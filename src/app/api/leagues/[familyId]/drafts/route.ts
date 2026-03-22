@@ -7,6 +7,7 @@ export async function GET(
   req: NextRequest,
   { params }: { params: { familyId: string } }
 ) {
+  try {
   const db = getDb();
   const familyId = params.familyId;
   const seasonParam = req.nextUrl.searchParams.get("season");
@@ -250,4 +251,11 @@ export async function GET(
     seasons: [...new Set(members.map((m) => m.season))]
       .sort((a, b) => Number(b) - Number(a)),
   });
+  } catch (err) {
+    console.error("[drafts API] Error:", err);
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 },
+    );
+  }
 }

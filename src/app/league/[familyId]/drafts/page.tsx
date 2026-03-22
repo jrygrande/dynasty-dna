@@ -66,29 +66,29 @@ export default function DraftsPage() {
   const [selectedSeason, setSelectedSeason] = useState<string | null>(null);
 
   useEffect(() => {
-    loadDrafts();
-  }, [familyId, selectedSeason]);
-
-  async function loadDrafts() {
+    const controller = new AbortController();
     setLoading(true);
     setError(null);
-    try {
-      const seasonQuery = selectedSeason ? `?season=${selectedSeason}` : "";
-      const res = await fetch(
-        `/api/leagues/${familyId}/drafts${seasonQuery}`
-      );
-      if (!res.ok) {
+
+    const seasonQuery = selectedSeason ? `?season=${selectedSeason}` : "";
+    fetch(`/api/leagues/${familyId}/drafts${seasonQuery}`, {
+      signal: controller.signal,
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error("Failed to load drafts");
+        return res.json();
+      })
+      .then((result) => setData(result))
+      .catch((err) => {
+        if (err.name === "AbortError") return;
         setError("Failed to load drafts");
-        return;
-      }
-      const result = await res.json();
-      setData(result);
-    } catch {
-      setError("Failed to load drafts");
-    } finally {
-      setLoading(false);
-    }
-  }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+
+    return () => controller.abort();
+  }, [familyId, selectedSeason]);
 
   return (
     <div className="min-h-screen bg-background">

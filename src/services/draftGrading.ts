@@ -1,5 +1,5 @@
 import { getDb, schema } from "@/db";
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, and, inArray, sql } from "drizzle-orm";
 import { syncFantasyCalcValues } from "@/services/fantasyCalcSync";
 import {
   productionWeight,
@@ -18,22 +18,30 @@ import {
 // ============================================================
 
 const DRAFT_GRADE_CONFIG = {
-  benchmarkWindow: 8,  // look at next 8 picks
-  benchmarkTake: 6,    // best 6 of those
-  minBenchmark: 4,     // skip grading if fewer available
-  // Adaptive scaling: exponential decay from max (pick 1) to min (last pick)
-  valueScalingMax: 10000,
-  valueScalingMin: 1500,
-  productionScalingMax: 300,
-  productionScalingMin: 80,
-  // Late-pick production bonus
-  bonusStartPercentile: 0.4,
-  bonusProductionThreshold: 40,
-  bonusMaxPoints: 20,
-  bonusExcessCap: 200,
+  benchmarkWindow: 8,  // compare against next N picks after the current one
+  benchmarkTake: 6,    // take the best N from that window (best-available benchmark)
+  minBenchmark: 4,     // skip grading if fewer than N benchmark picks available
+  // Adaptive scaling: exponential decay from max (pick 1) to min (last pick).
+  // These control how many FantasyCalc value points (or production points) map
+  // to the full 0–100 score range.  Early picks use wider scaling because the
+  // value spread between players is much larger at the top of the draft.
+  valueScalingMax: 10000,   // scaling factor at pick 1 (FantasyCalc value units)
+  valueScalingMin: 1500,    // scaling factor at the last pick
+  productionScalingMax: 300, // production-score scaling at pick 1
+  productionScalingMin: 80,  // production-score scaling at the last pick
+  // Late-pick production bonus: rewards managers who find production gems in
+  // later rounds.  Kicks in after bonusStartPercentile of the draft and scales
+  // linearly up to bonusMaxPoints extra score points.
+  bonusStartPercentile: 0.4,       // bonus begins after the 40th-percentile pick
+  bonusProductionThreshold: 40,    // minimum production score to qualify (production units)
+  bonusMaxPoints: 20,              // maximum bonus added to blended score
+  bonusExcessCap: 200,             // production above threshold is capped here for bonus calc
 };
 
 function adaptiveScaling(pickPercentile: number, max: number, min: number): number {
+  if (process.env.NODE_ENV !== "production" && min > max) {
+    throw new Error(`adaptiveScaling: min (${min}) must not exceed max (${max})`);
+  }
   return max * Math.pow(min / max, pickPercentile);
 }
 
@@ -44,6 +52,24 @@ function latePickProductionBonus(pickPercentile: number, production: number): nu
   const lateMultiplier = (pickPercentile - bonusStartPercentile) / (1 - bonusStartPercentile);
   const excess = Math.min(production - bonusProductionThreshold, bonusExcessCap);
   return lateMultiplier * (excess / bonusExcessCap) * bonusMaxPoints;
+}
+
+interface DraftGradeRow {
+  draftId: string;
+  pickNo: number;
+  rosterId: number;
+  playerId: string;
+  valueScore: number;
+  playerValue: number;
+  benchmarkValue: number;
+  productionScore: number | null;
+  playerProduction: number | null;
+  benchmarkProduction: number | null;
+  blendedScore: number;
+  productionWeight: number;
+  grade: string;
+  benchmarkSize: number;
+  computedAt: Date;
 }
 
 // ============================================================
@@ -134,83 +160,88 @@ export async function gradeLeagueDrafts(
 
     const totalPicks = picks.length;
 
+    // Collect all grade rows, then batch-upsert after the loop
+    const gradeRows: DraftGradeRow[] = [];
+
     for (let i = 0; i < picks.length; i++) {
       const pick = picks[i];
       if (!pick.playerId) continue;
 
-      const pickPercentile = totalPicks > 1 ? i / (totalPicks - 1) : 0;
+      try {
+        const pickPercentile = totalPicks > 1 ? i / (totalPicks - 1) : 0;
 
-      // Build benchmark: prefer forward picks, fall back to backward picks
-      const forwardPicks = picks
-        .slice(i + 1, i + 1 + DRAFT_GRADE_CONFIG.benchmarkWindow)
-        .filter((p) => p.playerId !== null);
-
-      let windowPicks: typeof forwardPicks;
-      if (forwardPicks.length >= DRAFT_GRADE_CONFIG.minBenchmark) {
-        windowPicks = forwardPicks;
-      } else {
-        // Look backwards — comparing against slightly better players (harder benchmark)
-        windowPicks = picks
-          .slice(Math.max(0, i - DRAFT_GRADE_CONFIG.benchmarkWindow), i)
+        // Build benchmark: prefer forward picks, fall back to backward picks
+        const forwardPicks = picks
+          .slice(i + 1, i + 1 + DRAFT_GRADE_CONFIG.benchmarkWindow)
           .filter((p) => p.playerId !== null);
-      }
 
-      if (windowPicks.length < DRAFT_GRADE_CONFIG.minBenchmark) continue;
+        let windowPicks: typeof forwardPicks;
+        if (forwardPicks.length >= DRAFT_GRADE_CONFIG.minBenchmark) {
+          windowPicks = forwardPicks;
+        } else {
+          // Look backwards — comparing against slightly better players (harder benchmark)
+          windowPicks = picks
+            .slice(Math.max(0, i - DRAFT_GRADE_CONFIG.benchmarkWindow), i)
+            .filter((p) => p.playerId !== null);
+        }
 
-      // Get FantasyCalc values for benchmark players
-      const benchmarkValues = windowPicks
-        .map((p) => ({
-          playerId: p.playerId!,
-          value: snapshot.get(p.playerId!) ?? 0,
-        }))
-        .sort((a, b) => b.value - a.value)
-        .slice(0, DRAFT_GRADE_CONFIG.benchmarkTake);
+        if (windowPicks.length < DRAFT_GRADE_CONFIG.minBenchmark) continue;
 
-      if (benchmarkValues.length === 0) continue;
+        // Get FantasyCalc values for benchmark players
+        const benchmarkValues = windowPicks
+          .map((p) => ({
+            playerId: p.playerId!,
+            value: snapshot.get(p.playerId!) ?? 0,
+          }))
+          .sort((a, b) => b.value - a.value)
+          .slice(0, DRAFT_GRADE_CONFIG.benchmarkTake);
 
-      const pickedValue = snapshot.get(pick.playerId) ?? 0;
-      const avgBenchmarkValue =
-        benchmarkValues.reduce((sum, bv) => sum + bv.value, 0) / benchmarkValues.length;
+        if (benchmarkValues.length === 0) continue;
 
-      // Adaptive scaling based on pick position
-      const { valueScalingMax, valueScalingMin, productionScalingMax, productionScalingMin } = DRAFT_GRADE_CONFIG;
-      const vScaling = adaptiveScaling(pickPercentile, valueScalingMax, valueScalingMin);
-      const pScaling = adaptiveScaling(pickPercentile, productionScalingMax, productionScalingMin);
+        // snapshot values already have effectiveValue() (VALUE_FLOOR) applied
+        // via loadFantasyCalcSnapshot in gradingCore — no need to apply it again.
+        const pickedValue = snapshot.get(pick.playerId) ?? 0;
+        const avgBenchmarkValue =
+          benchmarkValues.reduce((sum, bv) => sum + bv.value, 0) / benchmarkValues.length;
 
-      const valueDiff = pickedValue - avgBenchmarkValue;
-      const valueScore = normalizeScore(valueDiff, vScaling);
+        // Adaptive scaling based on pick position
+        const { valueScalingMax, valueScalingMin, productionScalingMax, productionScalingMin } = DRAFT_GRADE_CONFIG;
+        const vScaling = adaptiveScaling(pickPercentile, valueScalingMax, valueScalingMin);
+        const pScaling = adaptiveScaling(pickPercentile, productionScalingMax, productionScalingMin);
 
-      // Production scoring
-      const pickedProduction = playerProductionScore(
-        pick.playerId,
-        draftSeason,
-        currentYear,
-        seasonalRanks,
-        seasonalActiveWeeks,
-        playerPositions,
-      );
+        const valueDiff = pickedValue - avgBenchmarkValue;
+        const valueScore = normalizeScore(valueDiff, vScaling);
 
-      const avgBenchmarkProduction = benchmarkValues.reduce((sum, bv) =>
-        sum + playerProductionScore(
-          bv.playerId,
+        // Production scoring
+        const pickedProduction = playerProductionScore(
+          pick.playerId,
           draftSeason,
           currentYear,
           seasonalRanks,
           seasonalActiveWeeks,
           playerPositions,
-        ), 0) / benchmarkValues.length;
+        );
 
-      const productionDiff = pickedProduction - avgBenchmarkProduction;
-      const productionScore = normalizeScore(productionDiff, pScaling);
+        const avgBenchmarkProduction = benchmarkValues.reduce((sum, bv) =>
+          sum + playerProductionScore(
+            bv.playerId,
+            draftSeason,
+            currentYear,
+            seasonalRanks,
+            seasonalActiveWeeks,
+            playerPositions,
+          ), 0) / benchmarkValues.length;
 
-      const blendedScore = (1 - pw) * valueScore + pw * productionScore;
-      const bonus = latePickProductionBonus(pickPercentile, pickedProduction);
-      const finalScore = Math.min(100, blendedScore + bonus);
-      const grade = scoreToGrade(finalScore);
+        const productionDiff = pickedProduction - avgBenchmarkProduction;
+        const productionScore = normalizeScore(productionDiff, pScaling);
 
-      await db
-        .insert(schema.draftGrades)
-        .values({
+        const blendedScore = (1 - pw) * valueScore + pw * productionScore;
+        const bonus = latePickProductionBonus(pickPercentile, pickedProduction);
+        const finalScore = Math.min(100, blendedScore + bonus);
+        const grade = scoreToGrade(finalScore);
+
+        const now = new Date();
+        gradeRows.push({
           draftId: draft.id,
           pickNo: pick.pickNo,
           rosterId: pick.rosterId,
@@ -225,37 +256,49 @@ export async function gradeLeagueDrafts(
           productionWeight: pw,
           grade,
           benchmarkSize: benchmarkValues.length,
-          computedAt: new Date(),
-        })
+          computedAt: now,
+        });
+
+        // Track per-manager
+        const ownerId = rosterToOwner.get(pick.rosterId);
+        if (ownerId) {
+          const agg = managerAgg.get(ownerId) ?? { totalScore: 0, count: 0 };
+          agg.totalScore += finalScore;
+          agg.count++;
+          managerAgg.set(ownerId, agg);
+        }
+      } catch (e) {
+        console.warn(
+          `[draftGrading] Failed to grade pick ${pick.pickNo} (player ${pick.playerId}) in draft ${draft.id}:`,
+          e,
+        );
+      }
+    }
+
+    // Batch upsert all grade rows for this draft
+    if (gradeRows.length > 0) {
+      await db
+        .insert(schema.draftGrades)
+        .values(gradeRows)
         .onConflictDoUpdate({
           target: [schema.draftGrades.draftId, schema.draftGrades.pickNo],
           set: {
-            rosterId: pick.rosterId,
-            playerId: pick.playerId,
-            valueScore,
-            playerValue: pickedValue,
-            benchmarkValue: avgBenchmarkValue,
-            productionScore: weeksElapsed > 0 ? productionScore : null,
-            playerProduction: weeksElapsed > 0 ? pickedProduction : null,
-            benchmarkProduction: weeksElapsed > 0 ? avgBenchmarkProduction : null,
-            blendedScore: finalScore,
-            productionWeight: pw,
-            grade,
-            benchmarkSize: benchmarkValues.length,
-            computedAt: new Date(),
+            rosterId: sql`excluded.roster_id`,
+            playerId: sql`excluded.player_id`,
+            valueScore: sql`excluded.value_score`,
+            playerValue: sql`excluded.player_value`,
+            benchmarkValue: sql`excluded.benchmark_value`,
+            productionScore: sql`excluded.production_score`,
+            playerProduction: sql`excluded.player_production`,
+            benchmarkProduction: sql`excluded.benchmark_production`,
+            blendedScore: sql`excluded.blended_score`,
+            productionWeight: sql`excluded.production_weight`,
+            grade: sql`excluded.grade`,
+            benchmarkSize: sql`excluded.benchmark_size`,
+            computedAt: sql`excluded.computed_at`,
           },
         });
-
-      graded++;
-
-      // Track per-manager
-      const ownerId = rosterToOwner.get(pick.rosterId);
-      if (ownerId) {
-        const agg = managerAgg.get(ownerId) ?? { totalScore: 0, count: 0 };
-        agg.totalScore += finalScore;
-        agg.count++;
-        managerAgg.set(ownerId, agg);
-      }
+      graded += gradeRows.length;
     }
 
     // Write per-manager draft_score to managerMetrics for this season
