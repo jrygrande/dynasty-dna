@@ -566,6 +566,30 @@ export const syncJobs = pgTable(
   })
 );
 
+// ============================================================
+// Experiments
+// ============================================================
+
+export const experimentRuns = pgTable(
+  "experiment_runs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    name: text("name").notNull(), // e.g. "par-vs-rank", "blend-sensitivity"
+    hypothesis: text("hypothesis"),
+    config: jsonb("config"), // parameters/settings used for this run
+    metrics: jsonb("metrics"), // structured output: correlations, distributions, etc.
+    rawData: jsonb("raw_data"), // detailed per-item results for drill-down
+    familyId: text("family_id"), // optional: which league family was analyzed
+    status: text("status").notNull().default("running"), // running, success, failed
+    error: text("error"),
+    startedAt: timestamp("started_at", { mode: "date" }).defaultNow().notNull(),
+    finishedAt: timestamp("finished_at", { mode: "date" }),
+  },
+  (er) => ({
+    nameIdx: index("experiment_runs_name_idx").on(er.name),
+  })
+);
+
 export const syncWatermarks = pgTable(
   "sync_watermarks",
   {

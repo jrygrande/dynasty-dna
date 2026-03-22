@@ -1,13 +1,22 @@
 /**
- * Shared helpers for experiment scripts.
- * Sets up DB connection and provides common utilities.
+ * Experiment runner harness.
  *
- * Usage: import { db, schema, setupDb } from "./helpers";
+ * Provides DB connection, stat utilities, and a `runExperiment()` function
+ * that persists results to the `experiment_runs` table and prints to console.
+ *
+ * Usage:
+ *   import { runExperiment, db, schema } from "./helpers";
+ *   runExperiment({
+ *     name: "par-vs-rank",
+ *     hypothesis: "PAR correlates better with PPG than rank-based decay",
+ *     run: async (ctx) => { ... return { metrics, rawData }; },
+ *   });
  */
 
 import "dotenv/config";
 import { neon } from "@neondatabase/serverless";
 import { drizzle } from "drizzle-orm/neon-http";
+import { eq } from "drizzle-orm";
 import * as schema from "../../src/db/schema";
 
 const DATABASE_URL = process.env.DATABASE_URL!;
@@ -24,7 +33,112 @@ export { schema };
 import * as dbModule from "../../src/db";
 (dbModule as Record<string, unknown>).getDb = () => db;
 
-/** Stats for a numeric array */
+// ============================================================
+// Experiment runner
+// ============================================================
+
+export interface ExperimentDefinition {
+  name: string;
+  hypothesis: string;
+  config?: Record<string, unknown>;
+  familyId?: string;
+  run: (ctx: ExperimentContext) => Promise<ExperimentResult>;
+}
+
+export interface ExperimentContext {
+  db: typeof db;
+  schema: typeof schema;
+  /** Log a message to console (also captured in output) */
+  log: (msg: string) => void;
+}
+
+export interface ExperimentResult {
+  /** Structured metrics for comparison across runs */
+  metrics: Record<string, unknown>;
+  /** Optional detailed per-item data for drill-down */
+  rawData?: unknown[];
+}
+
+/**
+ * Run an experiment: execute the run function, persist results to DB,
+ * and print a summary to console.
+ */
+export async function runExperiment(def: ExperimentDefinition): Promise<void> {
+  const startedAt = new Date();
+  console.log(`\n=== Experiment: ${def.name} ===`);
+  console.log(`Hypothesis: ${def.hypothesis}\n`);
+
+  // Insert a running record
+  const [row] = await db
+    .insert(schema.experimentRuns)
+    .values({
+      name: def.name,
+      hypothesis: def.hypothesis,
+      config: def.config ?? null,
+      familyId: def.familyId ?? null,
+      status: "running",
+      startedAt,
+    })
+    .returning({ id: schema.experimentRuns.id });
+
+  const runId = row.id;
+  const logs: string[] = [];
+
+  const ctx: ExperimentContext = {
+    db,
+    schema,
+    log: (msg: string) => {
+      console.log(msg);
+      logs.push(msg);
+    },
+  };
+
+  try {
+    const result = await def.run(ctx);
+
+    // Persist success
+    const finishedAt = new Date();
+    const elapsed = ((finishedAt.getTime() - startedAt.getTime()) / 1000).toFixed(1);
+
+    await db
+      .update(schema.experimentRuns)
+      .set({
+        status: "success",
+        metrics: result.metrics,
+        rawData: result.rawData ?? null,
+        finishedAt,
+      })
+      .where(
+        eq(schema.experimentRuns.id, runId),
+      );
+
+    console.log(`\n--- Results ---`);
+    console.log(JSON.stringify(result.metrics, null, 2));
+    console.log(`\nCompleted in ${elapsed}s. Run ID: ${runId}`);
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+
+    await db
+      .update(schema.experimentRuns)
+      .set({
+        status: "failed",
+        error: errorMsg,
+        finishedAt: new Date(),
+      })
+      .where(
+        eq(schema.experimentRuns.id, runId),
+      );
+
+    console.error(`\nExperiment FAILED: ${errorMsg}`);
+    throw err;
+  }
+}
+
+// ============================================================
+// Statistical utilities
+// ============================================================
+
+/** Descriptive stats for a numeric array */
 export function describeArray(values: number[]): {
   mean: number;
   median: number;
@@ -79,7 +193,22 @@ export function spearmanCorrelation(x: number[], y: number[]): number {
   return 1 - (6 * sumD2) / (n * (n * n - 1));
 }
 
-/** Print a comparison table */
+/** Shannon entropy of a categorical distribution */
+export function shannonEntropy(values: string[]): number {
+  const counts = new Map<string, number>();
+  for (const v of values) {
+    counts.set(v, (counts.get(v) || 0) + 1);
+  }
+  const n = values.length;
+  let entropy = 0;
+  for (const c of counts.values()) {
+    const p = c / n;
+    if (p > 0) entropy -= p * Math.log2(p);
+  }
+  return Math.round(entropy * 1000) / 1000;
+}
+
+/** Print a comparison table to console */
 export function printTable(
   headers: string[],
   rows: (string | number)[][],
