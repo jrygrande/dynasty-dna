@@ -482,6 +482,7 @@ export const draftGrades = pgTable(
   },
   (dg) => ({
     draftIdx: index("draft_grades_draft_idx").on(dg.draftId),
+    playerIdx: index("draft_grades_player_idx").on(dg.playerId),
     uniquePick: uniqueIndex("draft_grades_unique_idx").on(
       dg.draftId,
       dg.pickNo,

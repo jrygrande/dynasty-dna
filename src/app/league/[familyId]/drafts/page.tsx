@@ -62,6 +62,7 @@ export default function DraftsPage() {
   const familyId = params.familyId as string;
   const [data, setData] = useState<DraftsResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [selectedSeason, setSelectedSeason] = useState<string | null>(null);
 
   useEffect(() => {
@@ -70,15 +71,23 @@ export default function DraftsPage() {
 
   async function loadDrafts() {
     setLoading(true);
-    const seasonQuery = selectedSeason ? `?season=${selectedSeason}` : "";
-    const res = await fetch(
-      `/api/leagues/${familyId}/drafts${seasonQuery}`
-    );
-    if (res.ok) {
+    setError(null);
+    try {
+      const seasonQuery = selectedSeason ? `?season=${selectedSeason}` : "";
+      const res = await fetch(
+        `/api/leagues/${familyId}/drafts${seasonQuery}`
+      );
+      if (!res.ok) {
+        setError("Failed to load drafts");
+        return;
+      }
       const result = await res.json();
       setData(result);
+    } catch {
+      setError("Failed to load drafts");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }
 
   return (
@@ -131,7 +140,11 @@ export default function DraftsPage() {
           </div>
         )}
 
-        {!loading && data && (
+        {error && (
+          <div className="text-center py-8 text-red-500">{error}</div>
+        )}
+
+        {!loading && !error && data && (
           <div className="space-y-10">
             {data.drafts.map((draft) => (
               <DraftBoard key={draft.id} draft={draft} familyId={familyId} />

@@ -22,6 +22,7 @@ export function GradeBadge({
   return (
     <span
       className={`inline-flex items-center rounded font-bold border ${sizeClass} ${colorClass}`}
+      aria-label={`Grade: ${grade}`}
     >
       {grade}
     </span>

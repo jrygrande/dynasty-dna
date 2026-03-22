@@ -65,64 +65,110 @@ export async function GET(
     .from(schema.drafts)
     .where(inArray(schema.drafts.leagueId, leagueIds));
 
+  const completeDrafts = drafts.filter((d) => d.status === "complete");
+  if (completeDrafts.length === 0) {
+    return NextResponse.json({
+      drafts: [],
+      seasons: [...new Set(members.map((m) => m.season))]
+        .sort((a, b) => Number(b) - Number(a)),
+    });
+  }
+
+  const draftIds = completeDrafts.map((d) => d.id);
+
+  // Batch all queries upfront to avoid N+1
+  const [allPicks, allGrades, allRosters, allUsers] = await Promise.all([
+    db
+      .select()
+      .from(schema.draftPicks)
+      .where(inArray(schema.draftPicks.draftId, draftIds)),
+    db
+      .select()
+      .from(schema.draftGrades)
+      .where(inArray(schema.draftGrades.draftId, draftIds)),
+    db
+      .select()
+      .from(schema.rosters)
+      .where(inArray(schema.rosters.leagueId, leagueIds)),
+    db
+      .select()
+      .from(schema.leagueUsers)
+      .where(inArray(schema.leagueUsers.leagueId, leagueIds)),
+  ]);
+
+  // Collect all player IDs across all picks
+  const allPlayerIds = [
+    ...new Set(
+      allPicks
+        .map((p) => p.playerId)
+        .filter((id): id is string => id !== null)
+    ),
+  ];
+
+  const playerNames = new Map<string, { name: string; position: string | null }>();
+  if (allPlayerIds.length > 0) {
+    const players = await db
+      .select({
+        id: schema.players.id,
+        name: schema.players.name,
+        position: schema.players.position,
+      })
+      .from(schema.players)
+      .where(inArray(schema.players.id, allPlayerIds));
+    for (const p of players) {
+      playerNames.set(p.id, { name: p.name, position: p.position });
+    }
+  }
+
+  // Group picks and grades by draftId
+  const picksByDraft = new Map<string, typeof allPicks>();
+  for (const pick of allPicks) {
+    const arr = picksByDraft.get(pick.draftId) || [];
+    arr.push(pick);
+    picksByDraft.set(pick.draftId, arr);
+  }
+
+  const gradesByDraft = new Map<string, Map<number, (typeof allGrades)[0]>>();
+  for (const g of allGrades) {
+    let map = gradesByDraft.get(g.draftId);
+    if (!map) {
+      map = new Map();
+      gradesByDraft.set(g.draftId, map);
+    }
+    map.set(g.pickNo, g);
+  }
+
+  // Build roster owner maps by leagueId
+  const usersByLeague = new Map<string, Map<string, string | null>>();
+  for (const u of allUsers) {
+    let map = usersByLeague.get(u.leagueId);
+    if (!map) {
+      map = new Map();
+      usersByLeague.set(u.leagueId, map);
+    }
+    map.set(u.userId, u.displayName);
+  }
+
+  const rosterOwnerByLeague = new Map<string, Map<number, string>>();
+  for (const r of allRosters) {
+    let map = rosterOwnerByLeague.get(r.leagueId);
+    if (!map) {
+      map = new Map();
+      rosterOwnerByLeague.set(r.leagueId, map);
+    }
+    if (r.ownerId) {
+      const userMap = usersByLeague.get(r.leagueId);
+      map.set(r.rosterId, userMap?.get(r.ownerId) || r.ownerId);
+    }
+  }
+
   // Build result per draft
   const result = [];
 
-  for (const draft of drafts) {
-    if (draft.status !== "complete") continue;
-
-    const picks = await db
-      .select()
-      .from(schema.draftPicks)
-      .where(eq(schema.draftPicks.draftId, draft.id));
-
-    // Load draft grades for this draft
-    const grades = await db
-      .select()
-      .from(schema.draftGrades)
-      .where(eq(schema.draftGrades.draftId, draft.id));
-
-    const gradeByPick = new Map(
-      grades.map((g) => [g.pickNo, g]),
-    );
-
-    // Get player names
-    const playerIds = picks
-      .map((p) => p.playerId)
-      .filter((id): id is string => id !== null);
-
-    const playerNames = new Map<string, { name: string; position: string | null }>();
-    if (playerIds.length > 0) {
-      const players = await db
-        .select({
-          id: schema.players.id,
-          name: schema.players.name,
-          position: schema.players.position,
-        })
-        .from(schema.players)
-        .where(inArray(schema.players.id, playerIds));
-      for (const p of players) {
-        playerNames.set(p.id, { name: p.name, position: p.position });
-      }
-    }
-
-    // Get roster owners for this league
-    const rosters = await db
-      .select()
-      .from(schema.rosters)
-      .where(eq(schema.rosters.leagueId, draft.leagueId));
-    const users = await db
-      .select()
-      .from(schema.leagueUsers)
-      .where(eq(schema.leagueUsers.leagueId, draft.leagueId));
-
-    const userMap = new Map(users.map((u) => [u.userId, u.displayName]));
-    const rosterOwnerMap = new Map<number, string>();
-    for (const r of rosters) {
-      if (r.ownerId) {
-        rosterOwnerMap.set(r.rosterId, userMap.get(r.ownerId) || r.ownerId);
-      }
-    }
+  for (const draft of completeDrafts) {
+    const picks = picksByDraft.get(draft.id) || [];
+    const gradeByPick = gradesByDraft.get(draft.id) || new Map();
+    const rosterOwnerMap = rosterOwnerByLeague.get(draft.leagueId) || new Map();
 
     // Format picks
     const formattedPicks = picks

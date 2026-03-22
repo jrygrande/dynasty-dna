@@ -1,0 +1,1 @@
+CREATE INDEX "draft_grades_player_idx" ON "draft_grades" USING btree ("player_id");
