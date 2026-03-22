@@ -21,14 +21,20 @@ function groupByMonth(
     groups.get(monthKey)!.push(item);
   }
 
-  return Array.from(groups.entries()).map(([month, items]) => ({
-    month,
-    items: items.sort(
-      (a, b) =>
-        new Date(b.closed_at || b.created_at).getTime() -
-        new Date(a.closed_at || a.created_at).getTime()
-    ),
-  }));
+  return Array.from(groups.entries())
+    .map(([month, items]) => ({
+      month,
+      items: items.sort(
+        (a, b) =>
+          new Date(b.closed_at || b.created_at).getTime() -
+          new Date(a.closed_at || a.created_at).getTime()
+      ),
+    }))
+    .sort((a, b) => {
+      const dateA = new Date(a.items[0].closed_at || a.items[0].created_at).getTime();
+      const dateB = new Date(b.items[0].closed_at || b.items[0].created_at).getTime();
+      return dateB - dateA; // Newest months first
+    });
 }
 
 export default function ChangelogPage() {
