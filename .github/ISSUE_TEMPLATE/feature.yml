@@ -1,0 +1,77 @@
+name: Feature Request
+description: Propose a new feature with a hypothesis and success metrics
+title: "[Feature] "
+labels: ["type:feature", "roadmap"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Every feature starts with a hypothesis. What do we believe will happen,
+        and how will we know if we were right?
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Statement
+      description: What user pain does this solve? Be specific about who is affected and how.
+      placeholder: "Dynasty managers currently have no way to..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: hypothesis
+    attributes:
+      label: Hypothesis
+      description: "State your hypothesis in the form: We believe [change] will result in [outcome], measurable by [metric]."
+      placeholder: "We believe that showing managers their optimal-vs-actual lineup gap will result in better start/sit decisions, measurable by a 5% reduction in bench points over 4 weeks."
+    validations:
+      required: true
+
+  - type: textarea
+    id: approach
+    attributes:
+      label: Proposed Approach
+      description: How should we build this? Include key technical decisions and tradeoffs considered.
+    validations:
+      required: true
+
+  - type: textarea
+    id: metrics
+    attributes:
+      label: Success Metrics
+      description: How will we measure whether this feature is successful? List 2-3 concrete metrics.
+      placeholder: |
+        - % of weeks with optimal lineup set
+        - Average points left on bench per week
+    validations:
+      required: true
+
+  - type: dropdown
+    id: phase
+    attributes:
+      label: Phase
+      options:
+        - "Phase 4: Manager Analytics"
+        - "Phase 5: Asset Graph & Exploration"
+        - "Phase 6: Polish & Advanced"
+        - "Unplanned"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      description: P0 = must have, P1 = should have, P2 = nice to have
+      options:
+        - P0
+        - P1
+        - P2
+    validations:
+      required: true
+
+  - type: textarea
+    id: tradeoffs
+    attributes:
+      label: Tradeoffs & Alternatives
+      description: What alternatives did you consider? Why is this approach better?
