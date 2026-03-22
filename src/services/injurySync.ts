@@ -1,4 +1,4 @@
-import { getDb, schema } from "@/db";
+import { getDb, getSyncDb, schema } from "@/db";
 import { sql, eq, and } from "drizzle-orm";
 
 const NFLVERSE_INJURY_URL =
@@ -118,47 +118,48 @@ async function syncInjurySeason(
 
   if (rows.length === 0) return 0;
 
-  const db = getDb();
+  const syncDb = getSyncDb();
 
-  // Delete existing data for this season (idempotent rebuild)
-  await db
-    .delete(schema.nflInjuries)
-    .where(eq(schema.nflInjuries.season, season));
+  // Prepare all values up front
+  const allValues = rows
+    .filter((r) => r.gsis_id)
+    .map((r) => ({
+      season: parseInt(r.season, 10),
+      week: parseInt(r.week, 10),
+      gsisId: r.gsis_id,
+      gameType: r.game_type || null,
+      playerName: r.full_name || null,
+      team: r.team || null,
+      position: r.position || null,
+      reportStatus: r.report_status || null,
+      reportPrimaryInjury: r.report_primary_injury || null,
+      reportSecondaryInjury: r.report_secondary_injury || null,
+      practiceStatus: r.practice_status || null,
+      practicePrimaryInjury: r.practice_primary_injury || null,
+      practiceSecondaryInjury: r.practice_secondary_injury || null,
+      dateModified: r.date_modified || null,
+    }));
 
-  // Batch insert
-  const BATCH_SIZE = 100;
+  if (allValues.length === 0) return 0;
+
+  // Atomic delete + batch insert inside a transaction
+  const BATCH_SIZE = 200;
   let count = 0;
 
-  for (let i = 0; i < rows.length; i += BATCH_SIZE) {
-    const batch = rows.slice(i, i + BATCH_SIZE);
-    const values = batch
-      .filter((r) => r.gsis_id) // Skip rows without gsis_id
-      .map((r) => ({
-        season: parseInt(r.season, 10),
-        week: parseInt(r.week, 10),
-        gsisId: r.gsis_id,
-        gameType: r.game_type || null,
-        playerName: r.full_name || null,
-        team: r.team || null,
-        position: r.position || null,
-        reportStatus: r.report_status || null,
-        reportPrimaryInjury: r.report_primary_injury || null,
-        reportSecondaryInjury: r.report_secondary_injury || null,
-        practiceStatus: r.practice_status || null,
-        practicePrimaryInjury: r.practice_primary_injury || null,
-        practiceSecondaryInjury: r.practice_secondary_injury || null,
-        dateModified: r.date_modified || null,
-      }));
+  await syncDb.transaction(async (tx) => {
+    await tx
+      .delete(schema.nflInjuries)
+      .where(eq(schema.nflInjuries.season, season));
 
-    if (values.length === 0) continue;
-
-    await db
-      .insert(schema.nflInjuries)
-      .values(values)
-      .onConflictDoNothing();
-
-    count += values.length;
-  }
+    for (let i = 0; i < allValues.length; i += BATCH_SIZE) {
+      const batch = allValues.slice(i, i + BATCH_SIZE);
+      await tx
+        .insert(schema.nflInjuries)
+        .values(batch)
+        .onConflictDoNothing();
+      count += batch.length;
+    }
+  });
 
   return count;
 }

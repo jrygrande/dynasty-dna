@@ -1,6 +1,7 @@
 import { Sleeper, type SleeperLeague } from "@/lib/sleeper";
 import { getDb, schema } from "@/db";
-import { eq } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
+import { BATCH_SIZE } from "@/services/batchHelper";
 
 /**
  * Traverse the league chain via previous_league_id to discover all seasons
@@ -29,8 +30,10 @@ export async function discoverLeagueFamily(
   return chain;
 }
 
+
 /**
  * Ensure a league family exists in the database, creating it if needed.
+ * Uses INSERT...ON CONFLICT DO NOTHING + fallback SELECT to avoid TOCTOU races.
  * Returns the family ID.
  */
 export async function ensureLeagueFamily(
@@ -40,7 +43,7 @@ export async function ensureLeagueFamily(
 
   // Check if family already exists for this root league
   const existing = await db
-    .select()
+    .select({ id: schema.leagueFamilies.id })
     .from(schema.leagueFamilies)
     .where(eq(schema.leagueFamilies.rootLeagueId, rootLeagueId))
     .limit(1);
@@ -58,54 +61,88 @@ export async function ensureLeagueFamily(
   // The root league is the most recent
   const mostRecent = chain[chain.length - 1];
 
-  // Insert league records
-  for (const league of chain) {
+  // Batch upsert league records
+  const leagueValues = chain.map((league) => ({
+    id: league.league_id,
+    name: league.name,
+    season: league.season,
+    previousLeagueId: league.previous_league_id,
+    status: league.status,
+    settings: league.settings,
+    scoringSettings: league.scoring_settings,
+    rosterPositions: league.roster_positions,
+    totalRosters: league.total_rosters,
+  }));
+
+  for (let i = 0; i < leagueValues.length; i += BATCH_SIZE) {
     await db
       .insert(schema.leagues)
-      .values({
-        id: league.league_id,
-        name: league.name,
-        season: league.season,
-        previousLeagueId: league.previous_league_id,
-        status: league.status,
-        settings: league.settings,
-        scoringSettings: league.scoring_settings,
-        rosterPositions: league.roster_positions,
-        totalRosters: league.total_rosters,
-      })
+      .values(leagueValues.slice(i, i + BATCH_SIZE))
       .onConflictDoUpdate({
         target: schema.leagues.id,
         set: {
-          name: league.name,
-          status: league.status,
-          settings: league.settings,
-          scoringSettings: league.scoring_settings,
-          rosterPositions: league.roster_positions,
-          totalRosters: league.total_rosters,
+          name: sql`excluded.name`,
+          status: sql`excluded.status`,
+          settings: sql`excluded.settings`,
+          scoringSettings: sql`excluded.scoring_settings`,
+          rosterPositions: sql`excluded.roster_positions`,
+          totalRosters: sql`excluded.total_rosters`,
         },
       });
   }
 
-  // Create the family
-  const [family] = await db
-    .insert(schema.leagueFamilies)
-    .values({
-      rootLeagueId: mostRecent.league_id,
-      name: mostRecent.name,
-    })
-    .returning();
+  // Check if any league in the chain already belongs to a family
+  const chainIds = chain.map((l) => l.league_id);
+  const existingMember = await db
+    .select({ familyId: schema.leagueFamilyMembers.familyId })
+    .from(schema.leagueFamilyMembers)
+    .where(inArray(schema.leagueFamilyMembers.leagueId, chainIds))
+    .limit(1);
 
-  // Link all leagues to the family
-  for (const league of chain) {
+  let familyId: string;
+
+  if (existingMember.length > 0) {
+    // Family exists — update root to the most recent league
+    familyId = existingMember[0].familyId;
+    await db
+      .update(schema.leagueFamilies)
+      .set({ rootLeagueId: mostRecent.league_id, name: mostRecent.name })
+      .where(eq(schema.leagueFamilies.id, familyId));
+  } else {
+    // Create new family
+    const [family] = await db
+      .insert(schema.leagueFamilies)
+      .values({
+        rootLeagueId: mostRecent.league_id,
+        name: mostRecent.name,
+      })
+      .onConflictDoNothing({
+        target: schema.leagueFamilies.rootLeagueId,
+      })
+      .returning();
+
+    familyId =
+      family?.id ??
+      (await db
+        .select({ id: schema.leagueFamilies.id })
+        .from(schema.leagueFamilies)
+        .where(eq(schema.leagueFamilies.rootLeagueId, mostRecent.league_id))
+        .then((r) => r[0]!.id));
+  }
+
+  // Batch upsert family members
+  const memberValues = chain.map((league) => ({
+    familyId,
+    leagueId: league.league_id,
+    season: league.season,
+  }));
+
+  for (let i = 0; i < memberValues.length; i += BATCH_SIZE) {
     await db
       .insert(schema.leagueFamilyMembers)
-      .values({
-        familyId: family.id,
-        leagueId: league.league_id,
-        season: league.season,
-      })
+      .values(memberValues.slice(i, i + BATCH_SIZE))
       .onConflictDoNothing();
   }
 
-  return family.id;
+  return familyId;
 }

@@ -106,12 +106,20 @@ export const leagues = pgTable("leagues", {
   lastSyncedAt: timestamp("last_synced_at", { mode: "date" }),
 });
 
-export const leagueFamilies = pgTable("league_families", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  rootLeagueId: text("root_league_id").notNull(), // The most recent league in the chain
-  name: text("name").notNull(),
-  createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
-});
+export const leagueFamilies = pgTable(
+  "league_families",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    rootLeagueId: text("root_league_id").notNull(), // The most recent league in the chain
+    name: text("name").notNull(),
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+  },
+  (lf) => ({
+    rootLeagueUnique: uniqueIndex("league_families_root_league_id_unique").on(
+      lf.rootLeagueId
+    ),
+  })
+);
 
 export const leagueFamilyMembers = pgTable(
   "league_family_members",
@@ -540,14 +548,35 @@ export const fantasyCalcValues = pgTable(
 // System
 // ============================================================
 
-export const syncJobs = pgTable("sync_jobs", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  type: text("type").notNull(), // league_sync, player_sync, nfl_data_sync
-  ref: text("ref"), // e.g. league_id
-  status: text("status").notNull().default("running"), // running, success, failed
-  total: integer("total").default(0),
-  done: integer("done").default(0),
-  error: text("error"),
-  startedAt: timestamp("started_at", { mode: "date" }).defaultNow().notNull(),
-  finishedAt: timestamp("finished_at", { mode: "date" }),
-});
+export const syncJobs = pgTable(
+  "sync_jobs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    type: text("type").notNull(), // league_sync, player_sync, nfl_data_sync
+    ref: text("ref"), // e.g. league_id or family root league id
+    status: text("status").notNull().default("running"), // running, success, failed
+    total: integer("total").default(0),
+    done: integer("done").default(0),
+    error: text("error"),
+    startedAt: timestamp("started_at", { mode: "date" }).defaultNow().notNull(),
+    finishedAt: timestamp("finished_at", { mode: "date" }),
+  },
+  (sj) => ({
+    refStatusIdx: index("sync_jobs_ref_status_idx").on(sj.ref, sj.status),
+  })
+);
+
+export const syncWatermarks = pgTable(
+  "sync_watermarks",
+  {
+    leagueId: text("league_id").notNull(),
+    dataType: text("data_type").notNull(), // 'matchups', 'transactions'
+    lastWeek: integer("last_week").notNull().default(0),
+    lastSyncedAt: timestamp("last_synced_at", { mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (sw) => ({
+    pk: primaryKey({ columns: [sw.leagueId, sw.dataType] }),
+  })
+);

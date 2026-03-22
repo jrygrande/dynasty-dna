@@ -1,5 +1,6 @@
 import { getDb, schema } from "@/db";
 import { eq, and, inArray, sql } from "drizzle-orm";
+import { batchUpsertManagerMetrics } from "@/services/batchHelper";
 import { syncFantasyCalcValues } from "@/services/fantasyCalcSync";
 import {
   productionWeight,
@@ -311,44 +312,29 @@ export async function gradeLeagueDrafts(
       allScores.push({ managerId, score: avgScore });
     }
 
-    // Compute percentiles
+    // Compute percentiles and batch upsert
     const sortedAsc = [...allScores].sort((a, b) => a.score - b.score);
+    const now = new Date();
 
-    for (const entry of allScores) {
+    const metricValues = allScores.map((entry) => {
       const percentile = computePercentile(entry, sortedAsc);
       const agg = managerAgg.get(entry.managerId)!;
-      const meta = {
-        grade: scoreToGrade(entry.score),
-        picksGraded: agg.count,
+      return {
+        leagueId,
+        managerId: entry.managerId,
+        metric: "draft_score" as const,
+        scope: `season:${season}`,
+        value: entry.score,
+        percentile,
+        meta: {
+          grade: scoreToGrade(entry.score),
+          picksGraded: agg.count,
+        },
+        computedAt: now,
       };
+    });
 
-      await db
-        .insert(schema.managerMetrics)
-        .values({
-          leagueId,
-          managerId: entry.managerId,
-          metric: "draft_score",
-          scope: `season:${season}`,
-          value: entry.score,
-          percentile,
-          meta,
-          computedAt: new Date(),
-        })
-        .onConflictDoUpdate({
-          target: [
-            schema.managerMetrics.leagueId,
-            schema.managerMetrics.managerId,
-            schema.managerMetrics.metric,
-            schema.managerMetrics.scope,
-          ],
-          set: {
-            value: entry.score,
-            percentile,
-            meta,
-            computedAt: new Date(),
-          },
-        });
-    }
+    await batchUpsertManagerMetrics(metricValues);
   }
 
   console.log(

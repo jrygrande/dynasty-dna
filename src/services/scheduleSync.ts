@@ -1,4 +1,4 @@
-import { getDb, schema } from "@/db";
+import { getDb, getSyncDb, schema } from "@/db";
 import { sql, eq } from "drizzle-orm";
 
 const NFLVERSE_GAMES_URL =
@@ -84,19 +84,23 @@ async function syncScheduleSeason(
 
   if (rows.length === 0) return 0;
 
-  const db = getDb();
+  const syncDb = getSyncDb();
 
-  // Delete existing data for this season
-  await db.delete(schema.nflSchedule).where(eq(schema.nflSchedule.season, season));
-
-  // Batch insert
-  const BATCH_SIZE = 100;
+  // Atomic delete + batch insert inside a transaction
+  const BATCH_SIZE = 200;
   let count = 0;
-  for (let i = 0; i < rows.length; i += BATCH_SIZE) {
-    const batch = rows.slice(i, i + BATCH_SIZE);
-    await db.insert(schema.nflSchedule).values(batch).onConflictDoNothing();
-    count += batch.length;
-  }
+
+  await syncDb.transaction(async (tx) => {
+    await tx
+      .delete(schema.nflSchedule)
+      .where(eq(schema.nflSchedule.season, season));
+
+    for (let i = 0; i < rows.length; i += BATCH_SIZE) {
+      const batch = rows.slice(i, i + BATCH_SIZE);
+      await tx.insert(schema.nflSchedule).values(batch).onConflictDoNothing();
+      count += batch.length;
+    }
+  });
 
   return count;
 }

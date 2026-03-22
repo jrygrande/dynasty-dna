@@ -1,5 +1,6 @@
-import { getDb, schema } from "@/db";
+import { getDb, getSyncDb, schema } from "@/db";
 import { eq, and } from "drizzle-orm";
+import { BATCH_SIZE } from "@/services/batchHelper";
 
 type NewAssetEvent = typeof schema.assetEvents.$inferInsert;
 
@@ -31,17 +32,8 @@ export async function buildAssetEvents(
   season: string
 ): Promise<number> {
   const db = getDb();
+  const syncDb = getSyncDb();
   const ownerMap = await getRosterOwnerMap(leagueId);
-
-  // Delete existing events for this league (idempotent rebuild)
-  await db
-    .delete(schema.assetEvents)
-    .where(
-      and(
-        eq(schema.assetEvents.leagueId, leagueId),
-        eq(schema.assetEvents.season, season)
-      )
-    );
 
   const events: NewAssetEvent[] = [];
 
@@ -234,12 +226,22 @@ export async function buildAssetEvents(
     }
   }
 
-  // Batch insert all events
-  const BATCH_SIZE = 50;
-  for (let i = 0; i < events.length; i += BATCH_SIZE) {
-    const batch = events.slice(i, i + BATCH_SIZE);
-    await db.insert(schema.assetEvents).values(batch);
-  }
+  // Atomic delete + batch insert inside a transaction
+  await syncDb.transaction(async (tx) => {
+    await tx
+      .delete(schema.assetEvents)
+      .where(
+        and(
+          eq(schema.assetEvents.leagueId, leagueId),
+          eq(schema.assetEvents.season, season)
+        )
+      );
+
+    for (let i = 0; i < events.length; i += BATCH_SIZE) {
+      const batch = events.slice(i, i + BATCH_SIZE);
+      await tx.insert(schema.assetEvents).values(batch);
+    }
+  });
 
   return events.length;
 }

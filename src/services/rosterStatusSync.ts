@@ -1,4 +1,4 @@
-import { getDb, schema } from "@/db";
+import { getDb, getSyncDb, schema } from "@/db";
 import { sql, eq, and } from "drizzle-orm";
 
 const NFLVERSE_WEEKLY_ROSTER_URL =
@@ -131,36 +131,38 @@ async function syncRosterStatusSeason(
   if (rows.length === 0) return 0;
 
   const db = getDb();
+  const syncDb = getSyncDb();
 
-  // Delete existing data for this season (idempotent rebuild)
-  await db
-    .delete(schema.nflWeeklyRosterStatus)
-    .where(eq(schema.nflWeeklyRosterStatus.season, season));
-
-  // Batch insert
+  // Atomic delete + batch insert inside a transaction
   const BATCH_SIZE = 200;
   let count = 0;
 
-  for (let i = 0; i < rows.length; i += BATCH_SIZE) {
-    const batch = rows.slice(i, i + BATCH_SIZE);
-    const values = batch.map((r) => ({
-      season: r.season,
-      week: r.week,
-      gsisId: r.gsisId,
-      status: r.status,
-      statusAbbr: r.statusAbbr,
-      team: r.team,
-      position: r.position,
-      playerName: r.playerName,
-    }));
+  await syncDb.transaction(async (tx) => {
+    await tx
+      .delete(schema.nflWeeklyRosterStatus)
+      .where(eq(schema.nflWeeklyRosterStatus.season, season));
 
-    await db
-      .insert(schema.nflWeeklyRosterStatus)
-      .values(values)
-      .onConflictDoNothing();
+    for (let i = 0; i < rows.length; i += BATCH_SIZE) {
+      const batch = rows.slice(i, i + BATCH_SIZE);
+      const values = batch.map((r) => ({
+        season: r.season,
+        week: r.week,
+        gsisId: r.gsisId,
+        status: r.status,
+        statusAbbr: r.statusAbbr,
+        team: r.team,
+        position: r.position,
+        playerName: r.playerName,
+      }));
 
-    count += values.length;
-  }
+      await tx
+        .insert(schema.nflWeeklyRosterStatus)
+        .values(values)
+        .onConflictDoNothing();
+
+      count += values.length;
+    }
+  });
 
   // Backfill gsis_id into players table using sleeper_id crosswalk
   if (sleeperToGsis.size > 0) {

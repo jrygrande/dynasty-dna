@@ -1,5 +1,6 @@
 import { getDb, schema } from "@/db";
 import { eq, and, inArray } from "drizzle-orm";
+import { batchUpsertManagerMetrics } from "@/services/batchHelper";
 import { solveOptimalLineup } from "@/lib/lineup";
 
 // ============================================================
@@ -502,59 +503,46 @@ export async function gradeLeagueLineups(
     });
   }
 
-  // 8. Write to managerMetrics
+  // 8. Write to managerMetrics (batch upsert)
   const season = league.season;
   const scores = results.map((r) => r.score).sort((a, b) => a - b);
+  const now = new Date();
 
-  for (const roster of results) {
-    if (!roster.ownerId) {
-      console.warn(
-        `[lineupGrading] Roster ${roster.rosterId} has no ownerId — skipping metric write`,
-      );
-      continue;
-    }
+  const metricValues = results
+    .filter((roster) => {
+      if (!roster.ownerId) {
+        console.warn(
+          `[lineupGrading] Roster ${roster.rosterId} has no ownerId — skipping metric write`,
+        );
+        return false;
+      }
+      return true;
+    })
+    .map((roster) => {
+      const rank = scores.filter((s) => s < roster.score).length;
+      const percentile =
+        scores.length > 1 ? (rank / (scores.length - 1)) * 100 : 50;
 
-    // Compute percentile within league
-    const rank = scores.filter((s) => s < roster.score).length;
-    const percentile =
-      scores.length > 1 ? (rank / (scores.length - 1)) * 100 : 50;
-
-    const metricBase = {
-      leagueId,
-      managerId: roster.ownerId,
-      metric: "lineup_score" as const,
-      value: roster.score,
-      percentile: Math.round(percentile * 10) / 10,
-      meta: {
-        grade: roster.grade,
-        efficiency: roster.efficiency,
-        totalPointsLeftOnBench: roster.totalPointsLeftOnBench,
-        perfectWeeks: roster.perfectWeeks,
-        insightfulStarts: roster.insightfulStarts,
-        weeksGraded: roster.weeks.length,
-      },
-      computedAt: new Date(),
-    };
-
-    // Season scope
-    await db
-      .insert(schema.managerMetrics)
-      .values({ ...metricBase, scope: `season:${season}` })
-      .onConflictDoUpdate({
-        target: [
-          schema.managerMetrics.leagueId,
-          schema.managerMetrics.managerId,
-          schema.managerMetrics.metric,
-          schema.managerMetrics.scope,
-        ],
-        set: {
-          value: metricBase.value,
-          percentile: metricBase.percentile,
-          meta: metricBase.meta,
-          computedAt: metricBase.computedAt,
+      return {
+        leagueId,
+        managerId: roster.ownerId,
+        metric: "lineup_score" as const,
+        scope: `season:${season}`,
+        value: roster.score,
+        percentile: Math.round(percentile * 10) / 10,
+        meta: {
+          grade: roster.grade,
+          efficiency: roster.efficiency,
+          totalPointsLeftOnBench: roster.totalPointsLeftOnBench,
+          perfectWeeks: roster.perfectWeeks,
+          insightfulStarts: roster.insightfulStarts,
+          weeksGraded: roster.weeks.length,
         },
-      });
-  }
+        computedAt: now,
+      };
+    });
+
+  await batchUpsertManagerMetrics(metricValues);
 
   console.log(
     `[lineupGrading] Graded ${results.length} rosters for league ${leagueId}`,
