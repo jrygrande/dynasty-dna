@@ -1,6 +1,6 @@
 import { Sleeper, type SleeperLeague } from "@/lib/sleeper";
 import { getDb, schema } from "@/db";
-import { eq, sql } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import { BATCH_SIZE } from "@/services/batchHelper";
 
 /**
@@ -91,26 +91,44 @@ export async function ensureLeagueFamily(
       });
   }
 
-  // Atomic upsert: INSERT...ON CONFLICT DO NOTHING prevents duplicate families
-  const [family] = await db
-    .insert(schema.leagueFamilies)
-    .values({
-      rootLeagueId: mostRecent.league_id,
-      name: mostRecent.name,
-    })
-    .onConflictDoNothing({
-      target: schema.leagueFamilies.rootLeagueId,
-    })
-    .returning();
+  // Check if any league in the chain already belongs to a family
+  const chainIds = chain.map((l) => l.league_id);
+  const existingMember = await db
+    .select({ familyId: schema.leagueFamilyMembers.familyId })
+    .from(schema.leagueFamilyMembers)
+    .where(inArray(schema.leagueFamilyMembers.leagueId, chainIds))
+    .limit(1);
 
-  // If we lost the race, another insert won — just SELECT it
-  const familyId =
-    family?.id ??
-    (await db
-      .select({ id: schema.leagueFamilies.id })
-      .from(schema.leagueFamilies)
-      .where(eq(schema.leagueFamilies.rootLeagueId, mostRecent.league_id))
-      .then((r) => r[0]!.id));
+  let familyId: string;
+
+  if (existingMember.length > 0) {
+    // Family exists — update root to the most recent league
+    familyId = existingMember[0].familyId;
+    await db
+      .update(schema.leagueFamilies)
+      .set({ rootLeagueId: mostRecent.league_id, name: mostRecent.name })
+      .where(eq(schema.leagueFamilies.id, familyId));
+  } else {
+    // Create new family
+    const [family] = await db
+      .insert(schema.leagueFamilies)
+      .values({
+        rootLeagueId: mostRecent.league_id,
+        name: mostRecent.name,
+      })
+      .onConflictDoNothing({
+        target: schema.leagueFamilies.rootLeagueId,
+      })
+      .returning();
+
+    familyId =
+      family?.id ??
+      (await db
+        .select({ id: schema.leagueFamilies.id })
+        .from(schema.leagueFamilies)
+        .where(eq(schema.leagueFamilies.rootLeagueId, mostRecent.league_id))
+        .then((r) => r[0]!.id));
+  }
 
   // Batch upsert family members
   const memberValues = chain.map((league) => ({
