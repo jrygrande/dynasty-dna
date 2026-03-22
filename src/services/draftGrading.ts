@@ -2,7 +2,6 @@ import { getDb, schema } from "@/db";
 import { eq, and, inArray } from "drizzle-orm";
 import { syncFantasyCalcValues } from "@/services/fantasyCalcSync";
 import {
-  GRADE_CONFIG,
   productionWeight,
   scoreToGrade,
   normalizeScore,
@@ -22,7 +21,34 @@ const DRAFT_GRADE_CONFIG = {
   benchmarkWindow: 8,  // look at next 8 picks
   benchmarkTake: 6,    // best 6 of those
   minBenchmark: 4,     // skip grading if fewer available
+  // Adaptive scaling: exponential decay from max (pick 1) to min (last pick)
+  valueScalingMax: 10000,
+  valueScalingMin: 1500,
+  productionScalingMax: 300,
+  productionScalingMin: 80,
+  // Late-pick production bonus
+  bonusStartPercentile: 0.4,
+  bonusProductionThreshold: 40,
+  bonusMaxPoints: 20,
 };
+
+function draftValueScaling(pickPercentile: number): number {
+  const { valueScalingMax: max, valueScalingMin: min } = DRAFT_GRADE_CONFIG;
+  return max * Math.pow(min / max, pickPercentile);
+}
+
+function draftProductionScaling(pickPercentile: number): number {
+  const { productionScalingMax: max, productionScalingMin: min } = DRAFT_GRADE_CONFIG;
+  return max * Math.pow(min / max, pickPercentile);
+}
+
+function latePickProductionBonus(pickPercentile: number, production: number): number {
+  if (pickPercentile < DRAFT_GRADE_CONFIG.bonusStartPercentile) return 0;
+  if (production <= DRAFT_GRADE_CONFIG.bonusProductionThreshold) return 0;
+  const lateMultiplier = (pickPercentile - 0.4) / 0.6;
+  const excess = Math.min(production - 40, 200);
+  return lateMultiplier * (excess / 200) * DRAFT_GRADE_CONFIG.bonusMaxPoints;
+}
 
 // ============================================================
 // Grade a league family's drafts
@@ -110,14 +136,28 @@ export async function gradeLeagueDrafts(
     );
     const pw = productionWeight(weeksElapsed);
 
+    const totalPicks = picks.length;
+
     for (let i = 0; i < picks.length; i++) {
       const pick = picks[i];
       if (!pick.playerId) continue;
 
-      // Build benchmark: next WINDOW picks after this one
-      const windowPicks = picks
+      const pickPercentile = totalPicks > 1 ? i / (totalPicks - 1) : 0;
+
+      // Build benchmark: prefer forward picks, fall back to backward picks
+      const forwardPicks = picks
         .slice(i + 1, i + 1 + DRAFT_GRADE_CONFIG.benchmarkWindow)
         .filter((p) => p.playerId !== null);
+
+      let windowPicks: typeof forwardPicks;
+      if (forwardPicks.length >= DRAFT_GRADE_CONFIG.minBenchmark) {
+        windowPicks = forwardPicks;
+      } else {
+        // Look backwards — comparing against slightly better players (harder benchmark)
+        windowPicks = picks
+          .slice(Math.max(0, i - DRAFT_GRADE_CONFIG.benchmarkWindow), i)
+          .filter((p) => p.playerId !== null);
+      }
 
       if (windowPicks.length < DRAFT_GRADE_CONFIG.minBenchmark) continue;
 
@@ -130,12 +170,18 @@ export async function gradeLeagueDrafts(
         .sort((a, b) => b.value - a.value)
         .slice(0, DRAFT_GRADE_CONFIG.benchmarkTake);
 
+      if (benchmarkValues.length === 0) continue;
+
       const pickedValue = snapshot.get(pick.playerId) ?? 0;
       const avgBenchmarkValue =
         benchmarkValues.reduce((sum, bv) => sum + bv.value, 0) / benchmarkValues.length;
 
+      // Adaptive scaling based on pick position
+      const vScaling = draftValueScaling(pickPercentile);
+      const pScaling = draftProductionScaling(pickPercentile);
+
       const valueDiff = pickedValue - avgBenchmarkValue;
-      const valueScore = normalizeScore(valueDiff, GRADE_CONFIG.valueScaling);
+      const valueScore = normalizeScore(valueDiff, vScaling);
 
       // Production scoring
       const pickedProduction = playerProductionScore(
@@ -157,18 +203,18 @@ export async function gradeLeagueDrafts(
           playerPositions,
         ),
       );
-      const avgBenchmarkProduction =
-        benchmarkProductions.reduce((sum, p) => sum + p, 0) /
-        benchmarkProductions.length;
+      const avgBenchmarkProduction = benchmarkProductions.length > 0
+        ? benchmarkProductions.reduce((sum, p) => sum + p, 0) /
+          benchmarkProductions.length
+        : 0;
 
       const productionDiff = pickedProduction - avgBenchmarkProduction;
-      const productionScore = normalizeScore(
-        productionDiff,
-        GRADE_CONFIG.productionScaling,
-      );
+      const productionScore = normalizeScore(productionDiff, pScaling);
 
       const blendedScore = (1 - pw) * valueScore + pw * productionScore;
-      const grade = scoreToGrade(blendedScore);
+      const bonus = latePickProductionBonus(pickPercentile, pickedProduction);
+      const finalScore = Math.min(100, blendedScore + bonus);
+      const grade = scoreToGrade(finalScore);
 
       await db
         .insert(schema.draftGrades)
@@ -183,7 +229,7 @@ export async function gradeLeagueDrafts(
           productionScore: weeksElapsed > 0 ? productionScore : null,
           playerProduction: weeksElapsed > 0 ? pickedProduction : null,
           benchmarkProduction: weeksElapsed > 0 ? avgBenchmarkProduction : null,
-          blendedScore,
+          blendedScore: finalScore,
           productionWeight: pw,
           grade,
           benchmarkSize: benchmarkValues.length,
@@ -200,7 +246,7 @@ export async function gradeLeagueDrafts(
             productionScore: weeksElapsed > 0 ? productionScore : null,
             playerProduction: weeksElapsed > 0 ? pickedProduction : null,
             benchmarkProduction: weeksElapsed > 0 ? avgBenchmarkProduction : null,
-            blendedScore,
+            blendedScore: finalScore,
             productionWeight: pw,
             grade,
             benchmarkSize: benchmarkValues.length,
@@ -214,7 +260,7 @@ export async function gradeLeagueDrafts(
       const ownerId = rosterToOwner.get(pick.rosterId);
       if (ownerId) {
         const agg = managerAgg.get(ownerId) ?? { totalScore: 0, count: 0 };
-        agg.totalScore += blendedScore;
+        agg.totalScore += finalScore;
         agg.count++;
         managerAgg.set(ownerId, agg);
       }
