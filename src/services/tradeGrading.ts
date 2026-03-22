@@ -1,17 +1,29 @@
 import { getDb, schema } from "@/db";
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, and, inArray, sql } from "drizzle-orm";
 import { syncFantasyCalcValues } from "@/services/fantasyCalcSync";
-import { findOriginalSlot, calculatePickNumber, resolveDraftPicks } from "@/lib/draft";
+import {
+  findOriginalSlot,
+  calculatePickNumber,
+  resolveDraftPicks,
+} from "@/lib/draft";
 import {
   GRADE_CONFIG,
   productionWeight,
   scoreToGrade,
   normalizeScore,
-  playerProductionScore,
+  playerLayeredProduction,
   computeSeasonalRanks,
+  seasonPositionKey,
   loadLeagueScoringConfig,
   loadFamilyLeagueMap,
   loadFantasyCalcSnapshot,
+  loadPlayerWeeklyScores,
+  loadMatchupOutcomes,
+  loadPlayoffConfig,
+  loadLeagueOwnerRosters,
+  type SeasonalData,
+  type PlayerWeekData,
+  type MatchupResult,
 } from "@/services/gradingCore";
 
 // ============================================================
@@ -62,7 +74,12 @@ export function resolvePickValue(
     const originalSlot = findOriginalSlot(slotMap, pick.roster_id);
 
     if (originalSlot !== null) {
-      const pickNo = calculatePickNumber(pick.round, originalSlot, teams, isSnake);
+      const pickNo = calculatePickNumber(
+        pick.round,
+        originalSlot,
+        teams,
+        isSnake,
+      );
 
       const picksForDraft = draftPicks.get(draftInfo.draftId);
       const playerId = picksForDraft?.get(pickNo);
@@ -140,7 +157,9 @@ export function computeValueScores(
     }
 
     let valueSent = 0;
-    for (const [playerId, droppedFromRoster] of Object.entries(trade.drops)) {
+    for (const [playerId, droppedFromRoster] of Object.entries(
+      trade.drops,
+    )) {
       if (droppedFromRoster === rosterId) {
         valueSent += snapshot.get(playerId) || 0;
       }
@@ -175,7 +194,7 @@ export function computeValueScores(
 }
 
 // ============================================================
-// Production scoring (delta-based, rank-based)
+// Production scoring — roster-scoped, layered (v2)
 // ============================================================
 
 interface ProductionResult {
@@ -188,6 +207,18 @@ type PickResolver = (pick: {
   round: number;
   roster_id: number;
 }) => PickResolution;
+
+/** Pre-loaded context for production scoring across many trades. */
+export interface ProductionContext {
+  seasonalData: SeasonalData;
+  weeklyScores: Map<string, Map<string, PlayerWeekData[]>>;
+  matchupOutcomes: Map<string, MatchupResult>;
+  playoffConfig: Map<string, number>;
+  leagueSeasonMap: Map<string, string>;
+  leagueOwnerRoster: Map<string, Map<string, number>>; // leagueId -> ownerId -> rosterId
+  leagueRosterOwner: Map<string, Map<number, string>>; // leagueId -> rosterId -> ownerId (reverse)
+  familyLeagueIds: string[];
+}
 
 export function computeProductionScores(
   trade: {
@@ -203,21 +234,18 @@ export function computeProductionScores(
     rosterIds: number[];
     createdAt: number;
     leagueId: string;
+    week: number;
   },
-  seasonalRanks: Map<string, Map<string, number>>,
-  seasonalActiveWeeks: Map<string, Map<string, number>>,
-  playerPositions: Map<string, string>,
+  ctx: ProductionContext,
   pickResolver?: PickResolver,
   tradeSeason?: number,
 ): Map<number, ProductionResult> {
   const results = new Map<number, ProductionResult>();
   const resolvedSeason =
     tradeSeason ?? fallbackTradeSeason(trade.createdAt);
-  const currentYear = new Date().getFullYear();
 
   // Resolve draft pick players for production scoring
   const pickReceivedPlayers = new Map<number, string[]>();
-  const pickSentPlayers = new Map<number, string[]>();
   if (pickResolver && trade.draftPicks) {
     for (const dp of trade.draftPicks) {
       const resolution = pickResolver({
@@ -229,9 +257,6 @@ export function computeProductionScores(
         const received = pickReceivedPlayers.get(dp.owner_id) || [];
         received.push(resolution.playerId);
         pickReceivedPlayers.set(dp.owner_id, received);
-        const sent = pickSentPlayers.get(dp.previous_owner_id) || [];
-        sent.push(resolution.playerId);
-        pickSentPlayers.set(dp.previous_owner_id, sent);
       }
     }
   }
@@ -240,49 +265,94 @@ export function computeProductionScores(
     const receivedPlayerIds = Object.entries(trade.adds)
       .filter(([, rid]) => rid === rosterId)
       .map(([pid]) => pid);
-    receivedPlayerIds.push(...(pickReceivedPlayers.get(rosterId) || []));
+    receivedPlayerIds.push(
+      ...(pickReceivedPlayers.get(rosterId) || []),
+    );
 
-    const sentPlayerIds = Object.entries(trade.drops)
-      .filter(([, rid]) => rid === rosterId)
-      .map(([pid]) => pid);
-    sentPlayerIds.push(...(pickSentPlayers.get(rosterId) || []));
+    let totalProduction = 0;
+    let totalWeeksUsed = 0;
 
-    let productionReceived = 0;
-    let weeksUsed = 0;
+    // Look up the owner for this rosterId in the trade's league (O(1) reverse map)
+    const ownerId = ctx.leagueRosterOwner
+      .get(trade.leagueId)
+      ?.get(rosterId);
+
     for (const playerId of receivedPlayerIds) {
-      const score = playerProductionScore(
-        playerId,
-        resolvedSeason,
-        currentYear,
-        seasonalRanks,
-        seasonalActiveWeeks,
-        playerPositions,
-      );
-      productionReceived += score;
-      for (let season = resolvedSeason; season <= currentYear; season++) {
-        const awMap = seasonalActiveWeeks.get(String(season));
-        weeksUsed += awMap?.get(playerId) ?? 0;
+      const position = ctx.seasonalData.positions.get(playerId);
+      if (!position) continue;
+
+      // Compute production across all family leagues from trade season onward
+      for (const leagueId of ctx.familyLeagueIds) {
+        const leagueSeason = ctx.leagueSeasonMap.get(leagueId);
+        if (!leagueSeason) continue;
+        const seasonNum = parseInt(leagueSeason, 10);
+        if (seasonNum < resolvedSeason) continue;
+
+        // Determine the rosterId for this owner in this league
+        let targetRosterId: number | undefined;
+        if (leagueId === trade.leagueId) {
+          targetRosterId = rosterId;
+        } else if (ownerId) {
+          const ownerMap = ctx.leagueOwnerRoster.get(leagueId);
+          targetRosterId = ownerMap?.get(ownerId);
+        }
+
+        // Look up seasonal data for replacement PPG / maxPAR
+        const seasonKey = seasonPositionKey(leagueSeason, position);
+        const repPPG =
+          ctx.seasonalData.replacementPPG.get(seasonKey) ?? 0;
+        const maxPAR = ctx.seasonalData.maxPAR.get(seasonKey) ?? 1;
+
+        // Get player's scores in this league
+        const leagueScores = ctx.weeklyScores.get(leagueId);
+        const playerScores = leagueScores?.get(playerId);
+        if (!playerScores) continue;
+
+        // Filter to roster-scoped + post-trade weeks
+        const filteredScores = playerScores.filter((ws) => {
+          if (
+            targetRosterId !== undefined &&
+            ws.rosterId !== targetRosterId
+          )
+            return false;
+          if (
+            leagueId === trade.leagueId &&
+            ws.week < trade.week
+          )
+            return false;
+          return true;
+        });
+
+        if (filteredScores.length === 0) continue;
+
+        const { production, weeksUsed } =
+          playerLayeredProduction(
+            filteredScores,
+            repPPG,
+            maxPAR,
+            {
+              matchupOutcomes: ctx.matchupOutcomes,
+              playoffStart:
+                ctx.playoffConfig.get(leagueId) ?? null,
+              leagueId,
+            },
+          );
+
+        totalProduction += production;
+        totalWeeksUsed += weeksUsed;
       }
     }
 
-    let productionSent = 0;
-    for (const playerId of sentPlayerIds) {
-      productionSent += playerProductionScore(
-        playerId,
-        resolvedSeason,
-        currentYear,
-        seasonalRanks,
-        seasonalActiveWeeks,
-        playerPositions,
-      );
-    }
-
-    const delta = productionReceived - productionSent;
-    const productionScore = normalizeScore(delta, GRADE_CONFIG.productionScaling);
+    // Roster-scoped: no productionSent — sent players' post-trade production
+    // doesn't count against you. Delta is just received production.
+    const productionScore = normalizeScore(
+      totalProduction,
+      GRADE_CONFIG.productionScaling,
+    );
 
     results.set(rosterId, {
       productionScore,
-      weeksUsed,
+      weeksUsed: totalWeeksUsed,
     });
   }
 
@@ -307,19 +377,24 @@ export async function gradeLeagueTrades(
 ): Promise<number> {
   const db = getDb();
 
-  const syncedAt = opts?.syncedAt ?? await syncFantasyCalcValues(leagueId, { force: true });
+  const syncedAt =
+    opts?.syncedAt ??
+    (await syncFantasyCalcValues(leagueId, { force: true }));
   if (!syncedAt) {
     console.warn("[tradeGrading] Failed to sync FantasyCalc values");
     return 0;
   }
 
-  const { ppr, isSuperFlex } = await loadLeagueScoringConfig(leagueId);
-  const { familyLeagueIds, leagueSeasonMap } = await loadFamilyLeagueMap(familyId);
+  const { ppr, isSuperFlex } =
+    await loadLeagueScoringConfig(leagueId);
+  const { familyLeagueIds, leagueSeasonMap } =
+    await loadFamilyLeagueMap(familyId);
   if (familyLeagueIds.length === 0) return 0;
 
   const snapshot = await loadFantasyCalcSnapshot(isSuperFlex, ppr);
 
-  const { draftsBySeason, draftPicksMap } = await resolveDraftPicks(familyLeagueIds);
+  const { draftsBySeason, draftPicksMap } =
+    await resolveDraftPicks(familyLeagueIds);
 
   const roundAverages = new Map<number, number>();
   const pickValRows = await db
@@ -363,7 +438,9 @@ export async function gradeLeagueTrades(
   }
 
   if (roundAverages.size === 0) {
-    for (const [round, value] of Object.entries(DEFAULT_ROUND_AVERAGES)) {
+    for (const [round, value] of Object.entries(
+      DEFAULT_ROUND_AVERAGES,
+    )) {
       roundAverages.set(Number(round), value);
     }
   }
@@ -381,8 +458,42 @@ export async function gradeLeagueTrades(
       roundAverages,
     );
 
-  const { ranks: seasonalRanks, activeWeeks: seasonalActiveWeeks, positions: playerPositions } =
-    await computeSeasonalRanks(familyLeagueIds, leagueSeasonMap);
+  const seasonalData = await computeSeasonalRanks(
+    familyLeagueIds,
+    leagueSeasonMap,
+    { isSuperFlex },
+  );
+
+  // Load v2 production data
+  // Load v2 data concurrently — these have no dependencies on each other
+  const [weeklyScores, matchupOutcomes, playoffConfig, leagueOwnerRoster] =
+    await Promise.all([
+      loadPlayerWeeklyScores(familyLeagueIds),
+      loadMatchupOutcomes(familyLeagueIds),
+      loadPlayoffConfig(familyLeagueIds),
+      loadLeagueOwnerRosters(familyLeagueIds),
+    ]);
+
+  // Build reverse map: leagueId -> rosterId -> ownerId (O(1) lookups)
+  const leagueRosterOwner = new Map<string, Map<number, string>>();
+  for (const [leagueId, ownerMap] of leagueOwnerRoster) {
+    const reverseMap = new Map<number, string>();
+    for (const [ownerId, rosterId] of ownerMap) {
+      reverseMap.set(rosterId, ownerId);
+    }
+    leagueRosterOwner.set(leagueId, reverseMap);
+  }
+
+  const productionCtx: ProductionContext = {
+    seasonalData,
+    weeklyScores,
+    matchupOutcomes,
+    playoffConfig,
+    leagueSeasonMap,
+    leagueOwnerRoster,
+    leagueRosterOwner,
+    familyLeagueIds,
+  };
 
   const trades = await db
     .select()
@@ -394,7 +505,8 @@ export async function gradeLeagueTrades(
       ),
     );
 
-  let graded = 0;
+  // Collect all grade rows, then batch-upsert (avoids N+1 per-trade-side writes)
+  const allGradeRows: Array<typeof schema.tradeGrades.$inferInsert> = [];
 
   for (const trade of trades) {
     const adds = (trade.adds || {}) as Record<string, number>;
@@ -414,7 +526,7 @@ export async function gradeLeagueTrades(
     const weeksElapsed = Math.floor(
       (Date.now() - tradeTimestamp) / (7 * 24 * 60 * 60 * 1000),
     );
-    const pw = productionWeight(weeksElapsed);
+    const pw = productionWeight(weeksElapsed, "trade");
 
     const leagueSeason = leagueSeasonMap.get(trade.leagueId);
     const tradeSeason = leagueSeason
@@ -427,7 +539,8 @@ export async function gradeLeagueTrades(
       pickResolver,
     );
 
-    let productionScores: Map<number, ProductionResult> | null = null;
+    let productionScores: Map<number, ProductionResult> | null =
+      null;
     if (weeksElapsed > 0) {
       try {
         productionScores = computeProductionScores(
@@ -438,10 +551,9 @@ export async function gradeLeagueTrades(
             rosterIds,
             createdAt: tradeTimestamp,
             leagueId: trade.leagueId,
+            week: trade.week,
           },
-          seasonalRanks,
-          seasonalActiveWeeks,
-          playerPositions,
+          productionCtx,
           pickResolver,
           tradeSeason,
         );
@@ -453,6 +565,7 @@ export async function gradeLeagueTrades(
       }
     }
 
+    const now = new Date();
     for (const rosterId of rosterIds) {
       const vs = valueScores.get(rosterId);
       const ps = productionScores?.get(rosterId);
@@ -462,44 +575,51 @@ export async function gradeLeagueTrades(
       const prodScore = ps?.productionScore ?? 50;
       const weeksUsed = ps?.weeksUsed ?? 0;
 
-      const blendedScore = (1 - pw) * valueScore + pw * prodScore;
+      const blendedScore =
+        (1 - pw) * valueScore + pw * prodScore;
       const grade = scoreToGrade(blendedScore);
 
-      await db
-        .insert(schema.tradeGrades)
-        .values({
-          transactionId: trade.id,
-          rosterId,
-          valueScore,
-          fantasyCalcValue: rawValue,
-          productionScore: weeksUsed > 0 ? prodScore : null,
-          productionWeeks: weeksUsed > 0 ? weeksUsed : null,
-          blendedScore,
-          productionWeight: pw,
-          grade,
-          computedAt: new Date(),
-        })
-        .onConflictDoUpdate({
-          target: [
-            schema.tradeGrades.transactionId,
-            schema.tradeGrades.rosterId,
-          ],
-          set: {
-            valueScore,
-            fantasyCalcValue: rawValue,
-            productionScore: weeksUsed > 0 ? prodScore : null,
-            productionWeeks: weeksUsed > 0 ? weeksUsed : null,
-            blendedScore,
-            productionWeight: pw,
-            grade,
-            computedAt: new Date(),
-          },
-        });
-
-      graded++;
+      allGradeRows.push({
+        transactionId: trade.id,
+        rosterId,
+        valueScore,
+        fantasyCalcValue: rawValue,
+        productionScore: weeksUsed > 0 ? prodScore : null,
+        productionWeeks: weeksUsed > 0 ? weeksUsed : null,
+        blendedScore,
+        productionWeight: pw,
+        grade,
+        computedAt: now,
+      });
     }
   }
 
+  // Batch upsert all grade rows
+  const BATCH_SIZE = 100;
+  for (let i = 0; i < allGradeRows.length; i += BATCH_SIZE) {
+    const batch = allGradeRows.slice(i, i + BATCH_SIZE);
+    await db
+      .insert(schema.tradeGrades)
+      .values(batch)
+      .onConflictDoUpdate({
+        target: [
+          schema.tradeGrades.transactionId,
+          schema.tradeGrades.rosterId,
+        ],
+        set: {
+          valueScore: sql`excluded.value_score`,
+          fantasyCalcValue: sql`excluded.fantasy_calc_value`,
+          productionScore: sql`excluded.production_score`,
+          productionWeeks: sql`excluded.production_weeks`,
+          blendedScore: sql`excluded.blended_score`,
+          productionWeight: sql`excluded.production_weight`,
+          grade: sql`excluded.grade`,
+          computedAt: sql`excluded.computed_at`,
+        },
+      });
+  }
+
+  const graded = allGradeRows.length;
   console.log(
     `[tradeGrading] Graded ${graded} trade sides for league ${leagueId}`,
   );
