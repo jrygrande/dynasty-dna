@@ -4,6 +4,13 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 
+interface PickGrade {
+  grade: string;
+  blendedScore: number | null;
+  valueScore: number | null;
+  productionScore: number | null;
+}
+
 interface DraftPick {
   pickNo: number;
   round: number;
@@ -13,6 +20,15 @@ interface DraftPick {
   playerName: string;
   position: string | null;
   isKeeper: boolean | null;
+  grade: PickGrade | null;
+}
+
+interface ManagerGradeSummary {
+  rosterId: number;
+  managerName: string;
+  avgScore: number;
+  grade: string;
+  picksGraded: number;
 }
 
 interface DraftData {
@@ -22,6 +38,7 @@ interface DraftData {
   rounds: number;
   picks: DraftPick[];
   rosterNames: Record<string, string>;
+  managerGrades: ManagerGradeSummary[];
 }
 
 interface DraftsResponse {
@@ -38,29 +55,40 @@ const POSITION_COLORS: Record<string, string> = {
   DEF: "bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400",
 };
 
+import { GradeBadge } from "@/components/GradeBadge";
+
 export default function DraftsPage() {
   const params = useParams();
   const familyId = params.familyId as string;
   const [data, setData] = useState<DraftsResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [selectedSeason, setSelectedSeason] = useState<string | null>(null);
 
   useEffect(() => {
-    loadDrafts();
-  }, [familyId, selectedSeason]);
-
-  async function loadDrafts() {
+    const controller = new AbortController();
     setLoading(true);
+    setError(null);
+
     const seasonQuery = selectedSeason ? `?season=${selectedSeason}` : "";
-    const res = await fetch(
-      `/api/leagues/${familyId}/drafts${seasonQuery}`
-    );
-    if (res.ok) {
-      const result = await res.json();
-      setData(result);
-    }
-    setLoading(false);
-  }
+    fetch(`/api/leagues/${familyId}/drafts${seasonQuery}`, {
+      signal: controller.signal,
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error("Failed to load drafts");
+        return res.json();
+      })
+      .then((result) => setData(result))
+      .catch((err) => {
+        if (err.name === "AbortError") return;
+        setError("Failed to load drafts");
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+
+    return () => controller.abort();
+  }, [familyId, selectedSeason]);
 
   return (
     <div className="min-h-screen bg-background">
@@ -112,7 +140,11 @@ export default function DraftsPage() {
           </div>
         )}
 
-        {!loading && data && (
+        {error && (
+          <div className="text-center py-8 text-red-500">{error}</div>
+        )}
+
+        {!loading && !error && data && (
           <div className="space-y-10">
             {data.drafts.map((draft) => (
               <DraftBoard key={draft.id} draft={draft} familyId={familyId} />
@@ -125,6 +157,34 @@ export default function DraftsPage() {
           </div>
         )}
       </main>
+    </div>
+  );
+}
+
+function ManagerGradeCards({ grades }: { grades: ManagerGradeSummary[] }) {
+  if (grades.length === 0) return null;
+
+  return (
+    <div className="mb-4">
+      <h3 className="text-sm font-medium text-muted-foreground mb-2">
+        Manager Draft Grades
+      </h3>
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2">
+        {grades.map((mg) => (
+          <div
+            key={mg.rosterId}
+            className="flex items-center gap-2 p-2 rounded-lg border bg-card"
+          >
+            <GradeBadge grade={mg.grade} />
+            <div className="min-w-0">
+              <p className="text-sm font-medium truncate">{mg.managerName}</p>
+              <p className="text-xs text-muted-foreground">
+                {mg.picksGraded} picks
+              </p>
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -152,6 +212,8 @@ function DraftBoard({ draft, familyId }: { draft: DraftData; familyId: string })
           {draft.type} &middot; {draft.rounds} rounds
         </span>
       </div>
+
+      <ManagerGradeCards grades={draft.managerGrades || []} />
 
       <div className="border rounded-lg overflow-x-auto">
         <table className="w-full text-sm">
@@ -201,6 +263,9 @@ function DraftBoard({ draft, familyId }: { draft: DraftData; familyId: string })
                             <span className="font-medium text-sm truncate">
                               {pick.playerName}
                             </span>
+                          )}
+                          {pick.grade && (
+                            <GradeBadge grade={pick.grade.grade} size="xs" />
                           )}
                         </div>
                         <p className="text-xs text-muted-foreground truncate">

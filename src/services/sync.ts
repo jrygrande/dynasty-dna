@@ -9,6 +9,7 @@ import { syncSchedule } from "@/services/scheduleSync";
 import { syncFantasyCalcValues } from "@/services/fantasyCalcSync";
 import { gradeLeagueTrades } from "@/services/tradeGrading";
 import { gradeLeagueLineups } from "@/services/lineupGrading";
+import { gradeLeagueDrafts } from "@/services/draftGrading";
 import { rollupManagerGrades } from "@/services/managerGrades";
 
 interface SyncProgress {
@@ -307,10 +308,23 @@ export async function syncLeague(
   onProgress?.({ step: "values", detail: "Syncing dynasty trade values" });
   const syncedAt = await syncFantasyCalcValues(leagueId);
 
-  // Grade trades (requires familyId)
+  // Grade trades + drafts (requires familyId)
   if (familyId) {
+    const gradeOpts = { syncedAt: syncedAt ?? undefined };
+
     onProgress?.({ step: "trade_grades", detail: "Grading trades" });
-    await gradeLeagueTrades(leagueId, familyId, { syncedAt: syncedAt ?? undefined });
+    try {
+      await gradeLeagueTrades(leagueId, familyId, gradeOpts);
+    } catch (err) {
+      console.warn(`[sync] Trade grading failed for ${leagueId}:`, err);
+    }
+
+    onProgress?.({ step: "draft_grades", detail: "Grading draft picks" });
+    try {
+      await gradeLeagueDrafts(leagueId, familyId, gradeOpts);
+    } catch (err) {
+      console.warn(`[sync] Draft grading failed for ${leagueId}:`, err);
+    }
   }
 
   // Grade lineups (non-critical — don't block sync on failure)
