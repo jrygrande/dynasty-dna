@@ -1,5 +1,6 @@
 import { getDb, schema } from "@/db";
 import { eq, and, inArray, like } from "drizzle-orm";
+import { BATCH_SIZE, batchUpsertManagerMetrics } from "@/services/batchHelper";
 
 // ============================================================
 // Time-decay weighting
@@ -52,6 +53,7 @@ function computePercentile(entry: { score: number }, sortedAsc: { score: number 
   const rank = sortedAsc.filter((s) => s.score < entry.score).length;
   return Math.round((rank / (sortedAsc.length - 1)) * 1000) / 10;
 }
+
 
 // ============================================================
 // Rollup: all_time per-metric + overall_score
@@ -128,18 +130,18 @@ export async function rollupManagerGrades(familyId: string): Promise<void> {
   }
 
   // 4. Compute weighted all_time score per (manager, metric)
-  //    Also track per-manager all_time scores for overall_score computation
   const managerAllTime = new Map<
     string,
     Map<string, { score: number; seasons: number }>
-  >(); // managerId → metric → { score, seasons }
+  >();
 
-  // We need all managers' all_time scores to compute percentiles at the end
   const metricScores = new Map<string, Array<{ managerId: string; score: number }>>();
+
+  // Collect all all_time upsert values
+  const allTimeValues: Array<typeof schema.managerMetrics.$inferInsert> = [];
 
   for (const [key, entries] of grouped) {
     const [managerId, metric] = key.split("::");
-    // Use the league from the most recent season for the all_time row
     const sorted = [...entries].sort((a, b) => b.season - a.season);
     const primaryLeagueId = sorted[0].leagueId;
 
@@ -155,7 +157,6 @@ export async function rollupManagerGrades(familyId: string): Promise<void> {
     const allTimeScore =
       totalWeight > 0 ? Math.round((weightedSum / totalWeight) * 10) / 10 : 0;
 
-    // Track for percentile + overall_score
     if (!managerAllTime.has(managerId)) managerAllTime.set(managerId, new Map());
     managerAllTime.get(managerId)!.set(metric, {
       score: allTimeScore,
@@ -165,63 +166,38 @@ export async function rollupManagerGrades(familyId: string): Promise<void> {
     if (!metricScores.has(metric)) metricScores.set(metric, []);
     metricScores.get(metric)!.push({ managerId, score: allTimeScore });
 
-    // Build season breakdown for meta
     const seasonBreakdown = sorted.map((e) => ({
       season: e.season,
       score: e.value,
       weight: Math.round(seasonWeight(e.season, currentYear) * 100) / 100,
     }));
 
-    // Upsert all_time metric
-    await db
-      .insert(schema.managerMetrics)
-      .values({
-        leagueId: primaryLeagueId,
-        managerId,
-        metric,
-        scope: "all_time",
-        value: allTimeScore,
-        percentile: 0, // computed below
-        meta: {
-          grade: scoreToGrade(allTimeScore),
-          seasons: entries.length,
-          decayHalflife: DECAY_HALFLIFE_YEARS,
-          seasonBreakdown,
-        },
-        computedAt: new Date(),
-      })
-      .onConflictDoUpdate({
-        target: [
-          schema.managerMetrics.leagueId,
-          schema.managerMetrics.managerId,
-          schema.managerMetrics.metric,
-          schema.managerMetrics.scope,
-        ],
-        set: {
-          value: allTimeScore,
-          meta: {
-            grade: scoreToGrade(allTimeScore),
-            seasons: entries.length,
-            decayHalflife: DECAY_HALFLIFE_YEARS,
-            seasonBreakdown,
-          },
-          computedAt: new Date(),
-        },
-      });
+    allTimeValues.push({
+      leagueId: primaryLeagueId,
+      managerId,
+      metric,
+      scope: "all_time",
+      value: allTimeScore,
+      percentile: 0, // computed below
+      meta: {
+        grade: scoreToGrade(allTimeScore),
+        seasons: entries.length,
+        decayHalflife: DECAY_HALFLIFE_YEARS,
+        seasonBreakdown,
+      },
+      computedAt: new Date(),
+    });
   }
 
-  // 5. Compute percentiles per metric and update
+  // Batch upsert all all_time metrics
+  await batchUpsertManagerMetrics(allTimeValues);
+
+  // 5. Compute percentiles per metric and batch update
   for (const [metric, scores] of metricScores) {
     const sorted = [...scores].sort((a, b) => a.score - b.score);
     for (const entry of sorted) {
       const percentile = computePercentile(entry, sorted);
 
-      // Find the leagueId for this manager's all_time row
-      const managerMetrics = managerAllTime.get(entry.managerId);
-      if (!managerMetrics) continue;
-
-      // Update percentile on the row we just wrote
-      // We need the leagueId — find from grouped entries
       const groupKey = `${entry.managerId}::${metric}`;
       const entries = grouped.get(groupKey);
       if (!entries) continue;
@@ -243,10 +219,7 @@ export async function rollupManagerGrades(familyId: string): Promise<void> {
     }
   }
 
-  // 6. Compute overall_score per manager (equal-weight blend of all available all_time metrics)
-  const overallScores: Array<{ managerId: string; score: number }> = [];
-
-  // Pre-build managerId → most recent leagueId from their metric entries
+  // 6. Compute overall_score per manager
   const managerRecentLeague = new Map<string, string>();
   for (const [key, entries] of grouped) {
     const managerId = key.split("::")[0];
@@ -257,6 +230,12 @@ export async function rollupManagerGrades(familyId: string): Promise<void> {
     }
   }
 
+  const overallValues: Array<typeof schema.managerMetrics.$inferInsert> = [];
+  const overallScores: Array<{ managerId: string; score: number }> = [];
+  const mostRecentLeagueId = [...members].sort(
+    (a, b) => parseInt(b.season, 10) - parseInt(a.season, 10),
+  )[0].leagueId;
+
   for (const [managerId, metrics] of managerAllTime) {
     const values = Array.from(metrics.values());
     if (values.length === 0) continue;
@@ -266,10 +245,6 @@ export async function rollupManagerGrades(familyId: string): Promise<void> {
         (values.reduce((sum, v) => sum + v.score, 0) / values.length) * 10,
       ) / 10;
 
-    // Fallback to the most recent season's league (deterministic)
-    const mostRecentLeagueId = [...members].sort(
-      (a, b) => parseInt(b.season, 10) - parseInt(a.season, 10),
-    )[0].leagueId;
     const recentLeagueId = managerRecentLeague.get(managerId) ?? mostRecentLeagueId;
 
     const metricBreakdown = Object.fromEntries(
@@ -281,40 +256,24 @@ export async function rollupManagerGrades(familyId: string): Promise<void> {
 
     overallScores.push({ managerId, score: overallScore });
 
-    await db
-      .insert(schema.managerMetrics)
-      .values({
-        leagueId: recentLeagueId,
-        managerId,
-        metric: "overall_score",
-        scope: "all_time",
-        value: overallScore,
-        percentile: 0,
-        meta: {
-          grade: scoreToGrade(overallScore),
-          metricBreakdown,
-          decayHalflife: DECAY_HALFLIFE_YEARS,
-        },
-        computedAt: new Date(),
-      })
-      .onConflictDoUpdate({
-        target: [
-          schema.managerMetrics.leagueId,
-          schema.managerMetrics.managerId,
-          schema.managerMetrics.metric,
-          schema.managerMetrics.scope,
-        ],
-        set: {
-          value: overallScore,
-          meta: {
-            grade: scoreToGrade(overallScore),
-            metricBreakdown,
-            decayHalflife: DECAY_HALFLIFE_YEARS,
-          },
-          computedAt: new Date(),
-        },
-      });
+    overallValues.push({
+      leagueId: recentLeagueId,
+      managerId,
+      metric: "overall_score",
+      scope: "all_time",
+      value: overallScore,
+      percentile: 0,
+      meta: {
+        grade: scoreToGrade(overallScore),
+        metricBreakdown,
+        decayHalflife: DECAY_HALFLIFE_YEARS,
+      },
+      computedAt: new Date(),
+    });
   }
+
+  // Batch upsert overall scores
+  await batchUpsertManagerMetrics(overallValues);
 
   // 7. Update overall_score percentiles
   const sortedOverall = [...overallScores].sort((a, b) => a.score - b.score);
