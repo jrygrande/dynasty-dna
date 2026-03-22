@@ -1,0 +1,70 @@
+name: Experiment Proposal
+description: Propose an A/B test or feature experiment with a structured hypothesis
+title: "[Experiment] "
+labels: ["type:experiment", "roadmap"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Experiments help us make data-informed decisions. Define what you're testing,
+        what you expect to happen, and how you'll measure it.
+
+  - type: textarea
+    id: hypothesis
+    attributes:
+      label: Hypothesis
+      description: "What do you believe will happen? Use the format: If we [change], then [outcome] because [rationale]."
+      placeholder: "If we show counterfactual trade analysis, then managers will engage more with trade history because understanding 'what could have been' creates stronger emotional connection to the data."
+    validations:
+      required: true
+
+  - type: textarea
+    id: control
+    attributes:
+      label: Control (Current Behavior)
+      description: What does the user experience today?
+    validations:
+      required: true
+
+  - type: textarea
+    id: treatment
+    attributes:
+      label: Treatment (New Behavior)
+      description: What will the user experience in the experiment variant?
+    validations:
+      required: true
+
+  - type: textarea
+    id: metrics
+    attributes:
+      label: Primary & Secondary Metrics
+      description: What will you measure to determine success?
+      placeholder: |
+        Primary: Click-through rate on trade detail pages
+        Secondary: Time spent on trade analysis, return visit rate
+    validations:
+      required: true
+
+  - type: input
+    id: rollout
+    attributes:
+      label: Rollout Percentage
+      description: What % of users should see the treatment?
+      placeholder: "50"
+    validations:
+      required: true
+
+  - type: input
+    id: duration
+    attributes:
+      label: Experiment Duration
+      description: How long should the experiment run before evaluation?
+      placeholder: "2 weeks"
+    validations:
+      required: true
+
+  - type: textarea
+    id: guardrails
+    attributes:
+      label: Guardrails
+      description: What negative outcomes would cause you to stop the experiment early?

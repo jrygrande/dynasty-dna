@@ -3,6 +3,7 @@
 import { signIn, useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
+import Link from "next/link";
 
 export default function HomePage() {
   const { data: session, status } = useSession();
@@ -23,7 +24,18 @@ export default function HomePage() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-b from-background to-secondary/20">
+    <div className="min-h-screen flex flex-col bg-gradient-to-b from-background to-secondary/20">
+      {/* Top nav */}
+      <nav className="flex items-center justify-end gap-6 px-6 py-4">
+        <Link href="/roadmap" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+          Roadmap
+        </Link>
+        <Link href="/changelog" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+          Changelog
+        </Link>
+      </nav>
+
+      <div className="flex-1 flex flex-col items-center justify-center">
       <div className="max-w-2xl mx-auto text-center px-6">
         <h1 className="text-5xl font-bold tracking-tight mb-4">
           Dynasty <span className="text-primary">DNA</span>
@@ -56,6 +68,7 @@ export default function HomePage() {
         <p className="text-xs text-muted-foreground mt-8">
           After signing in, you&apos;ll link your Sleeper account to get started.
         </p>
+      </div>
       </div>
     </div>
   );
