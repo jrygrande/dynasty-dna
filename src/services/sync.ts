@@ -356,7 +356,7 @@ export async function syncLeague(
   if (playoffStart && maxWeek >= playoffStart) {
     try {
       const bracket = await Sleeper.getWinnersBracket(leagueId);
-      if (bracket?.length > 0) {
+      if (bracket?.length > 0 && bracket.some((m) => m.w !== null)) {
         await db.update(schema.leagues)
           .set({ winnersBracket: bracket })
           .where(eq(schema.leagues.id, leagueId));
