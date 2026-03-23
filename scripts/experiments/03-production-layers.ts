@@ -58,7 +58,7 @@ runExperiment({
       return { metrics: {}, rawData: [] };
     }
 
-    const allMetrics: Record<string, Record<string, { corrWinPct: number; corrFpts: number; corrMOS: number }>> = {};
+    const allMetrics: Record<string, Record<string, { corrWinPct: number; corrFpts: number; corrMOS: number | null }>> = {};
     const allRawRows: Record<string, unknown>[] = [];
 
     for (const family of families) {
@@ -192,6 +192,7 @@ runExperiment({
           const winPcts: number[] = [];
           const fpts: number[] = [];
           const mosVals: number[] = [];
+          const hasMOS = mosMap.size > 0;
 
           for (const roster of leagueRosters) {
             const prod = rosterProductions.get(roster.rosterId) ?? 0;
@@ -201,16 +202,16 @@ runExperiment({
             productions.push(prod);
             winPcts.push(winPct);
             fpts.push(roster.fpts ?? 0);
-            mosVals.push(mosMap.get(roster.rosterId) ?? 0);
+            if (hasMOS) mosVals.push(mosMap.get(roster.rosterId) ?? 0);
           }
 
           const corrWin = spearmanCorrelation(productions, winPcts);
           const corrFpts = spearmanCorrelation(productions, fpts);
-          const corrMOS = spearmanCorrelation(productions, mosVals);
+          const corrMOS = hasMOS ? spearmanCorrelation(productions, mosVals) : null;
 
           const corrWinRounded = Math.round(corrWin * 1000) / 1000;
           const corrFptsRounded = Math.round(corrFpts * 1000) / 1000;
-          const corrMOSRounded = Math.round(corrMOS * 1000) / 1000;
+          const corrMOSRounded = hasMOS ? Math.round(corrMOS * 1000) / 1000 : null;
 
           allMetrics[seasonKey][config.name] = {
             corrWinPct: corrWinRounded,
@@ -223,7 +224,7 @@ runExperiment({
             leagueRosters.length,
             corrWin.toFixed(3),
             corrFpts.toFixed(3),
-            corrMOS.toFixed(3),
+            hasMOS ? corrMOS.toFixed(3) : "n/a",
           ]);
         }
 

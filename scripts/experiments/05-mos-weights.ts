@@ -57,7 +57,6 @@ function discretizeMOS(scores: number[]): string[] {
  */
 function crossSeasonCorrelation(
   scores: ManagerOutcomeScore[],
-  familyMembers: { leagueId: string; season: string }[],
   rosterOwners: Map<string, string>, // "leagueId:rosterId" -> ownerId
 ): number {
   // Group scores by season
@@ -136,9 +135,8 @@ runExperiment({
       }
     }
 
-    // Pre-load all family members (doesn't change across weight vectors)
-    const allFamilyMembers: { leagueId: string; season: string }[] = [];
-    const leagueIds: string[] = [];
+    // Collect unique league IDs across all families
+    const leagueIdSet = new Set<string>();
     for (const family of families) {
       const members = await ctx.db
         .select()
@@ -146,10 +144,10 @@ runExperiment({
         .where(eq(ctx.schema.leagueFamilyMembers.familyId, family.id));
 
       for (const m of members) {
-        allFamilyMembers.push({ leagueId: m.leagueId, season: m.season });
-        leagueIds.push(m.leagueId);
+        leagueIdSet.add(m.leagueId);
       }
     }
+    const leagueIds = [...leagueIdSet];
 
     const perVectorMetrics: Record<string, {
       entropy: number;
@@ -180,7 +178,6 @@ runExperiment({
       const entropy = shannonEntropy(discretizeMOS(mosValues));
       const crossCorr = crossSeasonCorrelation(
         allScores,
-        allFamilyMembers,
         rosterOwners,
       );
 

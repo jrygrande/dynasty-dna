@@ -262,15 +262,16 @@ runExperiment({
           v2Avgs.push(v2Arr.reduce((a, b) => a + b, 0) / v2Arr.length);
         }
 
-        if (mosVals.length >= 4) {
+        if (mosVals.length >= 8) {
           const corrV1MOS = spearmanCorrelation(v1Avgs, mosVals);
           const corrV2MOS = spearmanCorrelation(v2Avgs, mosVals);
           const key = `${family.name}:${member.season}`;
           mosCorrelations[key] = {
             v1: Math.round(corrV1MOS * 1000) / 1000,
             v2: Math.round(corrV2MOS * 1000) / 1000,
+            n: mosVals.length,
           };
-          ctx.log(`  ${key}: v1=${corrV1MOS.toFixed(3)}, v2=${corrV2MOS.toFixed(3)}`);
+          ctx.log(`  ${key} (n=${mosVals.length}): v1=${corrV1MOS.toFixed(3)}, v2=${corrV2MOS.toFixed(3)}`);
         }
       }
     }
