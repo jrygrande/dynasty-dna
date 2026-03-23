@@ -33,8 +33,8 @@ import {
 } from "../../src/services/outcomeScore";
 
 const WEIGHT_VECTORS: (MOSWeights & { name: string })[] = [
-  { name: "baseline",       winPct: 0.40, starter: 0.30, playoff: 0.20, champ: 0.10 },
-  { name: "starter-heavy",  winPct: 0.30, starter: 0.40, playoff: 0.20, champ: 0.10 },
+  { name: "baseline",       winPct: 0.30, starter: 0.40, playoff: 0.20, champ: 0.10 },
+  { name: "wins-heavy",     winPct: 0.40, starter: 0.30, playoff: 0.20, champ: 0.10 },
   { name: "wins-dominant",  winPct: 0.50, starter: 0.25, playoff: 0.15, champ: 0.10 },
   { name: "playoff-heavy",  winPct: 0.30, starter: 0.20, playoff: 0.35, champ: 0.15 },
   { name: "equal",          winPct: 0.25, starter: 0.25, playoff: 0.25, champ: 0.25 },

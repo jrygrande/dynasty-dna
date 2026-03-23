@@ -6,8 +6,8 @@
  * should produce grades that correlate more strongly with MOS.
  *
  * Components (default weights):
- *   40% win percentage — most data-rich, least luck-dependent
- *   30% starter contribution — total starter points vs league best
+ *   40% starter contribution — purest signal of roster-building quality
+ *   30% win percentage — data-rich but influenced by matchup scheduling luck
  *   20% playoff advancement — rounds won / total playoff rounds
  *   10% championship result — champion, runner-up, semifinal loss
  */
@@ -29,8 +29,8 @@ export interface MOSWeights {
 }
 
 export const DEFAULT_WEIGHTS: MOSWeights = {
-  winPct: 0.4,
-  starter: 0.3,
+  winPct: 0.3,
+  starter: 0.4,
   playoff: 0.2,
   champ: 0.1,
 };
