@@ -103,6 +103,7 @@ export const leagues = pgTable("leagues", {
   scoringSettings: jsonb("scoring_settings"),
   rosterPositions: jsonb("roster_positions"), // e.g. ["QB","RB","RB","WR","WR","TE","FLEX","FLEX","BN",...]
   totalRosters: integer("total_rosters"),
+  winnersBracket: jsonb("winners_bracket"), // Sleeper playoff winners bracket data
   lastSyncedAt: timestamp("last_synced_at", { mode: "date" }),
 });
 

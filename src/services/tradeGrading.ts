@@ -326,6 +326,7 @@ export function computeProductionScores(
 
         if (filteredScores.length === 0) continue;
 
+        const leaguePlayoffConfig = ctx.playoffConfig.get(leagueId);
         const { production, weeksUsed } =
           playerLayeredProduction(
             filteredScores,
@@ -334,9 +335,11 @@ export function computeProductionScores(
             {
               matchupOutcomes: ctx.matchupOutcomes,
               playoffStart:
-                ctx.playoffConfig.get(leagueId)?.playoffStart ?? null,
+                leaguePlayoffConfig?.playoffStart ?? null,
               championshipWeek:
-                ctx.playoffConfig.get(leagueId)?.championshipWeek ?? null,
+                leaguePlayoffConfig?.championshipWeek ?? null,
+              playoffRosterIds:
+                leaguePlayoffConfig?.winnersBracketRosterIds ?? null,
               leagueId,
             },
           );

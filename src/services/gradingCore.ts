@@ -1,5 +1,6 @@
 import { getDb, schema } from "@/db";
 import { eq, and, inArray } from "drizzle-orm";
+import type { SleeperBracketMatchup } from "@/lib/sleeper";
 
 // ============================================================
 // Grade Configuration
@@ -217,18 +218,27 @@ export function matchupOutcomeMultiplier(
 /**
  * Playoff week weighting multiplier.
  * - Regular season: 1.0x
- * - Playoff weeks: 1.5x
- * - Championship week (last week of season): 2.0x
+ * - Playoff weeks (winners bracket): 1.5x
+ * - Championship week (winners bracket): 2.0x
+ * - Consolation bracket: 1.0x (no boost)
+ *
+ * When playoffRosterIds/rosterId are null, falls through to boost-all behavior
+ * for graceful degradation when bracket data is unavailable.
  */
 export function playoffWeightMultiplier(
   week: number,
   playoffStart: number | null,
   championshipWeek: number | null = null,
+  playoffRosterIds: Set<number> | null = null,
+  rosterId: number | null = null,
 ): number {
   if (playoffStart === null || week < playoffStart) return 1.0;
-  // NOTE: Applies to all teams in playoff weeks, including consolation bracket,
-  // because we lack bracket-type data. Could use settings.playoff_teams +
-  // standings to limit to winners-bracket rosterIds in a future iteration.
+
+  // If bracket data available, only boost winners-bracket teams
+  if (playoffRosterIds !== null && rosterId !== null) {
+    if (!playoffRosterIds.has(rosterId)) return 1.0;
+  }
+
   if (championshipWeek !== null && week >= championshipWeek) return 2.0;
   return 1.5;
 }
@@ -310,6 +320,24 @@ export interface MatchupResult {
 export interface PlayoffConfig {
   playoffStart: number;
   championshipWeek: number;
+  winnersBracketRosterIds?: Set<number>;
+}
+
+/**
+ * Extract all roster IDs that appear in the winners bracket.
+ * Works with the raw Sleeper bracket response shape.
+ */
+export function extractBracketRosterIds(
+  bracket: SleeperBracketMatchup[],
+): Set<number> {
+  const ids = new Set<number>();
+  for (const m of bracket) {
+    if (typeof m.t1 === "number") ids.add(m.t1);
+    if (typeof m.t2 === "number") ids.add(m.t2);
+    if (m.w !== null) ids.add(m.w);
+    if (m.l !== null) ids.add(m.l);
+  }
+  return ids;
 }
 
 // ============================================================
@@ -372,6 +400,7 @@ export function playerLayeredProduction(
     matchupOutcomes?: Map<string, MatchupResult>;
     playoffStart?: number | null;
     championshipWeek?: number | null;
+    playoffRosterIds?: Set<number> | null;
     leagueId?: string;
   } = {},
 ): { production: number; weeksUsed: number } {
@@ -382,6 +411,7 @@ export function playerLayeredProduction(
     matchupOutcomes,
     playoffStart = null,
     championshipWeek = null,
+    playoffRosterIds = null,
     leagueId,
   } = opts;
 
@@ -417,8 +447,8 @@ export function playerLayeredProduction(
       }
     }
 
-    // Layer 4: Playoff weighting
-    const pMult = playoffWeightMultiplier(ws.week, playoffStart, championshipWeek);
+    // Layer 4: Playoff weighting (consolation bracket filtered out when bracket data available)
+    const pMult = playoffWeightMultiplier(ws.week, playoffStart, championshipWeek, playoffRosterIds, ws.rosterId);
 
     totalLayeredPAR += rawPAR * sMult * mMult * pMult;
   }
@@ -796,6 +826,7 @@ export async function loadPlayoffConfig(
     .select({
       id: schema.leagues.id,
       settings: schema.leagues.settings,
+      winnersBracket: schema.leagues.winnersBracket,
     })
     .from(schema.leagues)
     .where(inArray(schema.leagues.id, familyLeagueIds));
@@ -808,7 +839,15 @@ export async function loadPlayoffConfig(
         const numPlayoffTeams = (settings.playoff_teams as number) ?? 6;
         const playoffRounds = Math.ceil(Math.log2(Math.max(2, numPlayoffTeams)));
         const championshipWeek = playoffStart + playoffRounds - 1;
-        result.set(row.id, { playoffStart, championshipWeek });
+        const config: PlayoffConfig = { playoffStart, championshipWeek };
+
+        // Attach winners bracket roster IDs if available
+        const bracket = row.winnersBracket as SleeperBracketMatchup[] | null;
+        if (bracket && bracket.length > 0) {
+          config.winnersBracketRosterIds = extractBracketRosterIds(bracket);
+        }
+
+        result.set(row.id, config);
       }
     }
   }
