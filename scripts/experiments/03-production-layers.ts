@@ -29,6 +29,7 @@ import {
   loadPlayerWeeklyScores,
   loadMatchupOutcomes,
   loadPlayoffConfig,
+  BELOW_REPLACEMENT_FLOOR,
 } from "../../src/services/gradingCore";
 
 type LayerConfig = {
@@ -142,14 +143,20 @@ runExperiment({
 
               for (const ws of rosterScores) {
                 const rawPAR = pointsAboveReplacement(ws.points, repPPG);
-                if (rawPAR <= 0) continue;
+                const isOptimal = rawPAR > 0;
 
                 let mult = 1.0;
 
                 if (config.starter) {
-                  const isOptimal = ws.points > repPPG;
-                  mult *= starterMultiplier(ws.isStarter, isOptimal);
+                  const sMult = starterMultiplier(ws.isStarter, isOptimal);
+                  if (sMult === 0) continue;
+                  mult *= sMult;
+                } else {
+                  // No starter layer — skip below-replacement weeks (no floor)
+                  if (!isOptimal) continue;
                 }
+
+                const effectivePAR = isOptimal ? rawPAR : repPPG * BELOW_REPLACEMENT_FLOOR;
 
                 if (config.matchup) {
                   const mKey = `${leagueId}:${ws.week}:${ws.rosterId}`;
@@ -168,7 +175,7 @@ runExperiment({
                   mult *= playoffWeightMultiplier(ws.week, playoffStart, playoffCfg?.championshipWeek ?? null);
                 }
 
-                totalProd += scaledPAR(rawPAR, maxPAR) * mult;
+                totalProd += scaledPAR(effectivePAR, maxPAR) * mult;
               }
             }
 

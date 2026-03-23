@@ -173,12 +173,19 @@ export function productionWeight(
 // Production Layers (v2)
 // ============================================================
 
+/** Floor PAR fraction for below-replacement starters (scales with position replacement PPG). */
+export const BELOW_REPLACEMENT_FLOOR = 0.15;
+
 /**
  * Starter utilization multiplier.
- * - Started + optimal (above replacement): 1.0x
- * - Started + below replacement: 0.7x (trusted but unlucky)
- * - Benched + would have improved lineup: 0.3x
- * - Benched + correctly benched: 0x
+ * - Started + optimal (above replacement): 1.0x — full credit
+ * - Started + below replacement: 0.7x — trusted but unlucky (applied to floor PAR)
+ * - Benched + would have improved lineup: 0.3x — opportunity cost
+ * - Benched + correctly benched: 0x — short-circuited before reaching here
+ *
+ * All four branches are reachable because callers use a floor PAR
+ * (replacementPPG * BELOW_REPLACEMENT_FLOOR) for below-replacement weeks
+ * instead of skipping them entirely.
  */
 export function starterMultiplier(
   isStarter: boolean,
@@ -426,11 +433,16 @@ export function playerLayeredProduction(
     weeksUsed++;
 
     const rawPAR = pointsAboveReplacement(ws.points, replacementPPG);
-    if (rawPAR <= 0) continue;
 
     // Layer 2: Starter utilization
-    const isOptimal = ws.points > replacementPPG;
+    const isOptimal = rawPAR > 0;
     const sMult = starterMultiplier(ws.isStarter, isOptimal);
+
+    // Short-circuit: benched + below replacement (sMult === 0) contributes nothing
+    if (sMult === 0) continue;
+
+    // For below-replacement starters, use a floor PAR so the 0.7x branch has effect
+    const effectivePAR = isOptimal ? rawPAR : replacementPPG * BELOW_REPLACEMENT_FLOOR;
 
     // Layer 3: Matchup outcome
     let mMult = 1.0;
@@ -450,7 +462,7 @@ export function playerLayeredProduction(
     // Layer 4: Playoff weighting (consolation bracket filtered out when bracket data available)
     const pMult = playoffWeightMultiplier(ws.week, playoffStart, championshipWeek, playoffRosterIds, ws.rosterId);
 
-    totalLayeredPAR += rawPAR * sMult * mMult * pMult;
+    totalLayeredPAR += effectivePAR * sMult * mMult * pMult;
   }
 
   // Normalize: average weekly layered PAR, then scale to 0-100
