@@ -88,15 +88,39 @@ export function parsePlayoffResults(
   }
 
   for (const m of bracket) {
+    // Skip consolation/placement matches (3rd place, 5th place, etc.)
+    // These don't represent advancement in the championship bracket.
+    // Championship match (p=1) and runner-up (p=2 via loss) still count.
+    const isConsolation = m.p !== undefined && m.p !== null && m.p >= 3;
+    if (isConsolation) continue;
+
     if (m.w !== null && m.w !== undefined) {
-      // Winner advanced past this round
       const current = roundsAdvanced.get(m.w) ?? 0;
       roundsAdvanced.set(m.w, Math.max(current, m.r));
     }
     if (m.l !== null && m.l !== undefined) {
-      // Loser advanced past rounds before this one
       const current = roundsAdvanced.get(m.l) ?? 0;
       roundsAdvanced.set(m.l, Math.max(current, m.r - 1));
+    }
+  }
+
+  // Credit bye teams for advancing past the round(s) they skipped.
+  // Detect as rosters whose first main-bracket appearance is round 2+.
+  const firstAppearance = new Map<number, number>();
+  for (const m of bracket) {
+    const isConsolation = m.p !== undefined && m.p !== null && m.p >= 3;
+    if (isConsolation) continue;
+    for (const id of [m.t1, m.t2, m.w, m.l]) {
+      if (typeof id === "number") {
+        const current = firstAppearance.get(id) ?? Infinity;
+        firstAppearance.set(id, Math.min(current, m.r));
+      }
+    }
+  }
+  for (const [id, firstRound] of firstAppearance) {
+    if (firstRound > 1) {
+      const current = roundsAdvanced.get(id) ?? 0;
+      roundsAdvanced.set(id, Math.max(current, firstRound - 1));
     }
   }
 
