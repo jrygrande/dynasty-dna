@@ -170,6 +170,18 @@ export interface SleeperMatchup {
   players_points: Record<string, number>;
 }
 
+export interface SleeperBracketMatchup {
+  r: number; // round
+  m: number; // match ID
+  t1: number | { w?: number; l?: number } | null;
+  t2: number | { w?: number; l?: number } | null;
+  w: number | null; // winner roster ID
+  l: number | null; // loser roster ID
+  t1_from?: { w?: number; l?: number };
+  t2_from?: { w?: number; l?: number };
+  p?: number; // placement
+}
+
 export interface SleeperNFLState {
   season: number;
   week: number;
@@ -235,5 +247,5 @@ export const Sleeper = {
   getNFLState: () => get<SleeperNFLState>(`/state/nfl`),
 
   getWinnersBracket: (leagueId: string) =>
-    get<unknown[]>(`/league/${leagueId}/winners_bracket`),
+    get<SleeperBracketMatchup[]>(`/league/${leagueId}/winners_bracket`),
 };

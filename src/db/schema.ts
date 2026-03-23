@@ -103,6 +103,7 @@ export const leagues = pgTable("leagues", {
   scoringSettings: jsonb("scoring_settings"),
   rosterPositions: jsonb("roster_positions"), // e.g. ["QB","RB","RB","WR","WR","TE","FLEX","FLEX","BN",...]
   totalRosters: integer("total_rosters"),
+  winnersBracket: jsonb("winners_bracket"), // Sleeper playoff winners bracket data
   lastSyncedAt: timestamp("last_synced_at", { mode: "date" }),
 });
 
@@ -563,6 +564,30 @@ export const syncJobs = pgTable(
   },
   (sj) => ({
     refStatusIdx: index("sync_jobs_ref_status_idx").on(sj.ref, sj.status),
+  })
+);
+
+// ============================================================
+// Experiments
+// ============================================================
+
+export const experimentRuns = pgTable(
+  "experiment_runs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    name: text("name").notNull(), // e.g. "par-vs-rank", "blend-sensitivity"
+    hypothesis: text("hypothesis"),
+    config: jsonb("config"), // parameters/settings used for this run
+    metrics: jsonb("metrics"), // structured output: correlations, distributions, etc.
+    rawData: jsonb("raw_data"), // detailed per-item results for drill-down
+    familyId: text("family_id"), // optional: which league family was analyzed
+    status: text("status").notNull().default("running"), // running, success, failed
+    error: text("error"),
+    startedAt: timestamp("started_at", { mode: "date" }).defaultNow().notNull(),
+    finishedAt: timestamp("finished_at", { mode: "date" }),
+  },
+  (er) => ({
+    nameIdx: index("experiment_runs_name_idx").on(er.name),
   })
 );
 
