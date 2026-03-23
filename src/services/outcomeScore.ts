@@ -77,15 +77,26 @@ export function parsePlayoffResults(
 
   const rosterIds = extractBracketRosterIds(bracket);
 
-  // Count rounds won per roster
-  const roundsWon = new Map<number, number>();
+  // Track the highest round each roster advanced past.
+  // A winner of round R advanced past R (they move to R+1).
+  // A loser of round R was eliminated at R (advanced past R-1 rounds).
+  // This correctly handles byes — a team with a bye in round 1
+  // that wins in round 2 advanced past 2 rounds, same as totalRounds-1.
+  const roundsAdvanced = new Map<number, number>();
   for (const id of rosterIds) {
-    roundsWon.set(id, 0);
+    roundsAdvanced.set(id, 0);
   }
 
   for (const m of bracket) {
     if (m.w !== null && m.w !== undefined) {
-      roundsWon.set(m.w, (roundsWon.get(m.w) ?? 0) + 1);
+      // Winner advanced past this round
+      const current = roundsAdvanced.get(m.w) ?? 0;
+      roundsAdvanced.set(m.w, Math.max(current, m.r));
+    }
+    if (m.l !== null && m.l !== undefined) {
+      // Loser advanced past rounds before this one
+      const current = roundsAdvanced.get(m.l) ?? 0;
+      roundsAdvanced.set(m.l, Math.max(current, m.r - 1));
     }
   }
 
@@ -133,7 +144,7 @@ export function parsePlayoffResults(
 
   return Array.from(rosterIds).map((id) => ({
     rosterId: id,
-    roundsWon: roundsWon.get(id) ?? 0,
+    roundsWon: roundsAdvanced.get(id) ?? 0,
     totalRounds,
     placement: placements.get(id) ?? null,
   }));
