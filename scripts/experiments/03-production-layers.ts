@@ -17,7 +17,8 @@
  * Usage: npx tsx scripts/experiments/03-production-layers.ts
  */
 
-import { runExperiment, schema, spearmanCorrelation, printTable } from "./helpers";
+import { runExperiment, db, schema, spearmanCorrelation, printTable } from "./helpers";
+import { computeLeagueMOS } from "../../src/services/outcomeScore";
 import { eq, inArray } from "drizzle-orm";
 import {
   pointsAboveReplacement,
@@ -57,7 +58,7 @@ runExperiment({
       return { metrics: {}, rawData: [] };
     }
 
-    const allMetrics: Record<string, Record<string, { corrWinPct: number; corrFpts: number }>> = {};
+    const allMetrics: Record<string, Record<string, { corrWinPct: number; corrFpts: number; corrMOS: number | null }>> = {};
     const allRawRows: Record<string, unknown>[] = [];
 
     for (const family of families) {
@@ -106,6 +107,10 @@ runExperiment({
         const playoffStart = playoffCfg?.playoffStart ?? null;
 
         ctx.log(`\n  Season ${season} (${leagueRosters.length} rosters):`);
+
+        // Compute MOS for this league
+        const leagueMOS = await computeLeagueMOS(leagueId, undefined, db);
+        const mosMap = new Map(leagueMOS.map((m) => [m.rosterId, m.mos]));
 
         const tableRows: (string | number)[][] = [];
         const seasonKey = `${family.name}:${season}`;
@@ -186,6 +191,8 @@ runExperiment({
           const productions: number[] = [];
           const winPcts: number[] = [];
           const fpts: number[] = [];
+          const mosVals: number[] = [];
+          const hasMOS = mosMap.size > 0;
 
           for (const roster of leagueRosters) {
             const prod = rosterProductions.get(roster.rosterId) ?? 0;
@@ -195,17 +202,21 @@ runExperiment({
             productions.push(prod);
             winPcts.push(winPct);
             fpts.push(roster.fpts ?? 0);
+            if (hasMOS) mosVals.push(mosMap.get(roster.rosterId) ?? 0);
           }
 
           const corrWin = spearmanCorrelation(productions, winPcts);
           const corrFpts = spearmanCorrelation(productions, fpts);
+          const corrMOS = hasMOS ? spearmanCorrelation(productions, mosVals) : null;
 
           const corrWinRounded = Math.round(corrWin * 1000) / 1000;
           const corrFptsRounded = Math.round(corrFpts * 1000) / 1000;
+          const corrMOSRounded = hasMOS ? Math.round(corrMOS * 1000) / 1000 : null;
 
           allMetrics[seasonKey][config.name] = {
             corrWinPct: corrWinRounded,
             corrFpts: corrFptsRounded,
+            corrMOS: corrMOSRounded,
           };
 
           tableRows.push([
@@ -213,11 +224,12 @@ runExperiment({
             leagueRosters.length,
             corrWin.toFixed(3),
             corrFpts.toFixed(3),
+            hasMOS ? corrMOS.toFixed(3) : "n/a",
           ]);
         }
 
         printTable(
-          ["Config", "Rosters", "Corr(prod,winPct)", "Corr(prod,fpts)"],
+          ["Config", "Rosters", "Corr(prod,winPct)", "Corr(prod,fpts)", "Corr(prod,MOS)"],
           tableRows,
         );
 
@@ -230,6 +242,7 @@ runExperiment({
             rosters: row[1],
             corrWinPct: row[2],
             corrFpts: row[3],
+            corrMOS: row[4],
           });
         }
       }
