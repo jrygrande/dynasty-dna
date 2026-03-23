@@ -23,6 +23,12 @@ export function PublicNav() {
             Changelog
           </Link>
           <Link
+            href="/experiments"
+            className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+          >
+            Experiments
+          </Link>
+          <Link
             href="/"
             className="text-sm px-4 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
           >

@@ -351,6 +351,21 @@ export async function syncLeague(
     await setWatermark(leagueId, "matchups", matchupWatermarkValue);
   }
 
+  // Sync winners bracket (only when playoffs have started)
+  const playoffStart = (league.settings as Record<string, unknown>)?.playoff_week_start as number | undefined;
+  if (playoffStart && maxWeek >= playoffStart) {
+    try {
+      const bracket = await Sleeper.getWinnersBracket(leagueId);
+      if (bracket?.length > 0) {
+        await db.update(schema.leagues)
+          .set({ winnersBracket: bracket })
+          .where(eq(schema.leagues.id, leagueId));
+      }
+    } catch (err) {
+      console.warn(`[sync] Winners bracket fetch failed for ${leagueId}:`, err);
+    }
+  }
+
   // Build asset events from transactions + drafts
   onProgress?.({
     step: "asset_events",
