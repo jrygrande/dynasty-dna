@@ -25,10 +25,13 @@ import {
 } from "../../src/services/gradingCore";
 import {
   runExperiment,
+  db,
+  schema,
   describeArray,
   spearmanCorrelation,
   printTable,
 } from "./helpers";
+import { computeLeagueMOS } from "../../src/services/outcomeScore";
 
 runExperiment({
   name: "par-vs-rank",
@@ -50,6 +53,10 @@ runExperiment({
     const allV1Corrs: number[] = [];
     const allV2Corrs: number[] = [];
 
+    // Store per-family data for reuse in MOS correlation section
+    const familySeasonalData = new Map<string, Awaited<ReturnType<typeof computeSeasonalRanks>>>();
+    const familyMembers = new Map<string, { leagueId: string; season: string }[]>();
+
     for (const family of families) {
       ctx.log(`\n--- Family: ${family.name} ---`);
 
@@ -69,6 +76,10 @@ runExperiment({
         leagueSeasonMap,
         { isSuperFlex: false },
       );
+
+      // Cache for MOS correlation section below
+      familySeasonalData.set(family.id, seasonalData);
+      familyMembers.set(family.id, members.map((m) => ({ leagueId: m.leagueId, season: m.season })));
 
       // Build per-player PPG lookup from seasonalData (avoids redundant DB query)
       const playerSeasonPPG = new Map<string, number>(); // "playerId:season" -> PPG
@@ -187,12 +198,90 @@ runExperiment({
 
     ctx.log(`\nAverage correlation — v1 (rank): ${avgV1}, v2 (PAR): ${avgV2}`);
 
+    // MOS correlation: for each league, compute MOS and correlate with
+    // the average production score of rostered players under each method
+    ctx.log("\n--- MOS Correlation ---");
+    const mosCorrelations: Record<string, { v1: number; v2: number }> = {};
+
+    for (const family of families) {
+      const members = familyMembers.get(family.id) ?? [];
+      const cachedSeasonalData = familySeasonalData.get(family.id);
+      if (!cachedSeasonalData || members.length === 0) continue;
+
+      for (const member of members) {
+        const leagueMOS = await computeLeagueMOS(member.leagueId, undefined, db);
+        if (leagueMOS.length === 0) continue;
+
+        // Get production scores per roster under v1 and v2
+        const rosterV1 = new Map<number, number[]>();
+        const rosterV2 = new Map<number, number[]>();
+
+        const leagueScores = await ctx.db
+          .select()
+          .from(ctx.schema.playerScores)
+          .where(eq(ctx.schema.playerScores.leagueId, member.leagueId));
+
+        for (const ps of leagueScores) {
+          const position = cachedSeasonalData.positions.get(ps.playerId);
+          if (!position) continue;
+
+          const rankKey = `${member.season}:${position}`;
+          const rankMap = cachedSeasonalData.ranks.get(rankKey);
+          const rank = rankMap?.get(ps.playerId);
+          if (rank === undefined) continue;
+
+          const awMap = cachedSeasonalData.activeWeeks.get(member.season);
+          const activeWeekCount = awMap?.get(ps.playerId) ?? 0;
+
+          const v1Score = rankToProductionValue(rank, activeWeekCount, position);
+          const v2Score = playerSeasonalPAR(
+            ps.playerId,
+            parseInt(member.season, 10),
+            parseInt(member.season, 10),
+            cachedSeasonalData,
+          );
+
+          if (!rosterV1.has(ps.rosterId)) rosterV1.set(ps.rosterId, []);
+          if (!rosterV2.has(ps.rosterId)) rosterV2.set(ps.rosterId, []);
+          rosterV1.get(ps.rosterId)!.push(v1Score);
+          rosterV2.get(ps.rosterId)!.push(v2Score);
+        }
+
+        // Build arrays for correlation with MOS
+        const mosVals: number[] = [];
+        const v1Avgs: number[] = [];
+        const v2Avgs: number[] = [];
+
+        for (const mosEntry of leagueMOS) {
+          const v1Arr = rosterV1.get(mosEntry.rosterId);
+          const v2Arr = rosterV2.get(mosEntry.rosterId);
+          if (!v1Arr || !v2Arr || v1Arr.length === 0) continue;
+
+          mosVals.push(mosEntry.mos);
+          v1Avgs.push(v1Arr.reduce((a, b) => a + b, 0) / v1Arr.length);
+          v2Avgs.push(v2Arr.reduce((a, b) => a + b, 0) / v2Arr.length);
+        }
+
+        if (mosVals.length >= 4) {
+          const corrV1MOS = spearmanCorrelation(v1Avgs, mosVals);
+          const corrV2MOS = spearmanCorrelation(v2Avgs, mosVals);
+          const key = `${family.name}:${member.season}`;
+          mosCorrelations[key] = {
+            v1: Math.round(corrV1MOS * 1000) / 1000,
+            v2: Math.round(corrV2MOS * 1000) / 1000,
+          };
+          ctx.log(`  ${key}: v1=${corrV1MOS.toFixed(3)}, v2=${corrV2MOS.toFixed(3)}`);
+        }
+      }
+    }
+
     return {
       metrics: {
         perSeasonCorrelations,
         averageCorrelationV1: avgV1,
         averageCorrelationV2: avgV2,
         seasonsAnalyzed: allV1Corrs.length,
+        mosCorrelations,
       },
       rawData: Object.entries(allTableRows).flatMap(([family, rows]) =>
         rows.map((r) => ({
