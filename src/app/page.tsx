@@ -19,15 +19,17 @@ export default function LandingPage() {
       {/* Hero */}
       <section className="container mx-auto px-6 py-24 text-center max-w-3xl">
         <h1 className="text-5xl font-bold tracking-tight mb-4">
-          Decode your dynasty
-          <br />
-          management <span className="text-primary">DNA</span>
+          Decode your dynasty <span className="text-primary">DNA</span>
         </h1>
-        <p className="text-xl text-muted-foreground mb-10 max-w-xl mx-auto">
-          Trade grades, draft analysis, lineup optimization, and manager
-          profiles — powered by your Sleeper league data.
+        <p className="text-xl text-muted-foreground mb-8 max-w-xl mx-auto">
+          Find out if you won the trade, graded every pick right, and where
+          you&apos;re leaving points on your bench — all from your Sleeper data.
         </p>
         <AuthCTA />
+        <p className="text-xs text-muted-foreground mt-6">
+          Powered by 50+ data points per player &middot; FantasyCalc &middot;
+          nflverse
+        </p>
       </section>
 
       {/* Feature cards */}
@@ -35,23 +37,23 @@ export default function LandingPage() {
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
           <FeatureCard
             icon={<ArrowRightLeft className="h-6 w-6 text-primary" />}
-            title="Trade Grading"
-            description="Every trade scored with surplus value and context-aware analysis."
+            title="Know if you won the trade"
+            description="Every trade scored with surplus value so you can see who came out ahead — and why."
           />
           <FeatureCard
             icon={<ClipboardList className="h-6 w-6 text-primary" />}
-            title="Draft Analysis"
-            description="Pick-by-pick grades comparing draft capital spent vs. production gained."
+            title="Grade every pick"
+            description="Pick-by-pick draft grades comparing capital spent vs. production gained."
           />
           <FeatureCard
             icon={<BarChart3 className="h-6 w-6 text-primary" />}
-            title="Lineup Optimization"
-            description="See how your weekly lineups compare to the optimal set."
+            title="Never leave points on your bench"
+            description="Weekly lineup analysis showing exactly where you left points on the table."
           />
           <FeatureCard
             icon={<Dna className="h-6 w-6 text-primary" />}
-            title="Manager DNA"
-            description="A profile of your management style across trades, drafts, and waivers."
+            title="Discover your manager style"
+            description="A profile across trades, drafts, and waivers that reveals how you build rosters."
           />
         </div>
       </section>
@@ -60,29 +62,29 @@ export default function LandingPage() {
       <section className="border-t bg-muted/30">
         <div className="container mx-auto px-6 py-16 max-w-5xl">
           <h2 className="text-2xl font-bold tracking-tight mb-2 text-center">
-            How It&apos;s Built
+            Built by a dynasty player, for dynasty players
           </h2>
           <p className="text-muted-foreground text-center mb-10 max-w-lg mx-auto">
-            Dynasty DNA is built in the open with hypothesis-driven development.
+            Every feature is built in the open — see what&apos;s planned, what shipped, and the data behind each decision.
           </p>
           <div className="grid gap-6 sm:grid-cols-3">
             <BuildCard
               href="/roadmap"
               icon={<Map className="h-5 w-5 text-primary" />}
               title="Roadmap"
-              description="See what we're building and why — every feature starts with a hypothesis."
+              description="What we're building next and why — priorities driven by real league data."
             />
             <BuildCard
               href="/changelog"
               icon={<BookOpen className="h-5 w-5 text-primary" />}
               title="Changelog"
-              description="What shipped and the results. Transparent decision-making."
+              description="What shipped and the results. Full transparency on every release."
             />
             <BuildCard
               href="/experiments"
               icon={<FlaskConical className="h-5 w-5 text-primary" />}
               title="Experiments"
-              description="Algorithm variants tested against real data with structured metrics."
+              description="Algorithm variants tested against real data to find what actually works."
             />
           </div>
         </div>
