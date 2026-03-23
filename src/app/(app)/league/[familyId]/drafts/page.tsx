@@ -91,20 +91,20 @@ export default function DraftsPage() {
   }, [familyId, selectedSeason]);
 
   return (
-    <div className="min-h-screen bg-background">
-      <header className="border-b">
-        <div className="container mx-auto px-6 py-4 flex items-center gap-4">
-          <Link
-            href={`/league/${familyId}`}
-            className="text-sm text-muted-foreground hover:text-foreground"
-          >
-            &larr; League
-          </Link>
-          <h1 className="text-2xl font-bold">Draft History</h1>
+      <div>
+        <div className="border-b">
+          <div className="container mx-auto px-6 py-3 flex items-center gap-4">
+            <Link
+              href={`/league/${familyId}`}
+              className="text-sm text-muted-foreground hover:text-foreground"
+            >
+              &larr; League
+            </Link>
+            <h1 className="text-lg font-semibold">Draft History</h1>
+          </div>
         </div>
-      </header>
 
-      <main className="container mx-auto px-6 py-8">
+        <main className="container mx-auto px-6 py-8">
         {/* Season filter */}
         {data?.seasons && data.seasons.length > 1 && (
           <div className="flex gap-2 mb-6">
@@ -157,7 +157,7 @@ export default function DraftsPage() {
           </div>
         )}
       </main>
-    </div>
+      </div>
   );
 }
 

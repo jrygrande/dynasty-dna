@@ -37,7 +37,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (status === "unauthenticated") {
-      router.push("/");
+      router.push("/login");
     }
   }, [status, router]);
 
@@ -79,25 +79,6 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      <header className="border-b">
-        <div className="container mx-auto px-6 py-4 flex items-center justify-between">
-          <h1 className="text-2xl font-bold">
-            Dynasty <span className="text-primary">DNA</span>
-          </h1>
-          <div className="flex items-center gap-4">
-            {linkStatus?.linked && (
-              <span className="text-sm text-muted-foreground">
-                Sleeper: {linkStatus.sleeperUsername}
-              </span>
-            )}
-            <span className="text-sm text-muted-foreground">
-              {session.user?.name || session.user?.email}
-            </span>
-          </div>
-        </div>
-      </header>
-
       <main className="container mx-auto px-6 py-8">
         {!linkStatus?.linked ? (
           <div className="max-w-md mx-auto">
@@ -132,6 +113,5 @@ export default function DashboardPage() {
           </div>
         )}
       </main>
-    </div>
   );
 }

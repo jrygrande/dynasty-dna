@@ -1,6 +1,12 @@
+"use client";
+
 import Link from "next/link";
+import { useSession } from "next-auth/react";
 
 export function PublicNav() {
+  const { data: session, status } = useSession();
+  const isAuthed = status === "authenticated";
+
   return (
     <header className="border-b">
       <div className="container mx-auto px-6 py-4 flex items-center justify-between">
@@ -29,10 +35,10 @@ export function PublicNav() {
             Experiments
           </Link>
           <Link
-            href="/"
+            href={isAuthed ? "/dashboard" : "/login"}
             className="text-sm px-4 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
           >
-            Sign In
+            {isAuthed ? "Dashboard" : "Sign In"}
           </Link>
         </nav>
       </div>

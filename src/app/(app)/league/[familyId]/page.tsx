@@ -130,46 +130,47 @@ export default function LeagueOverviewPage() {
   );
 
   return (
-    <div className="min-h-screen bg-background">
-      <header className="border-b">
-        <div className="container mx-auto px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Link
-              href="/dashboard"
-              className="text-sm text-muted-foreground hover:text-foreground"
-            >
-              &larr; Leagues
-            </Link>
-            <h1 className="text-2xl font-bold">{data.league.name}</h1>
-            <span className="text-sm text-muted-foreground">
-              {data.league.season} Season
-            </span>
-          </div>
-          <div className="flex items-center gap-3">
-            <Link
-              href={`/league/${familyId}/transactions`}
-              className="px-3 py-1.5 text-sm rounded-md border hover:bg-secondary transition-colors"
-            >
-              Transactions
-            </Link>
-            <Link
-              href={`/league/${familyId}/drafts`}
-              className="px-3 py-1.5 text-sm rounded-md border hover:bg-secondary transition-colors"
-            >
-              Drafts
-            </Link>
-            <button
-              onClick={handleSync}
-              disabled={syncing}
-              className="px-3 py-1.5 text-sm rounded-md border hover:bg-secondary transition-colors disabled:opacity-50"
-            >
-              {syncing ? "Syncing..." : "Sync Data"}
-            </button>
+      <div>
+        {/* Sub-header */}
+        <div className="border-b">
+          <div className="container mx-auto px-6 py-3 flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <Link
+                href="/dashboard"
+                className="text-sm text-muted-foreground hover:text-foreground"
+              >
+                &larr; Dashboard
+              </Link>
+              <h1 className="text-lg font-semibold">{data.league.name}</h1>
+              <span className="text-sm text-muted-foreground">
+                {data.league.season}
+              </span>
+            </div>
+            <div className="flex items-center gap-3">
+              <Link
+                href={`/league/${familyId}/transactions`}
+                className="px-3 py-1.5 text-sm rounded-md border hover:bg-secondary transition-colors"
+              >
+                Transactions
+              </Link>
+              <Link
+                href={`/league/${familyId}/drafts`}
+                className="px-3 py-1.5 text-sm rounded-md border hover:bg-secondary transition-colors"
+              >
+                Drafts
+              </Link>
+              <button
+                onClick={handleSync}
+                disabled={syncing}
+                className="px-3 py-1.5 text-sm rounded-md border hover:bg-secondary transition-colors disabled:opacity-50"
+              >
+                {syncing ? "Syncing..." : "Sync Data"}
+              </button>
+            </div>
           </div>
         </div>
-      </header>
 
-      <main className="container mx-auto px-6 py-8">
+        <main className="container mx-auto px-6 py-8">
         {/* Season selector */}
         {data.seasons.length > 1 && (
           <div className="flex gap-2 mb-6">
@@ -255,6 +256,6 @@ export default function LeagueOverviewPage() {
           </div>
         )}
       </main>
-    </div>
+      </div>
   );
 }

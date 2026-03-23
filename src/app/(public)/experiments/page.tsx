@@ -1,8 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { PublicNav } from "@/components/PublicNav";
-
 interface ExperimentRun {
   id: string;
   name: string;
@@ -181,8 +179,6 @@ export default function ExperimentsPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <PublicNav />
-
       <main className="container mx-auto px-6 py-8 max-w-4xl">
         <div className="mb-8">
           <h1 className="text-2xl font-bold tracking-tight">
