@@ -1,5 +1,5 @@
 /**
- * Experiment 3: PAR vs Rank-Based Production
+ * Experiment 1: PAR vs Rank-Based Production
  *
  * Hypothesis: Points-above-replacement produces more meaningful production
  * scores than rank-based exponential decay, especially in the "mushy middle"

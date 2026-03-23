@@ -24,6 +24,7 @@ import {
   type SeasonalData,
   type PlayerWeekData,
   type MatchupResult,
+  type PlayoffConfig,
 } from "@/services/gradingCore";
 
 // ============================================================
@@ -213,7 +214,7 @@ export interface ProductionContext {
   seasonalData: SeasonalData;
   weeklyScores: Map<string, Map<string, PlayerWeekData[]>>;
   matchupOutcomes: Map<string, MatchupResult>;
-  playoffConfig: Map<string, number>;
+  playoffConfig: Map<string, PlayoffConfig>;
   leagueSeasonMap: Map<string, string>;
   leagueOwnerRoster: Map<string, Map<string, number>>; // leagueId -> ownerId -> rosterId
   leagueRosterOwner: Map<string, Map<number, string>>; // leagueId -> rosterId -> ownerId (reverse)
@@ -333,7 +334,9 @@ export function computeProductionScores(
             {
               matchupOutcomes: ctx.matchupOutcomes,
               playoffStart:
-                ctx.playoffConfig.get(leagueId) ?? null,
+                ctx.playoffConfig.get(leagueId)?.playoffStart ?? null,
+              championshipWeek:
+                ctx.playoffConfig.get(leagueId)?.championshipWeek ?? null,
               leagueId,
             },
           );
@@ -464,7 +467,6 @@ export async function gradeLeagueTrades(
     { isSuperFlex },
   );
 
-  // Load v2 production data
   // Load v2 data concurrently — these have no dependencies on each other
   const [weeklyScores, matchupOutcomes, playoffConfig, leagueOwnerRoster] =
     await Promise.all([

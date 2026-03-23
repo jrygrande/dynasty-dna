@@ -101,7 +101,8 @@ runExperiment({
         const leagueScores = weeklyScores.get(leagueId);
         if (!leagueScores) continue;
 
-        const playoffStart = playoffConfig.get(leagueId) ?? null;
+        const playoffCfg = playoffConfig.get(leagueId);
+        const playoffStart = playoffCfg?.playoffStart ?? null;
 
         ctx.log(`\n  Season ${season} (${leagueRosters.length} rosters):`);
 
@@ -164,7 +165,7 @@ runExperiment({
                 }
 
                 if (config.playoff) {
-                  mult *= playoffWeightMultiplier(ws.week, playoffStart);
+                  mult *= playoffWeightMultiplier(ws.week, playoffStart, playoffCfg?.championshipWeek ?? null);
                 }
 
                 totalProd += scaledPAR(rawPAR, maxPAR) * mult;

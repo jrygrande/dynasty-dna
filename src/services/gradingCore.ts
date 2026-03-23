@@ -25,6 +25,9 @@ export const GRADE_CONFIG = {
 
 export const VALUE_FLOOR = 300;
 
+/** Standard NFL season length. Used as default for availability calculations. */
+export const NFL_SEASON_WEEKS = 18;
+
 export function effectiveValue(raw: number): number {
   return Math.max(0, raw - VALUE_FLOOR);
 }
@@ -47,7 +50,7 @@ export function rankToProductionValue(
   rank: number,
   activeWeeks: number,
   position: string,
-  totalWeeks: number = 18,
+  totalWeeks: number = NFL_SEASON_WEEKS,
 ): number {
   const maxRank = RANK_FLOOR[position];
   if (maxRank && rank > maxRank) return 0;
@@ -220,10 +223,13 @@ export function matchupOutcomeMultiplier(
 export function playoffWeightMultiplier(
   week: number,
   playoffStart: number | null,
-  totalWeeks: number = 18,
+  championshipWeek: number | null = null,
 ): number {
   if (playoffStart === null || week < playoffStart) return 1.0;
-  if (week >= totalWeeks) return 2.0;
+  // NOTE: Applies to all teams in playoff weeks, including consolation bracket,
+  // because we lack bracket-type data. Could use settings.playoff_teams +
+  // standings to limit to winners-bracket rosterIds in a future iteration.
+  if (championshipWeek !== null && week >= championshipWeek) return 2.0;
   return 1.5;
 }
 
@@ -301,6 +307,11 @@ export interface MatchupResult {
   opponentRosterId: number;
 }
 
+export interface PlayoffConfig {
+  playoffStart: number;
+  championshipWeek: number;
+}
+
 // ============================================================
 // Production scoring — PAR-based (v2)
 // ============================================================
@@ -336,7 +347,7 @@ export function playerSeasonalPAR(
     const par = pointsAboveReplacement(ppg, repPPG);
     const scaled = scaledPAR(par, maxPARVal);
     const activeWeekCount = awMap?.get(playerId) ?? 0;
-    const availability = Math.min(1, activeWeekCount / 18);
+    const availability = Math.min(1, activeWeekCount / NFL_SEASON_WEEKS);
     total += scaled * availability;
   }
 
@@ -347,8 +358,8 @@ export function playerSeasonalPAR(
  * Compute per-week layered production for a player within a roster ownership window.
  * Used by trade grading where production should be roster-scoped with all layers.
  *
- * Returns a 0-100 score per season's worth of weeks. Normalizes by dividing
- * the layer-adjusted PAR sum by totalWeeks, then scaling against maxPAR.
+ * Returns a 0-100 score. Normalizes by dividing the layer-adjusted PAR sum
+ * by actual weeks used, then scaling against maxPAR.
  */
 export function playerLayeredProduction(
   weeklyScores: PlayerWeekData[],
@@ -360,7 +371,7 @@ export function playerLayeredProduction(
     rosterId?: number;
     matchupOutcomes?: Map<string, MatchupResult>;
     playoffStart?: number | null;
-    totalWeeks?: number;
+    championshipWeek?: number | null;
     leagueId?: string;
   } = {},
 ): { production: number; weeksUsed: number } {
@@ -370,7 +381,7 @@ export function playerLayeredProduction(
     rosterId,
     matchupOutcomes,
     playoffStart = null,
-    totalWeeks = 18,
+    championshipWeek = null,
     leagueId,
   } = opts;
 
@@ -407,13 +418,13 @@ export function playerLayeredProduction(
     }
 
     // Layer 4: Playoff weighting
-    const pMult = playoffWeightMultiplier(ws.week, playoffStart, totalWeeks);
+    const pMult = playoffWeightMultiplier(ws.week, playoffStart, championshipWeek);
 
     totalLayeredPAR += rawPAR * sMult * mMult * pMult;
   }
 
   // Normalize: average weekly layered PAR, then scale to 0-100
-  const avgWeeklyPAR = totalWeeks > 0 ? totalLayeredPAR / totalWeeks : 0;
+  const avgWeeklyPAR = weeksUsed > 0 ? totalLayeredPAR / weeksUsed : 0;
   const production = scaledPAR(avgWeeklyPAR, maxPAR);
 
   return { production, weeksUsed };
@@ -775,9 +786,9 @@ export async function loadMatchupOutcomes(
  */
 export async function loadPlayoffConfig(
   familyLeagueIds: string[],
-): Promise<Map<string, number>> {
+): Promise<Map<string, PlayoffConfig>> {
   const db = getDb();
-  const result = new Map<string, number>();
+  const result = new Map<string, PlayoffConfig>();
 
   if (familyLeagueIds.length === 0) return result;
 
@@ -793,7 +804,12 @@ export async function loadPlayoffConfig(
     const settings = row.settings as Record<string, unknown> | null;
     if (settings) {
       const playoffStart = settings.playoff_week_start as number | undefined;
-      if (playoffStart) result.set(row.id, playoffStart);
+      if (playoffStart) {
+        const numPlayoffTeams = (settings.playoff_teams as number) ?? 6;
+        const playoffRounds = Math.ceil(Math.log2(Math.max(2, numPlayoffTeams)));
+        const championshipWeek = playoffStart + playoffRounds - 1;
+        result.set(row.id, { playoffStart, championshipWeek });
+      }
     }
   }
 
