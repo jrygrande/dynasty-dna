@@ -1,12 +1,14 @@
 "use client";
 
 import { signIn, useSession } from "next-auth/react";
-import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect } from "react";
 
-export default function LoginPage() {
+function LoginContent() {
   const { data: session, status } = useSession();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const error = searchParams.get("error");
 
   useEffect(() => {
     if (session) {
@@ -34,6 +36,12 @@ export default function LoginPage() {
           </p>
         </div>
 
+        {error && (
+          <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-3 mb-4 text-center dark:bg-red-950 dark:border-red-900 dark:text-red-400">
+            Sign-in failed. Please try again.
+          </div>
+        )}
+
         <div className="flex flex-col gap-3">
           <button
             onClick={() => signIn("google")}
@@ -56,6 +64,20 @@ export default function LoginPage() {
         </p>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center">
+          <div className="animate-pulse text-muted-foreground">Loading...</div>
+        </div>
+      }
+    >
+      <LoginContent />
+    </Suspense>
   );
 }
 

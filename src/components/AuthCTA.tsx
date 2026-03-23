@@ -5,6 +5,13 @@ import { useSession } from "next-auth/react";
 
 export function AuthCTA() {
   const { status } = useSession();
+
+  if (status === "loading") {
+    return (
+      <div className="inline-flex items-center px-6 py-3 rounded-lg bg-muted animate-pulse h-[52px] w-[168px]" />
+    );
+  }
+
   const isAuthed = status === "authenticated";
 
   return (

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Menu, X } from "lucide-react";
 
 const navLinks = [
@@ -17,6 +17,11 @@ export function PublicNav() {
   const pathname = usePathname();
   const isAuthed = status === "authenticated";
   const [mobileOpen, setMobileOpen] = useState(false);
+
+  // Auto-close mobile menu on route change (e.g., browser back/forward)
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [pathname]);
 
   function linkClass(href: string) {
     const active = pathname === href;
@@ -70,6 +75,7 @@ export function PublicNav() {
           onClick={() => setMobileOpen(!mobileOpen)}
           className="sm:hidden p-2 text-muted-foreground hover:text-foreground transition-colors"
           aria-label={mobileOpen ? "Close menu" : "Open menu"}
+          aria-expanded={mobileOpen}
         >
           {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
         </button>

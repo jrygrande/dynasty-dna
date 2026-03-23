@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { PublicNav } from "@/components/PublicNav";
 import { AuthCTA } from "@/components/AuthCTA";
 import {
   ArrowRightLeft,
@@ -14,8 +13,6 @@ import {
 export default function LandingPage() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-background to-secondary/20">
-      <PublicNav />
-
       {/* Hero */}
       <section className="container mx-auto px-6 py-24 text-center max-w-3xl">
         <h1 className="text-5xl font-bold tracking-tight mb-4">
