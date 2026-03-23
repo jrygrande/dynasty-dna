@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { PublicNav } from "@/components/PublicNav";
 import { RoadmapCard } from "@/components/RoadmapCard";
 import type { RoadmapIssue } from "@/app/api/roadmap/route";
 import { type FeatureFlag, getActiveExperiments } from "@/lib/featureFlags";
@@ -124,8 +123,6 @@ export default function RoadmapPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <PublicNav />
-
       <main className="container mx-auto px-6 py-12 max-w-3xl">
         {/* Header */}
         <div className="mb-10">

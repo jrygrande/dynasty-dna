@@ -174,31 +174,31 @@ export default function PlayerDetailPage() {
   const { player } = data;
 
   return (
-    <div className="min-h-screen bg-background">
-      <header className="border-b">
-        <div className="container mx-auto px-6 py-4 flex items-center gap-4">
-          <Link
-            href={`/league/${familyId}`}
-            className="text-sm text-muted-foreground hover:text-foreground"
-          >
-            &larr; League
-          </Link>
-          <div className="flex-1">
-            <h1 className="text-2xl font-bold">{player.name}</h1>
-            <div className="text-sm text-muted-foreground">
-              {player.position} {player.team ? `— ${player.team}` : ""}
+      <div>
+        <div className="border-b">
+          <div className="container mx-auto px-6 py-3 flex items-center gap-4">
+            <Link
+              href={`/league/${familyId}`}
+              className="text-sm text-muted-foreground hover:text-foreground"
+            >
+              &larr; League
+            </Link>
+            <div className="flex-1">
+              <h1 className="text-lg font-semibold">{player.name}</h1>
+              <div className="text-sm text-muted-foreground">
+                {player.position} {player.team ? `— ${player.team}` : ""}
+              </div>
             </div>
+            <Link
+              href={`/league/${familyId}/timeline?playerId=${playerId}`}
+              className="text-sm text-muted-foreground hover:text-foreground ml-auto"
+            >
+              Timeline &rarr;
+            </Link>
           </div>
-          <Link
-            href={`/league/${familyId}/timeline?playerId=${playerId}`}
-            className="text-sm text-muted-foreground hover:text-foreground ml-auto"
-          >
-            Timeline &rarr;
-          </Link>
         </div>
-      </header>
 
-      <main className="container mx-auto px-6 py-8">
+        <main className="container mx-auto px-6 py-8">
         {/* Summary Stats */}
         {stats && (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
@@ -347,7 +347,7 @@ export default function PlayerDetailPage() {
           </div>
         )}
       </main>
-    </div>
+      </div>
   );
 }
 

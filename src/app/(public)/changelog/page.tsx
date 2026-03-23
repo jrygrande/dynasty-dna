@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { PublicNav } from "@/components/PublicNav";
 import { StatusBadge } from "@/components/StatusBadge";
 import { formatDate } from "@/lib/utils";
 import type { RoadmapIssue } from "@/app/api/roadmap/route";
@@ -58,8 +57,6 @@ export default function ChangelogPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <PublicNav />
-
       <main className="container mx-auto px-6 py-12 max-w-3xl">
         <div className="mb-10">
           <h1 className="text-3xl font-bold tracking-tight mb-2">Changelog</h1>

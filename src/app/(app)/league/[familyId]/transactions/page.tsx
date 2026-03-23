@@ -59,20 +59,20 @@ export default function TransactionsPage() {
   ];
 
   return (
-    <div className="min-h-screen bg-background">
-      <header className="border-b">
-        <div className="container mx-auto px-6 py-4 flex items-center gap-4">
-          <Link
-            href={`/league/${familyId}`}
-            className="text-sm text-muted-foreground hover:text-foreground"
-          >
-            &larr; League
-          </Link>
-          <h1 className="text-2xl font-bold">Transactions</h1>
+      <div>
+        <div className="border-b">
+          <div className="container mx-auto px-6 py-3 flex items-center gap-4">
+            <Link
+              href={`/league/${familyId}`}
+              className="text-sm text-muted-foreground hover:text-foreground"
+            >
+              &larr; League
+            </Link>
+            <h1 className="text-lg font-semibold">Transactions</h1>
+          </div>
         </div>
-      </header>
 
-      <main className="container mx-auto px-6 py-8">
+        <main className="container mx-auto px-6 py-8">
         {/* Filters */}
         <div className="flex flex-wrap gap-4 mb-6">
           {/* Season filter */}
@@ -173,6 +173,6 @@ export default function TransactionsPage() {
           </>
         )}
       </main>
-    </div>
+      </div>
   );
 }

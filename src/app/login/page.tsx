@@ -1,13 +1,14 @@
 "use client";
 
 import { signIn, useSession } from "next-auth/react";
-import { useRouter } from "next/navigation";
-import { useEffect } from "react";
-import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect } from "react";
 
-export default function HomePage() {
+function LoginContent() {
   const { data: session, status } = useSession();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const error = searchParams.get("error");
 
   useEffect(() => {
     if (session) {
@@ -24,31 +25,24 @@ export default function HomePage() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-gradient-to-b from-background to-secondary/20">
-      {/* Top nav */}
-      <nav className="flex items-center justify-end gap-6 px-6 py-4">
-        <Link href="/roadmap" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
-          Roadmap
-        </Link>
-        <Link href="/changelog" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
-          Changelog
-        </Link>
-      </nav>
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-background to-secondary/20">
+      <div className="max-w-sm w-full mx-auto px-6">
+        <div className="text-center mb-8">
+          <h1 className="text-4xl font-bold tracking-tight mb-2">
+            Dynasty <span className="text-primary">DNA</span>
+          </h1>
+          <p className="text-muted-foreground">
+            Sign in to access your leagues
+          </p>
+        </div>
 
-      <div className="flex-1 flex flex-col items-center justify-center">
-      <div className="max-w-2xl mx-auto text-center px-6">
-        <h1 className="text-5xl font-bold tracking-tight mb-4">
-          Dynasty <span className="text-primary">DNA</span>
-        </h1>
-        <p className="text-xl text-muted-foreground mb-2">
-          Decode your dynasty fantasy football management style
-        </p>
-        <p className="text-muted-foreground mb-10 max-w-lg mx-auto">
-          Trade grades, counterfactual analysis, lineup optimization, and
-          manager DNA profiles — powered by your Sleeper league data.
-        </p>
+        {error && (
+          <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-3 mb-4 text-center dark:bg-red-950 dark:border-red-900 dark:text-red-400">
+            Sign-in failed. Please try again.
+          </div>
+        )}
 
-        <div className="flex flex-col gap-3 max-w-xs mx-auto">
+        <div className="flex flex-col gap-3">
           <button
             onClick={() => signIn("google")}
             className="flex items-center justify-center gap-3 px-6 py-3 rounded-lg bg-white text-gray-800 border border-gray-300 hover:bg-gray-50 transition-colors font-medium"
@@ -65,12 +59,25 @@ export default function HomePage() {
           </button>
         </div>
 
-        <p className="text-xs text-muted-foreground mt-8">
+        <p className="text-xs text-muted-foreground mt-8 text-center">
           After signing in, you&apos;ll link your Sleeper account to get started.
         </p>
       </div>
-      </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center">
+          <div className="animate-pulse text-muted-foreground">Loading...</div>
+        </div>
+      }
+    >
+      <LoginContent />
+    </Suspense>
   );
 }
 
