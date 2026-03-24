@@ -37,12 +37,14 @@ runExperiment({
   name: "par-vs-rank",
   hypothesis:
     "PAR correlates better with PPG than rank-based decay, especially in the mushy middle (ranks 12-30)",
+  acceptanceCriteria:
+    "Average PAR correlation with PPG exceeds rank-based correlation across all seasons",
   run: async (ctx) => {
     // Find all league families
     const families = await ctx.db.select().from(ctx.schema.leagueFamilies);
     if (families.length === 0) {
       ctx.log("No league families found.");
-      return { metrics: {}, rawData: [] };
+      return { metrics: {}, rawData: [], verdict: "inconclusive", verdictReason: "No league families found", scorecard: { primaryMetrics: [] } };
     }
 
     const allTableRows: Record<string, (string | number)[][]> = {};
@@ -276,7 +278,22 @@ runExperiment({
       }
     }
 
+    const verdict = avgV2 > avgV1 ? "confirmed" as const : avgV2 === avgV1 ? "inconclusive" as const : "rejected" as const;
+    const verdictReason = `PAR avg correlation ${avgV2.toFixed(3)} vs rank ${avgV1.toFixed(3)} across ${allV1Corrs.length} seasons`;
+
+    const lift = avgV1 !== 0 ? (avgV2 - avgV1) / Math.abs(avgV1) : 0;
+
     return {
+      verdict,
+      verdictReason,
+      scorecard: {
+        primaryMetrics: [
+          { name: "PAR avg correlation with PPG", value: avgV2, baseline: avgV1, lift, unit: "correlation", direction: "higher" as const },
+        ],
+        secondaryMetrics: [
+          { name: "Seasons analyzed", value: allV1Corrs.length, unit: "count", direction: "higher" as const },
+        ],
+      },
       metrics: {
         perSeasonCorrelations,
         averageCorrelationV1: avgV1,

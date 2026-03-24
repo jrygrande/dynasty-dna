@@ -581,6 +581,10 @@ export const experimentRuns = pgTable(
     metrics: jsonb("metrics"), // structured output: correlations, distributions, etc.
     rawData: jsonb("raw_data"), // detailed per-item results for drill-down
     familyId: text("family_id"), // optional: which league family was analyzed
+    acceptanceCriteria: text("acceptance_criteria"), // plain-English success threshold
+    verdict: text("verdict"), // confirmed, rejected, inconclusive
+    verdictReason: text("verdict_reason"), // plain-English explanation of verdict
+    scorecard: jsonb("scorecard"), // structured metrics for the UI scorecard
     status: text("status").notNull().default("running"), // running, success, failed
     error: text("error"),
     startedAt: timestamp("started_at", { mode: "date" }).defaultNow().notNull(),

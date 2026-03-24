@@ -41,11 +41,13 @@ runExperiment({
   name: "roster-scoped-vs-unbounded",
   hypothesis:
     "Scoping production to roster ownership windows produces more intuitive trade grades than unbounded",
+  acceptanceCriteria:
+    "At least 20% of trades show >10pt score difference between scoped and unbounded approaches",
   run: async (ctx) => {
     const families = await ctx.db.select().from(schema.leagueFamilies);
     if (families.length === 0) {
       ctx.log("No league families found.");
-      return { metrics: { totalTrades: 0, avgScoreDiff: 0, bigSwingCount: 0 }, rawData: [] };
+      return { metrics: { totalTrades: 0, avgScoreDiff: 0, bigSwingCount: 0 }, rawData: [], verdict: "inconclusive", verdictReason: "No league families found", scorecard: { primaryMetrics: [] } };
     }
 
     const allCases: TradeCase[] = [];
@@ -220,7 +222,23 @@ runExperiment({
     ctx.log(`  Trades with >10pt difference: ${bigSwings} (${bigSwingPct}%)`);
     ctx.log("\nLarger diffs = more cases where roster scoping changes the grade.");
 
+    const verdict = bigSwingPct >= 20 ? "confirmed" as const
+      : allCases.length === 0 ? "inconclusive" as const
+      : "rejected" as const;
+    const verdictReason = `${bigSwings}/${allCases.length} trades (${bigSwingPct}%) had >10pt difference`;
+
     return {
+      verdict,
+      verdictReason,
+      scorecard: {
+        primaryMetrics: [
+          { name: "Trades with >10pt difference", value: bigSwingPct, baseline: 20, lift: (bigSwingPct - 20) / 20, unit: "%", direction: "higher" as const },
+        ],
+        secondaryMetrics: [
+          { name: "Avg score difference", value: avgDiff, unit: "pts", direction: "higher" as const },
+          { name: "Total trades analyzed", value: allCases.length, unit: "count", direction: "higher" as const },
+        ],
+      },
       metrics: {
         totalTrades: allCases.length,
         avgScoreDiff: avgDiff,

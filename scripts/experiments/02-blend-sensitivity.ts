@@ -74,12 +74,14 @@ runExperiment({
   name: "blend-sensitivity",
   hypothesis:
     "Context-specific blend curves produce better-calibrated grade distributions than the single universal curve",
+  acceptanceCriteria:
+    "v2-trade entropy exceeds v1-universal entropy in the majority of time-horizon buckets",
   run: async (ctx) => {
     // Load all trade grades (pre-computed)
     const grades = await ctx.db.select().from(ctx.schema.tradeGrades);
     if (grades.length === 0) {
       ctx.log("No trade grades found. Run trade grading first.");
-      return { metrics: {}, rawData: [] };
+      return { metrics: {}, rawData: [], verdict: "inconclusive", verdictReason: "No trade grades found", scorecard: { primaryMetrics: [] } };
     }
 
     // Load trade timestamps
@@ -190,7 +192,41 @@ runExperiment({
 
     ctx.log("\nHigher entropy = more spread across grades (better calibration).");
 
+    // Evaluate verdict: count buckets where v2-trade beats v1-universal
+    const bucketLabels = Object.keys(perBucketEntropy);
+    let v2Wins = 0;
+    for (const label of bucketLabels) {
+      const bucket = perBucketEntropy[label];
+      if (bucket["v2-trade"] > bucket["v1-universal"]) v2Wins++;
+    }
+    const verdict = bucketLabels.length === 0
+      ? "inconclusive" as const
+      : v2Wins > bucketLabels.length / 2
+        ? "confirmed" as const
+        : v2Wins === Math.floor(bucketLabels.length / 2)
+          ? "inconclusive" as const
+          : "rejected" as const;
+    const verdictReason = `v2-trade higher entropy in ${v2Wins}/${bucketLabels.length} buckets`;
+
+    // Build scorecard from per-bucket entropy averages
+    const v2Avg = bucketLabels.length > 0
+      ? bucketLabels.reduce((sum, l) => sum + (perBucketEntropy[l]["v2-trade"] ?? 0), 0) / bucketLabels.length
+      : 0;
+    const v1Avg = bucketLabels.length > 0
+      ? bucketLabels.reduce((sum, l) => sum + (perBucketEntropy[l]["v1-universal"] ?? 0), 0) / bucketLabels.length
+      : 0;
+
     return {
+      verdict,
+      verdictReason,
+      scorecard: {
+        primaryMetrics: [
+          { name: "v2-trade avg entropy", value: Math.round(v2Avg * 1000) / 1000, baseline: Math.round(v1Avg * 1000) / 1000, lift: v1Avg !== 0 ? (v2Avg - v1Avg) / Math.abs(v1Avg) : 0, unit: "bits", direction: "higher" as const },
+        ],
+        secondaryMetrics: [
+          { name: "Buckets where v2 wins", value: v2Wins, baseline: bucketLabels.length, unit: "count", direction: "higher" as const },
+        ],
+      },
       metrics: {
         perBucketEntropy,
       },

@@ -51,11 +51,13 @@ runExperiment({
   name: "production-layer-ablation",
   hypothesis:
     "Adding starter/matchup/playoff layers produces grades that better correlate with season outcomes",
+  acceptanceCriteria:
+    "Full v2 config achieves higher average correlation with win% and MOS than PAR-only baseline",
   run: async (ctx) => {
     const families = await ctx.db.select().from(schema.leagueFamilies);
     if (families.length === 0) {
       ctx.log("No league families found.");
-      return { metrics: {}, rawData: [] };
+      return { metrics: {}, rawData: [], verdict: "inconclusive", verdictReason: "No league families found", scorecard: { primaryMetrics: [] } };
     }
 
     const allMetrics: Record<string, Record<string, { corrWinPct: number; corrFpts: number; corrMOS: number | null }>> = {};
@@ -250,7 +252,51 @@ runExperiment({
 
     ctx.log("\nHigher correlation = layers add meaningful signal.");
 
+    // Evaluate verdict: compare full v2 vs PAR only across seasons
+    const seasons = Object.keys(allMetrics);
+    let fullV2WinsWinPct = 0;
+    let fullV2WinsMOS = 0;
+    let comparableSeasonsWinPct = 0;
+    let comparableSeasonsMOS = 0;
+    for (const season of seasons) {
+      const parOnly = allMetrics[season]["PAR only"];
+      const fullV2 = allMetrics[season]["full v2"];
+      if (parOnly && fullV2) {
+        comparableSeasonsWinPct++;
+        if (fullV2.corrWinPct > parOnly.corrWinPct) fullV2WinsWinPct++;
+        if (fullV2.corrMOS !== null && parOnly.corrMOS !== null) {
+          comparableSeasonsMOS++;
+          if (fullV2.corrMOS > parOnly.corrMOS) fullV2WinsMOS++;
+        }
+      }
+    }
+    const winPctBetter = comparableSeasonsWinPct > 0 && fullV2WinsWinPct > comparableSeasonsWinPct / 2;
+    const mosBetter = comparableSeasonsMOS > 0 && fullV2WinsMOS > comparableSeasonsMOS / 2;
+    const verdict = (winPctBetter || mosBetter) ? "confirmed" as const
+      : comparableSeasonsWinPct === 0 ? "inconclusive" as const
+      : "rejected" as const;
+    const verdictReason = `Full v2 beats PAR-only in ${fullV2WinsWinPct}/${comparableSeasonsWinPct} seasons (win%) and ${fullV2WinsMOS}/${comparableSeasonsMOS} seasons (MOS)`;
+
+    // Compute average correlations for scorecard
+    const avgFullV2WinPct = seasons.length > 0
+      ? seasons.reduce((s, k) => s + (allMetrics[k]?.["full v2"]?.corrWinPct ?? 0), 0) / seasons.length
+      : 0;
+    const avgParOnlyWinPct = seasons.length > 0
+      ? seasons.reduce((s, k) => s + (allMetrics[k]?.["PAR only"]?.corrWinPct ?? 0), 0) / seasons.length
+      : 0;
+
     return {
+      verdict,
+      verdictReason,
+      scorecard: {
+        primaryMetrics: [
+          { name: "Full v2 avg corr with win%", value: Math.round(avgFullV2WinPct * 1000) / 1000, baseline: Math.round(avgParOnlyWinPct * 1000) / 1000, lift: avgParOnlyWinPct !== 0 ? (avgFullV2WinPct - avgParOnlyWinPct) / Math.abs(avgParOnlyWinPct) : 0, unit: "correlation", direction: "higher" as const },
+        ],
+        secondaryMetrics: [
+          { name: "Seasons where full v2 wins (win%)", value: fullV2WinsWinPct, baseline: comparableSeasonsWinPct, unit: "count", direction: "higher" as const },
+          { name: "Seasons where full v2 wins (MOS)", value: fullV2WinsMOS, baseline: comparableSeasonsMOS, unit: "count", direction: "higher" as const },
+        ],
+      },
       metrics: allMetrics,
       rawData: allRawRows,
     };

@@ -40,6 +40,7 @@ import * as dbModule from "../../src/db";
 export interface ExperimentDefinition {
   name: string;
   hypothesis: string;
+  acceptanceCriteria: string;
   config?: Record<string, unknown>;
   familyId?: string;
   run: (ctx: ExperimentContext) => Promise<ExperimentResult>;
@@ -52,11 +53,32 @@ export interface ExperimentContext {
   log: (msg: string) => void;
 }
 
+export interface ScorecardMetric {
+  name: string;
+  value: number;
+  baseline?: number;
+  lift?: number;
+  unit: string;
+  direction: "higher" | "lower";
+}
+
+export interface Scorecard {
+  primaryMetrics: ScorecardMetric[];
+  secondaryMetrics?: ScorecardMetric[];
+  guardrailMetrics?: ScorecardMetric[];
+}
+
 export interface ExperimentResult {
   /** Structured metrics for comparison across runs */
   metrics: Record<string, unknown>;
   /** Optional detailed per-item data for drill-down */
   rawData?: unknown[];
+  /** Experiment verdict: did the hypothesis hold? */
+  verdict: "confirmed" | "rejected" | "inconclusive";
+  /** Plain-English explanation of the verdict */
+  verdictReason: string;
+  /** Structured scorecard for the UI */
+  scorecard: Scorecard;
 }
 
 /**
@@ -74,6 +96,7 @@ export async function runExperiment(def: ExperimentDefinition): Promise<void> {
     .values({
       name: def.name,
       hypothesis: def.hypothesis,
+      acceptanceCriteria: def.acceptanceCriteria,
       config: def.config ?? null,
       familyId: def.familyId ?? null,
       status: "running",
@@ -106,6 +129,9 @@ export async function runExperiment(def: ExperimentDefinition): Promise<void> {
         status: "success",
         metrics: result.metrics,
         rawData: result.rawData ?? null,
+        verdict: result.verdict,
+        verdictReason: result.verdictReason,
+        scorecard: result.scorecard,
         finishedAt,
       })
       .where(
