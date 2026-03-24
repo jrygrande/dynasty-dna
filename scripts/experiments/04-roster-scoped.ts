@@ -222,9 +222,9 @@ runExperiment({
     ctx.log(`  Trades with >10pt difference: ${bigSwings} (${bigSwingPct}%)`);
     ctx.log("\nLarger diffs = more cases where roster scoping changes the grade.");
 
-    const verdict = bigSwingPct >= 20 ? "confirmed" as const
-      : allCases.length === 0 ? "inconclusive" as const
-      : "rejected" as const;
+    const verdict = bigSwingPct >= 20 ? "confirmed"
+      : allCases.length === 0 ? "inconclusive"
+      : "rejected";
     const verdictReason = `${bigSwings}/${allCases.length} trades (${bigSwingPct}%) had >10pt difference`;
 
     return {

@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
+import { formatDate } from "@/lib/utils";
 
 // ============================================================
 // Types
@@ -57,14 +58,6 @@ function formatDuration(start: string, end: string | null): string {
   const ms = new Date(end).getTime() - new Date(start).getTime();
   if (ms < 1000) return `${ms}ms`;
   return `${(ms / 1000).toFixed(1)}s`;
-}
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
 }
 
 function formatLift(lift: number): string {
@@ -272,9 +265,7 @@ function ExperimentCard({ run }: { run: ExperimentRun }) {
 
   return (
     <div className="border rounded-lg bg-card">
-      {/* Header section: hypothesis + criteria + verdict + scorecard */}
       <div className="p-5 space-y-4">
-        {/* Hypothesis */}
         {run.hypothesis && (
           <div>
             <h4 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-1">
@@ -284,7 +275,6 @@ function ExperimentCard({ run }: { run: ExperimentRun }) {
           </div>
         )}
 
-        {/* Acceptance criteria */}
         {run.acceptanceCriteria && (
           <div>
             <h4 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-1">
@@ -296,15 +286,12 @@ function ExperimentCard({ run }: { run: ExperimentRun }) {
           </div>
         )}
 
-        {/* Verdict */}
         <VerdictBlock verdict={run.verdict} reason={run.verdictReason} />
 
-        {/* Scorecard */}
         {run.scorecard && run.scorecard.primaryMetrics.length > 0 && (
           <ScorecardSection scorecard={run.scorecard} />
         )}
 
-        {/* Error */}
         {run.error && (
           <div className="p-3 bg-red-50 dark:bg-red-900/20 rounded-md text-sm text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800">
             {run.error}
@@ -312,7 +299,6 @@ function ExperimentCard({ run }: { run: ExperimentRun }) {
         )}
       </div>
 
-      {/* Footer: metadata + expandable sections */}
       <div className="border-t px-5 py-3 bg-muted/20">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3 text-xs text-muted-foreground">
@@ -341,7 +327,6 @@ function ExperimentCard({ run }: { run: ExperimentRun }) {
           </div>
         </div>
 
-        {/* Expandable: full metrics */}
         {showDetails && run.metrics && (
           <div className="mt-3 pt-3 border-t border-muted/30">
             <pre className="text-xs bg-muted/50 rounded p-3 overflow-x-auto max-h-96">
@@ -350,7 +335,6 @@ function ExperimentCard({ run }: { run: ExperimentRun }) {
           </div>
         )}
 
-        {/* Expandable: raw JSON */}
         {showRawJson && (
           <div className="mt-3 pt-3 border-t border-muted/30">
             <pre className="text-xs bg-muted/50 rounded p-3 overflow-x-auto max-h-96">
@@ -392,17 +376,21 @@ export default function ExperimentsPage() {
   }, []);
 
   // Group by experiment name, show only the most recent run per experiment
-  const latestByName = new Map<string, ExperimentRun>();
-  for (const run of runs) {
-    const existing = latestByName.get(run.name);
-    if (!existing || new Date(run.startedAt) > new Date(existing.startedAt)) {
-      latestByName.set(run.name, run);
+  const { experiments, runCounts } = useMemo(() => {
+    const latestByName = new Map<string, ExperimentRun>();
+    const counts = new Map<string, number>();
+    for (const run of runs) {
+      counts.set(run.name, (counts.get(run.name) ?? 0) + 1);
+      const existing = latestByName.get(run.name);
+      if (!existing || new Date(run.startedAt) > new Date(existing.startedAt)) {
+        latestByName.set(run.name, run);
+      }
     }
-  }
-
-  const experiments = Array.from(latestByName.values()).sort((a, b) =>
-    a.name.localeCompare(b.name),
-  );
+    return {
+      experiments: Array.from(latestByName.values()).sort((a, b) => a.name.localeCompare(b.name)),
+      runCounts: counts,
+    };
+  }, [runs]);
 
   return (
     <div className="min-h-screen bg-background">
@@ -436,7 +424,7 @@ export default function ExperimentsPage() {
 
         <div className="space-y-8">
           {experiments.map((run) => {
-            const totalRuns = runs.filter((r) => r.name === run.name).length;
+            const totalRuns = runCounts.get(run.name) ?? 1;
             return (
               <div key={run.name}>
                 <div className="flex items-baseline gap-2 mb-3">

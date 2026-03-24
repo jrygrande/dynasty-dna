@@ -216,9 +216,9 @@ runExperiment({
     const others = Object.entries(perVectorMetrics).filter(([k]) => k !== "baseline");
     const bestEntropy = others.every(([, v]) => baseline && baseline.entropy >= v.entropy);
     const bestCorr = others.every(([, v]) => baseline && baseline.crossSeasonCorr >= v.crossSeasonCorr);
-    const verdict = !baseline ? "inconclusive" as const
-      : (bestEntropy || bestCorr) ? "confirmed" as const
-      : "rejected" as const;
+    const verdict = !baseline ? "inconclusive"
+      : (bestEntropy || bestCorr) ? "confirmed"
+      : "rejected";
     const verdictReason = baseline
       ? `Baseline entropy=${baseline.entropy.toFixed(3)}, crossCorr=${baseline.crossSeasonCorr.toFixed(3)}. Best entropy: ${bestEntropy}, best stability: ${bestCorr}`
       : "No baseline data";

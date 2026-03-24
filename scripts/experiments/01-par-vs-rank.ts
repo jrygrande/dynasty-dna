@@ -282,9 +282,7 @@ runExperiment({
     }
 
     const liftPct = avgV1 !== 0 ? Math.abs(avgV2 - avgV1) / Math.abs(avgV1) : 0;
-    const verdict = liftPct < 0.01 ? "inconclusive" as const
-      : avgV2 > avgV1 ? "confirmed" as const
-      : "rejected" as const;
+    const verdict = liftPct < 0.01 ? "inconclusive" : avgV2 > avgV1 ? "confirmed" : "rejected";
     const verdictReason = `PAR avg correlation ${avgV2.toFixed(3)} vs rank ${avgV1.toFixed(3)} across ${allV1Corrs.length} seasons`;
 
     return {

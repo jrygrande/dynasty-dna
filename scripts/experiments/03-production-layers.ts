@@ -272,9 +272,9 @@ runExperiment({
     }
     const winPctBetter = comparableSeasonsWinPct > 0 && fullV2WinsWinPct > comparableSeasonsWinPct / 2;
     const mosBetter = comparableSeasonsMOS > 0 && fullV2WinsMOS > comparableSeasonsMOS / 2;
-    const verdict = (winPctBetter || mosBetter) ? "confirmed" as const
-      : comparableSeasonsWinPct === 0 ? "inconclusive" as const
-      : "rejected" as const;
+    const verdict = (winPctBetter || mosBetter) ? "confirmed"
+      : comparableSeasonsWinPct === 0 ? "inconclusive"
+      : "rejected";
     const verdictReason = `Full v2 beats PAR-only in ${fullV2WinsWinPct}/${comparableSeasonsWinPct} seasons (win%) and ${fullV2WinsMOS}/${comparableSeasonsMOS} seasons (MOS)`;
 
     // Compute average correlations for scorecard

@@ -201,13 +201,10 @@ runExperiment({
       const bucket = perBucketEntropy[label];
       if (bucket["v2-trade"] > bucket["v1-universal"]) v2Wins++;
     }
-    const verdict = bucketLabels.length === 0
-      ? "inconclusive" as const
-      : v2Wins > bucketLabels.length / 2
-        ? "confirmed" as const
-        : v2Wins === Math.floor(bucketLabels.length / 2)
-          ? "inconclusive" as const
-          : "rejected" as const;
+    const verdict = bucketLabels.length === 0 ? "inconclusive"
+      : v2Wins > bucketLabels.length / 2 ? "confirmed"
+      : v2Wins === Math.floor(bucketLabels.length / 2) ? "inconclusive"
+      : "rejected";
     const verdictReason = `v2-trade higher entropy in ${v2Wins}/${bucketLabels.length} buckets`;
 
     // Build scorecard from per-bucket entropy averages
@@ -226,7 +223,7 @@ runExperiment({
           metric("v2-trade avg entropy", v2Avg, "bits", { baseline: v1Avg }),
         ],
         secondaryMetrics: [
-          metric("Buckets where v2 wins", v2Wins, "count", { baseline: bucketLabels.length }),
+          metric("Buckets where v2 wins", v2Wins, `of ${bucketLabels.length}`),
         ],
       },
       metrics: {
