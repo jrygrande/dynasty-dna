@@ -127,10 +127,10 @@ runExperiment({
 
     // Load all roster owners for cross-season correlation
     const allRosters = await ctx.db.select({
-      leagueId: schema.rosters.leagueId,
-      rosterId: schema.rosters.rosterId,
-      ownerId: schema.rosters.ownerId,
-    }).from(schema.rosters);
+      leagueId: ctx.schema.rosters.leagueId,
+      rosterId: ctx.schema.rosters.rosterId,
+      ownerId: ctx.schema.rosters.ownerId,
+    }).from(ctx.schema.rosters);
 
     const rosterOwners = new Map<string, string>();
     for (const r of allRosters) {
