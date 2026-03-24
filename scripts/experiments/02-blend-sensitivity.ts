@@ -25,6 +25,8 @@ import {
   describeArray,
   shannonEntropy,
   printTable,
+  metric,
+  noData,
 } from "./helpers";
 
 // v1 universal curve (original)
@@ -81,7 +83,7 @@ runExperiment({
     const grades = await ctx.db.select().from(ctx.schema.tradeGrades);
     if (grades.length === 0) {
       ctx.log("No trade grades found. Run trade grading first.");
-      return { metrics: {}, rawData: [], verdict: "inconclusive", verdictReason: "No trade grades found", scorecard: { primaryMetrics: [] } };
+      return noData("No trade grades found");
     }
 
     // Load trade timestamps
@@ -221,10 +223,10 @@ runExperiment({
       verdictReason,
       scorecard: {
         primaryMetrics: [
-          { name: "v2-trade avg entropy", value: Math.round(v2Avg * 1000) / 1000, baseline: Math.round(v1Avg * 1000) / 1000, lift: v1Avg !== 0 ? (v2Avg - v1Avg) / Math.abs(v1Avg) : 0, unit: "bits", direction: "higher" as const },
+          metric("v2-trade avg entropy", v2Avg, "bits", { baseline: v1Avg }),
         ],
         secondaryMetrics: [
-          { name: "Buckets where v2 wins", value: v2Wins, baseline: bucketLabels.length, unit: "count", direction: "higher" as const },
+          metric("Buckets where v2 wins", v2Wins, "count", { baseline: bucketLabels.length }),
         ],
       },
       metrics: {

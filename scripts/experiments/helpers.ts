@@ -164,6 +164,45 @@ export async function runExperiment(def: ExperimentDefinition): Promise<void> {
 // Statistical utilities
 // ============================================================
 
+/** Round to 3 decimal places */
+export function round3(n: number): number {
+  return Math.round(n * 1000) / 1000;
+}
+
+/** Build a scorecard metric with automatic lift calculation and rounding */
+export function metric(
+  name: string,
+  value: number,
+  unit: string,
+  opts?: { baseline?: number; direction?: "higher" | "lower" },
+): ScorecardMetric {
+  const direction = opts?.direction ?? "higher";
+  const baseline = opts?.baseline;
+  const lift =
+    baseline !== undefined && baseline !== 0
+      ? (value - baseline) / Math.abs(baseline)
+      : undefined;
+  return {
+    name,
+    value: round3(value),
+    baseline: baseline !== undefined ? round3(baseline) : undefined,
+    lift,
+    unit,
+    direction,
+  };
+}
+
+/** Early return for experiments with no data to analyze */
+export function noData(reason: string): ExperimentResult {
+  return {
+    metrics: {},
+    rawData: [],
+    verdict: "inconclusive",
+    verdictReason: reason,
+    scorecard: { primaryMetrics: [] },
+  };
+}
+
 /** Descriptive stats for a numeric array */
 export function describeArray(values: number[]): {
   mean: number;

@@ -25,6 +25,8 @@ import {
   spearmanCorrelation,
   shannonEntropy,
   printTable,
+  metric,
+  noData,
 } from "./helpers";
 import {
   computeLeagueMOS,
@@ -120,7 +122,7 @@ runExperiment({
     const families = await ctx.db.select().from(ctx.schema.leagueFamilies);
     if (families.length === 0) {
       ctx.log("No league families found.");
-      return { metrics: {}, rawData: [], verdict: "inconclusive", verdictReason: "No league families found", scorecard: { primaryMetrics: [] } };
+      return noData("No league families found");
     }
 
     // Load all roster owners for cross-season correlation
@@ -230,12 +232,12 @@ runExperiment({
       verdictReason,
       scorecard: {
         primaryMetrics: [
-          { name: "Baseline entropy", value: baseline?.entropy ?? 0, baseline: bestOtherEntropy, lift: bestOtherEntropy !== 0 ? ((baseline?.entropy ?? 0) - bestOtherEntropy) / Math.abs(bestOtherEntropy) : 0, unit: "bits", direction: "higher" as const },
-          { name: "Cross-season stability", value: baseline?.crossSeasonCorr ?? 0, baseline: bestOtherCorr, lift: bestOtherCorr !== 0 ? ((baseline?.crossSeasonCorr ?? 0) - bestOtherCorr) / Math.abs(bestOtherCorr) : 0, unit: "correlation", direction: "higher" as const },
+          metric("Baseline entropy", baseline?.entropy ?? 0, "bits", { baseline: bestOtherEntropy }),
+          metric("Cross-season stability", baseline?.crossSeasonCorr ?? 0, "correlation", { baseline: bestOtherCorr }),
         ],
         guardrailMetrics: [
-          { name: "MOS stddev", value: baseline?.stats?.stddev ?? 0, unit: "score", direction: "higher" as const },
-          { name: "MOS range", value: (baseline?.stats?.max ?? 0) - (baseline?.stats?.min ?? 0), unit: "score", direction: "higher" as const },
+          metric("MOS stddev", baseline?.stats?.stddev ?? 0, "score"),
+          metric("MOS range", (baseline?.stats?.max ?? 0) - (baseline?.stats?.min ?? 0), "score"),
         ],
       },
       metrics: perVectorMetrics,

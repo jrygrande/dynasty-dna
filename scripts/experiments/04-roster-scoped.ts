@@ -14,7 +14,7 @@
  * Usage: npx tsx scripts/experiments/04-roster-scoped.ts
  */
 
-import { runExperiment, schema, printTable } from "./helpers";
+import { runExperiment, schema, printTable, metric, noData } from "./helpers";
 import { eq, and, inArray } from "drizzle-orm";
 import {
   playerSeasonalPAR,
@@ -47,7 +47,7 @@ runExperiment({
     const families = await ctx.db.select().from(schema.leagueFamilies);
     if (families.length === 0) {
       ctx.log("No league families found.");
-      return { metrics: { totalTrades: 0, avgScoreDiff: 0, bigSwingCount: 0 }, rawData: [], verdict: "inconclusive", verdictReason: "No league families found", scorecard: { primaryMetrics: [] } };
+      return noData("No league families found");
     }
 
     const allCases: TradeCase[] = [];
@@ -232,11 +232,11 @@ runExperiment({
       verdictReason,
       scorecard: {
         primaryMetrics: [
-          { name: "Trades with >10pt difference", value: bigSwingPct, baseline: 20, lift: (bigSwingPct - 20) / 20, unit: "%", direction: "higher" as const },
+          metric("Trades with >10pt difference", bigSwingPct, "%", { baseline: 20 }),
         ],
         secondaryMetrics: [
-          { name: "Avg score difference", value: avgDiff, unit: "pts", direction: "higher" as const },
-          { name: "Total trades analyzed", value: allCases.length, unit: "count", direction: "higher" as const },
+          metric("Avg score difference", avgDiff, "pts"),
+          metric("Total trades analyzed", allCases.length, "count"),
         ],
       },
       metrics: {

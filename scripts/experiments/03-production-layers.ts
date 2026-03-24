@@ -17,7 +17,7 @@
  * Usage: npx tsx scripts/experiments/03-production-layers.ts
  */
 
-import { runExperiment, db, schema, spearmanCorrelation, printTable } from "./helpers";
+import { runExperiment, db, schema, spearmanCorrelation, printTable, round3, metric, noData } from "./helpers";
 import { computeLeagueMOS } from "../../src/services/outcomeScore";
 import { eq, inArray } from "drizzle-orm";
 import {
@@ -57,7 +57,7 @@ runExperiment({
     const families = await ctx.db.select().from(schema.leagueFamilies);
     if (families.length === 0) {
       ctx.log("No league families found.");
-      return { metrics: {}, rawData: [], verdict: "inconclusive", verdictReason: "No league families found", scorecard: { primaryMetrics: [] } };
+      return noData("No league families found");
     }
 
     const allMetrics: Record<string, Record<string, { corrWinPct: number; corrFpts: number; corrMOS: number | null }>> = {};
@@ -211,9 +211,9 @@ runExperiment({
           const corrFpts = spearmanCorrelation(productions, fpts);
           const corrMOS = hasMOS ? spearmanCorrelation(productions, mosVals) : null;
 
-          const corrWinRounded = Math.round(corrWin * 1000) / 1000;
-          const corrFptsRounded = Math.round(corrFpts * 1000) / 1000;
-          const corrMOSRounded = hasMOS ? Math.round(corrMOS * 1000) / 1000 : null;
+          const corrWinRounded = round3(corrWin);
+          const corrFptsRounded = round3(corrFpts);
+          const corrMOSRounded = hasMOS ? round3(corrMOS!) : null;
 
           allMetrics[seasonKey][config.name] = {
             corrWinPct: corrWinRounded,
@@ -290,11 +290,11 @@ runExperiment({
       verdictReason,
       scorecard: {
         primaryMetrics: [
-          { name: "Full v2 avg corr with win%", value: Math.round(avgFullV2WinPct * 1000) / 1000, baseline: Math.round(avgParOnlyWinPct * 1000) / 1000, lift: avgParOnlyWinPct !== 0 ? (avgFullV2WinPct - avgParOnlyWinPct) / Math.abs(avgParOnlyWinPct) : 0, unit: "correlation", direction: "higher" as const },
+          metric("Full v2 avg corr with win%", avgFullV2WinPct, "correlation", { baseline: avgParOnlyWinPct }),
         ],
         secondaryMetrics: [
-          { name: "Seasons where full v2 wins (win%)", value: fullV2WinsWinPct, baseline: comparableSeasonsWinPct, unit: "count", direction: "higher" as const },
-          { name: "Seasons where full v2 wins (MOS)", value: fullV2WinsMOS, baseline: comparableSeasonsMOS, unit: "count", direction: "higher" as const },
+          metric("Seasons where full v2 wins (win%)", fullV2WinsWinPct, "count", { baseline: comparableSeasonsWinPct }),
+          metric("Seasons where full v2 wins (MOS)", fullV2WinsMOS, "count", { baseline: comparableSeasonsMOS }),
         ],
       },
       metrics: allMetrics,
