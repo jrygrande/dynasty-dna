@@ -14,6 +14,7 @@
  */
 
 import "dotenv/config";
+import { execSync } from "child_process";
 import { neon } from "@neondatabase/serverless";
 import { drizzle } from "drizzle-orm/neon-http";
 import { eq } from "drizzle-orm";
@@ -40,6 +41,7 @@ import * as dbModule from "../../src/db";
 export interface ExperimentDefinition {
   name: string;
   hypothesis: string;
+  acceptanceCriteria: string;
   config?: Record<string, unknown>;
   familyId?: string;
   run: (ctx: ExperimentContext) => Promise<ExperimentResult>;
@@ -52,21 +54,86 @@ export interface ExperimentContext {
   log: (msg: string) => void;
 }
 
+export interface ScorecardMetric {
+  name: string;
+  value: number;
+  baseline?: number;
+  lift?: number;
+  unit: string;
+  direction: "higher" | "lower";
+}
+
+export interface Scorecard {
+  primaryMetrics: ScorecardMetric[];
+  secondaryMetrics?: ScorecardMetric[];
+  guardrailMetrics?: ScorecardMetric[];
+}
+
 export interface ExperimentResult {
   /** Structured metrics for comparison across runs */
   metrics: Record<string, unknown>;
   /** Optional detailed per-item data for drill-down */
   rawData?: unknown[];
+  /** Experiment verdict: did the hypothesis hold? */
+  verdict: "confirmed" | "rejected" | "inconclusive";
+  /** Plain-English explanation of the verdict */
+  verdictReason: string;
+  /** Structured scorecard for the UI */
+  scorecard: Scorecard;
 }
 
 /**
  * Run an experiment: execute the run function, persist results to DB,
  * and print a summary to console.
  */
+function getGitHash(): string | null {
+  try {
+    return execSync("git rev-parse --short HEAD", { encoding: "utf-8" }).trim();
+  } catch {
+    return null;
+  }
+}
+
+function printScorecard(result: ExperimentResult): void {
+  const { scorecard, verdict, verdictReason } = result;
+
+  const verdictLabel = verdict.toUpperCase();
+  const verdictIcon = verdict === "confirmed" ? "✓" : verdict === "rejected" ? "✗" : "—";
+  console.log(`\n  Verdict: ${verdictLabel} ${verdictIcon}`);
+  if (verdictReason) console.log(`  ${verdictReason}`);
+
+  if (scorecard.primaryMetrics.length === 0) return;
+
+  const printMetrics = (label: string, metrics: ScorecardMetric[]) => {
+    if (metrics.length === 0) return;
+    console.log(`\n  ${label}`);
+    for (const m of metrics) {
+      const parts = [`    ${m.name.padEnd(40)} ${String(m.value).padStart(8)}`];
+      if (m.baseline !== undefined) parts.push(`  baseline ${String(m.baseline).padStart(8)}`);
+      if (m.lift !== undefined) {
+        const pct = Math.round(m.lift * 100);
+        const arrow = pct > 0 ? "▲" : pct < 0 ? "▼" : "—";
+        parts.push(`  ${arrow} ${pct > 0 ? "+" : ""}${pct}%`);
+      }
+      console.log(parts.join(""));
+    }
+  };
+
+  printMetrics("PRIMARY", scorecard.primaryMetrics);
+  printMetrics("SECONDARY", scorecard.secondaryMetrics ?? []);
+  printMetrics("GUARDRAIL", scorecard.guardrailMetrics ?? []);
+}
+
 export async function runExperiment(def: ExperimentDefinition): Promise<void> {
   const startedAt = new Date();
+  const gitHash = getGitHash();
+
   console.log(`\n=== Experiment: ${def.name} ===`);
-  console.log(`Hypothesis: ${def.hypothesis}\n`);
+  console.log(`Hypothesis: ${def.hypothesis}`);
+  console.log(`Acceptance: ${def.acceptanceCriteria}\n`);
+
+  // Merge git hash into config for provenance tracking
+  const config = { ...def.config, _gitHash: gitHash };
 
   // Insert a running record
   const [row] = await db
@@ -74,7 +141,8 @@ export async function runExperiment(def: ExperimentDefinition): Promise<void> {
     .values({
       name: def.name,
       hypothesis: def.hypothesis,
-      config: def.config ?? null,
+      acceptanceCriteria: def.acceptanceCriteria,
+      config,
       familyId: def.familyId ?? null,
       status: "running",
       startedAt,
@@ -106,30 +174,33 @@ export async function runExperiment(def: ExperimentDefinition): Promise<void> {
         status: "success",
         metrics: result.metrics,
         rawData: result.rawData ?? null,
+        verdict: result.verdict,
+        verdictReason: result.verdictReason,
+        scorecard: result.scorecard,
         finishedAt,
       })
       .where(
         eq(schema.experimentRuns.id, runId),
       );
 
-    console.log(`\n--- Results ---`);
-    console.log(JSON.stringify(result.metrics, null, 2));
-    console.log(`\nCompleted in ${elapsed}s. Run ID: ${runId}`);
+    console.log(`\n=== COMPLETE: ${def.name} ===`);
+    printScorecard(result);
+    console.log(`\n  ${elapsed}s · Run ID: ${runId}${gitHash ? ` · ${gitHash}` : ""}`);
   } catch (err) {
-    const errorMsg = err instanceof Error ? err.message : String(err);
+    const errorDetail = err instanceof Error ? (err.stack ?? err.message) : String(err);
 
     await db
       .update(schema.experimentRuns)
       .set({
         status: "failed",
-        error: errorMsg,
+        error: errorDetail,
         finishedAt: new Date(),
       })
       .where(
         eq(schema.experimentRuns.id, runId),
       );
 
-    console.error(`\nExperiment FAILED: ${errorMsg}`);
+    console.error(`\nExperiment FAILED: ${errorDetail}`);
     throw err;
   }
 }
@@ -137,6 +208,45 @@ export async function runExperiment(def: ExperimentDefinition): Promise<void> {
 // ============================================================
 // Statistical utilities
 // ============================================================
+
+/** Round to 3 decimal places */
+export function round3(n: number): number {
+  return Math.round(n * 1000) / 1000;
+}
+
+/** Build a scorecard metric with automatic lift calculation and rounding */
+export function metric(
+  name: string,
+  value: number,
+  unit: string,
+  opts?: { baseline?: number; direction?: "higher" | "lower" },
+): ScorecardMetric {
+  const direction = opts?.direction ?? "higher";
+  const baseline = opts?.baseline;
+  const lift =
+    baseline !== undefined && baseline !== 0
+      ? (value - baseline) / Math.abs(baseline)
+      : undefined;
+  return {
+    name,
+    value: round3(value),
+    baseline: baseline !== undefined ? round3(baseline) : undefined,
+    lift,
+    unit,
+    direction,
+  };
+}
+
+/** Early return for experiments with no data to analyze */
+export function noData(reason: string): ExperimentResult {
+  return {
+    metrics: {},
+    rawData: [],
+    verdict: "inconclusive",
+    verdictReason: reason,
+    scorecard: { primaryMetrics: [] },
+  };
+}
 
 /** Descriptive stats for a numeric array */
 export function describeArray(values: number[]): {

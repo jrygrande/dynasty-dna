@@ -25,6 +25,8 @@ import {
   spearmanCorrelation,
   shannonEntropy,
   printTable,
+  metric,
+  noData,
 } from "./helpers";
 import {
   computeLeagueMOS,
@@ -108,6 +110,8 @@ runExperiment({
   name: "mos-weight-sensitivity",
   hypothesis:
     "The baseline weights (40/30/20/10) produce MOS distributions with the best discrimination (entropy) and cross-season stability",
+  acceptanceCriteria:
+    "Baseline weight vector has the highest entropy or cross-season correlation among all tested vectors",
   config: {
     weightVectors: WEIGHT_VECTORS.map((w) => ({
       name: w.name,
@@ -118,15 +122,15 @@ runExperiment({
     const families = await ctx.db.select().from(ctx.schema.leagueFamilies);
     if (families.length === 0) {
       ctx.log("No league families found.");
-      return { metrics: {}, rawData: [] };
+      return noData("No league families found");
     }
 
     // Load all roster owners for cross-season correlation
     const allRosters = await ctx.db.select({
-      leagueId: schema.rosters.leagueId,
-      rosterId: schema.rosters.rosterId,
-      ownerId: schema.rosters.ownerId,
-    }).from(schema.rosters);
+      leagueId: ctx.schema.rosters.leagueId,
+      rosterId: ctx.schema.rosters.rosterId,
+      ownerId: ctx.schema.rosters.ownerId,
+    }).from(ctx.schema.rosters);
 
     const rosterOwners = new Map<string, string>();
     for (const r of allRosters) {
@@ -207,7 +211,35 @@ runExperiment({
       );
     }
 
+    // Evaluate verdict: does baseline have highest entropy or cross-season corr?
+    const baseline = perVectorMetrics["baseline"];
+    const others = Object.entries(perVectorMetrics).filter(([k]) => k !== "baseline");
+    const bestEntropy = others.every(([, v]) => baseline && baseline.entropy >= v.entropy);
+    const bestCorr = others.every(([, v]) => baseline && baseline.crossSeasonCorr >= v.crossSeasonCorr);
+    const verdict = !baseline ? "inconclusive"
+      : (bestEntropy || bestCorr) ? "confirmed"
+      : "rejected";
+    const verdictReason = baseline
+      ? `Baseline entropy=${baseline.entropy.toFixed(3)}, crossCorr=${baseline.crossSeasonCorr.toFixed(3)}. Best entropy: ${bestEntropy}, best stability: ${bestCorr}`
+      : "No baseline data";
+
+    // Find the best non-baseline entropy and corr for comparison
+    const bestOtherEntropy = others.length > 0 ? Math.max(...others.map(([, v]) => v.entropy)) : 0;
+    const bestOtherCorr = others.length > 0 ? Math.max(...others.map(([, v]) => v.crossSeasonCorr)) : 0;
+
     return {
+      verdict,
+      verdictReason,
+      scorecard: {
+        primaryMetrics: [
+          metric("Baseline entropy", baseline?.entropy ?? 0, "bits", { baseline: bestOtherEntropy }),
+          metric("Cross-season stability", baseline?.crossSeasonCorr ?? 0, "correlation", { baseline: bestOtherCorr }),
+        ],
+        guardrailMetrics: [
+          metric("MOS stddev", baseline?.stats?.stddev ?? 0, "score"),
+          metric("MOS range", (baseline?.stats?.max ?? 0) - (baseline?.stats?.min ?? 0), "score"),
+        ],
+      },
       metrics: perVectorMetrics,
       rawData: tableRows.map((r) => ({
         name: r[0],

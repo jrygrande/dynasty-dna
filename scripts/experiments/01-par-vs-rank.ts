@@ -30,6 +30,9 @@ import {
   describeArray,
   spearmanCorrelation,
   printTable,
+  metric,
+  round3,
+  noData,
 } from "./helpers";
 import { computeLeagueMOS } from "../../src/services/outcomeScore";
 
@@ -37,12 +40,14 @@ runExperiment({
   name: "par-vs-rank",
   hypothesis:
     "PAR correlates better with PPG than rank-based decay, especially in the mushy middle (ranks 12-30)",
+  acceptanceCriteria:
+    "Average PAR correlation with PPG exceeds rank-based correlation across all seasons",
   run: async (ctx) => {
     // Find all league families
     const families = await ctx.db.select().from(ctx.schema.leagueFamilies);
     if (families.length === 0) {
       ctx.log("No league families found.");
-      return { metrics: {}, rawData: [] };
+      return noData("No league families found");
     }
 
     const allTableRows: Record<string, (string | number)[][]> = {};
@@ -189,11 +194,11 @@ runExperiment({
 
     const avgV1 =
       allV1Corrs.length > 0
-        ? Math.round((allV1Corrs.reduce((a, b) => a + b, 0) / allV1Corrs.length) * 1000) / 1000
+        ? round3(allV1Corrs.reduce((a, b) => a + b, 0) / allV1Corrs.length)
         : 0;
     const avgV2 =
       allV2Corrs.length > 0
-        ? Math.round((allV2Corrs.reduce((a, b) => a + b, 0) / allV2Corrs.length) * 1000) / 1000
+        ? round3(allV2Corrs.reduce((a, b) => a + b, 0) / allV2Corrs.length)
         : 0;
 
     ctx.log(`\nAverage correlation — v1 (rank): ${avgV1}, v2 (PAR): ${avgV2}`);
@@ -267,8 +272,8 @@ runExperiment({
           const corrV2MOS = spearmanCorrelation(v2Avgs, mosVals);
           const key = `${family.name}:${member.season}`;
           mosCorrelations[key] = {
-            v1: Math.round(corrV1MOS * 1000) / 1000,
-            v2: Math.round(corrV2MOS * 1000) / 1000,
+            v1: round3(corrV1MOS),
+            v2: round3(corrV2MOS),
             n: mosVals.length,
           };
           ctx.log(`  ${key} (n=${mosVals.length}): v1=${corrV1MOS.toFixed(3)}, v2=${corrV2MOS.toFixed(3)}`);
@@ -276,7 +281,21 @@ runExperiment({
       }
     }
 
+    const liftPct = avgV1 !== 0 ? Math.abs(avgV2 - avgV1) / Math.abs(avgV1) : 0;
+    const verdict = liftPct < 0.01 ? "inconclusive" : avgV2 > avgV1 ? "confirmed" : "rejected";
+    const verdictReason = `PAR avg correlation ${avgV2.toFixed(3)} vs rank ${avgV1.toFixed(3)} across ${allV1Corrs.length} seasons`;
+
     return {
+      verdict,
+      verdictReason,
+      scorecard: {
+        primaryMetrics: [
+          metric("PAR avg correlation with PPG", avgV2, "correlation", { baseline: avgV1 }),
+        ],
+        secondaryMetrics: [
+          metric("Seasons analyzed", allV1Corrs.length, "count"),
+        ],
+      },
       metrics: {
         perSeasonCorrelations,
         averageCorrelationV1: avgV1,

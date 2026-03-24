@@ -14,7 +14,7 @@
  * Usage: npx tsx scripts/experiments/04-roster-scoped.ts
  */
 
-import { runExperiment, schema, printTable } from "./helpers";
+import { runExperiment, schema, printTable, metric, noData } from "./helpers";
 import { eq, and, inArray } from "drizzle-orm";
 import {
   playerSeasonalPAR,
@@ -41,11 +41,13 @@ runExperiment({
   name: "roster-scoped-vs-unbounded",
   hypothesis:
     "Scoping production to roster ownership windows produces more intuitive trade grades than unbounded",
+  acceptanceCriteria:
+    "At least 20% of trades show >10pt score difference between scoped and unbounded approaches",
   run: async (ctx) => {
     const families = await ctx.db.select().from(schema.leagueFamilies);
     if (families.length === 0) {
       ctx.log("No league families found.");
-      return { metrics: { totalTrades: 0, avgScoreDiff: 0, bigSwingCount: 0 }, rawData: [] };
+      return noData("No league families found");
     }
 
     const allCases: TradeCase[] = [];
@@ -220,7 +222,23 @@ runExperiment({
     ctx.log(`  Trades with >10pt difference: ${bigSwings} (${bigSwingPct}%)`);
     ctx.log("\nLarger diffs = more cases where roster scoping changes the grade.");
 
+    const verdict = bigSwingPct >= 20 ? "confirmed"
+      : allCases.length === 0 ? "inconclusive"
+      : "rejected";
+    const verdictReason = `${bigSwings}/${allCases.length} trades (${bigSwingPct}%) had >10pt difference`;
+
     return {
+      verdict,
+      verdictReason,
+      scorecard: {
+        primaryMetrics: [
+          metric("Trades with >10pt difference", bigSwingPct, "%", { baseline: 20 }),
+        ],
+        secondaryMetrics: [
+          metric("Avg score difference", avgDiff, "pts"),
+          metric("Total trades analyzed", allCases.length, "count"),
+        ],
+      },
       metrics: {
         totalTrades: allCases.length,
         avgScoreDiff: avgDiff,
