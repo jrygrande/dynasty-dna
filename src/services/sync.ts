@@ -10,6 +10,7 @@ import { syncFantasyCalcValues } from "@/services/fantasyCalcSync";
 import { gradeLeagueTrades } from "@/services/tradeGrading";
 import { gradeLeagueLineups } from "@/services/lineupGrading";
 import { gradeLeagueDrafts } from "@/services/draftGrading";
+import { gradeLeagueWaivers } from "@/services/waiverGrading";
 import { rollupManagerGrades } from "@/services/managerGrades";
 import { batchInsert, BATCH_SIZE } from "@/services/batchHelper";
 
@@ -418,6 +419,13 @@ export async function syncLeague(
       await gradeLeagueDrafts(leagueId, familyId);
     } catch (err) {
       console.warn(`[sync] Draft grading failed for ${leagueId}:`, err);
+    }
+
+    onProgress?.({ step: "waiver_grades", detail: "Grading waiver pickups" });
+    try {
+      await gradeLeagueWaivers(leagueId, familyId);
+    } catch (err) {
+      console.warn(`[sync] Waiver grading failed for ${leagueId}:`, err);
     }
   }
 
