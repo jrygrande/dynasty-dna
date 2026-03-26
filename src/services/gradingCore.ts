@@ -287,6 +287,97 @@ export function normalizeScore(diff: number, scaling: number): number {
   return clamp(50 + clamp(diff / scaling, -1, 1) * 50, 0, 100);
 }
 
+/**
+ * Normalize an array of raw values to 0-100 using min-max scaling.
+ * Used to convert raw total production into a league-relative score
+ * for the "quantity" dimension of quality x quantity grading.
+ *
+ * Returns an array of normalized scores in the same order as input.
+ * When all values are equal, returns 50 for everyone.
+ */
+export function normalizeWithinLeague(values: number[]): number[] {
+  if (values.length === 0) return [];
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min;
+  if (range === 0) return values.map(() => 50);
+  return values.map((v) => clamp(((v - min) / range) * 100, 0, 100));
+}
+
+// ============================================================
+// Quality x Quantity Aggregation
+// ============================================================
+
+/** Per-pillar quality weights for the quality x quantity blend */
+export const QUALITY_WEIGHTS: Record<string, number> = {
+  trade_score: 0.50,
+  draft_score: 0.60,
+  waiver_score: 0.40,
+};
+
+/**
+ * Shared aggregation for quality x quantity manager scoring.
+ * Takes per-manager totals and produces scored + percentiled metric rows
+ * ready for batchUpsertManagerMetrics.
+ */
+export function computeQualityQuantityScores(
+  managerAgg: Map<string, { totalQuality: number; totalRawPAR: number; count: number }>,
+  opts: {
+    leagueId: string;
+    season: string;
+    metric: string;
+    qualityWeight: number;
+    countLabel: string;
+  },
+): Array<typeof schema.managerMetrics.$inferInsert> {
+  const entries = Array.from(managerAgg.entries()).filter(
+    ([, agg]) => agg.count > 0,
+  );
+  if (entries.length === 0) return [];
+
+  const rawPARValues = entries.map(([, agg]) => agg.totalRawPAR);
+  const normalizedPAR = normalizeWithinLeague(rawPARValues);
+
+  const allScores: Array<{ managerId: string; score: number }> = [];
+  for (let i = 0; i < entries.length; i++) {
+    const [managerId, agg] = entries[i];
+    const avgQuality = agg.totalQuality / agg.count;
+    const quantityScore = normalizedPAR[i];
+    const score = clamp(
+      opts.qualityWeight * avgQuality + (1 - opts.qualityWeight) * quantityScore,
+      0,
+      100,
+    );
+    allScores.push({
+      managerId,
+      score: Math.round(score * 10) / 10,
+    });
+  }
+
+  const sortedAsc = [...allScores].sort((a, b) => a.score - b.score);
+  const now = new Date();
+
+  return allScores.map((entry) => {
+    const percentile = computePercentile(entry, sortedAsc);
+    const agg = managerAgg.get(entry.managerId)!;
+    return {
+      leagueId: opts.leagueId,
+      managerId: entry.managerId,
+      metric: opts.metric,
+      scope: `season:${opts.season}`,
+      value: entry.score,
+      percentile,
+      meta: {
+        grade: scoreToGrade(entry.score),
+        [opts.countLabel]: agg.count,
+        avgQuality: Math.round((agg.totalQuality / agg.count) * 10) / 10,
+        totalPAR: Math.round(agg.totalRawPAR * 10) / 10,
+      },
+      computedAt: now,
+    };
+  });
+}
+
 /** Compute percentile for a score within a sorted (ascending) array of scores. */
 export function computePercentile(
   entry: { score: number },
@@ -410,7 +501,7 @@ export function playerLayeredProduction(
     playoffRosterIds?: Set<number> | null;
     leagueId?: string;
   } = {},
-): { production: number; weeksUsed: number } {
+): { production: number; weeksUsed: number; rawTotalPAR: number } {
   const {
     fromWeek,
     toWeek,
@@ -469,7 +560,7 @@ export function playerLayeredProduction(
   const avgWeeklyPAR = weeksUsed > 0 ? totalLayeredPAR / weeksUsed : 0;
   const production = scaledPAR(avgWeeklyPAR, maxPAR);
 
-  return { production, weeksUsed };
+  return { production, weeksUsed, rawTotalPAR: totalLayeredPAR };
 }
 
 /**
