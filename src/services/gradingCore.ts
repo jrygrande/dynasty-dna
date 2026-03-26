@@ -118,10 +118,7 @@ export function scaledPAR(par: number, maxPAR: number): number {
 
 export type BlendContext = "trade" | "draft" | "waiver";
 
-interface BlendBreakpoint {
-  weeks: number;
-  weight: number;
-}
+import { type BlendBreakpoint } from "@/services/algorithmConfig";
 
 /**
  * Blend profiles define how production weight ramps over time.
@@ -312,12 +309,9 @@ export function normalizeWithinLeague(values: number[]): number[] {
 // Quality x Quantity Aggregation
 // ============================================================
 
-/** Per-pillar quality weights for the quality x quantity blend */
-export const QUALITY_WEIGHTS: Record<string, number> = {
-  trade_score: 0.50,
-  draft_score: 0.60,
-  waiver_score: 0.40,
-};
+/** Per-pillar quality weights — sourced from DEFAULT_CONFIG for backwards compat */
+import { DEFAULT_CONFIG } from "@/services/algorithmConfig";
+export const QUALITY_WEIGHTS: Record<string, number> = DEFAULT_CONFIG.qualityWeights;
 
 /**
  * Shared aggregation for quality x quantity manager scoring.

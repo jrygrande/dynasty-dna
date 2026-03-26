@@ -235,23 +235,25 @@ export async function promoteConfig(opts: {
 }): Promise<string> {
   const db = getDb();
 
-  // Deactivate all existing configs
-  await db
-    .update(schema.algorithmConfig)
-    .set({ isActive: false })
-    .where(eq(schema.algorithmConfig.isActive, true));
+  const [row] = await db.transaction(async (tx) => {
+    // Deactivate all existing configs
+    await tx
+      .update(schema.algorithmConfig)
+      .set({ isActive: false })
+      .where(eq(schema.algorithmConfig.isActive, true));
 
-  // Insert new active config
-  const [row] = await db
-    .insert(schema.algorithmConfig)
-    .values({
-      config: opts.config,
-      experimentId: opts.experimentId ?? null,
-      isActive: true,
-      promotedBy: opts.promotedBy ?? null,
-      notes: opts.notes ?? null,
-    })
-    .returning({ id: schema.algorithmConfig.id });
+    // Insert new active config
+    return tx
+      .insert(schema.algorithmConfig)
+      .values({
+        config: opts.config,
+        experimentId: opts.experimentId ?? null,
+        isActive: true,
+        promotedBy: opts.promotedBy ?? null,
+        notes: opts.notes ?? null,
+      })
+      .returning({ id: schema.algorithmConfig.id });
+  });
 
   clearConfigCache();
   return row.id;

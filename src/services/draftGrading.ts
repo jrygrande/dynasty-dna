@@ -19,20 +19,7 @@ import { getActiveConfig } from "@/services/algorithmConfig";
 // Draft Grading Configuration
 // ============================================================
 
-/** Hardcoded defaults — overridden at runtime by algoConfig.draftConfig */
-const DRAFT_GRADE_DEFAULTS = {
-  benchmarkWindow: 8,
-  benchmarkTake: 6,
-  minBenchmark: 4,
-  valueScalingMax: 10000,
-  valueScalingMin: 1500,
-  productionScalingMax: 300,
-  productionScalingMin: 80,
-  bonusStartPercentile: 0.4,
-  bonusProductionThreshold: 40,
-  bonusMaxPoints: 20,
-  bonusExcessCap: 200,
-};
+import { DEFAULT_CONFIG } from "@/services/algorithmConfig";
 
 function adaptiveScaling(
   pickPercentile: number,
@@ -50,7 +37,7 @@ function adaptiveScaling(
 function latePickProductionBonus(
   pickPercentile: number,
   production: number,
-  cfg: typeof DRAFT_GRADE_DEFAULTS = DRAFT_GRADE_DEFAULTS,
+  cfg: typeof DEFAULT_CONFIG.draftConfig = DEFAULT_CONFIG.draftConfig,
 ): number {
   const {
     bonusStartPercentile,
