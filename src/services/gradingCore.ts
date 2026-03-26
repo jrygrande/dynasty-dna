@@ -287,6 +287,23 @@ export function normalizeScore(diff: number, scaling: number): number {
   return clamp(50 + clamp(diff / scaling, -1, 1) * 50, 0, 100);
 }
 
+/**
+ * Normalize an array of raw values to 0-100 using min-max scaling.
+ * Used to convert raw total production into a league-relative score
+ * for the "quantity" dimension of quality x quantity grading.
+ *
+ * Returns a Map from the original index to the normalized score.
+ * When all values are equal, returns 50 for everyone.
+ */
+export function normalizeWithinLeague(values: number[]): number[] {
+  if (values.length === 0) return [];
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = max - min;
+  if (range === 0) return values.map(() => 50);
+  return values.map((v) => clamp(((v - min) / range) * 100, 0, 100));
+}
+
 /** Compute percentile for a score within a sorted (ascending) array of scores. */
 export function computePercentile(
   entry: { score: number },
@@ -410,7 +427,7 @@ export function playerLayeredProduction(
     playoffRosterIds?: Set<number> | null;
     leagueId?: string;
   } = {},
-): { production: number; weeksUsed: number } {
+): { production: number; weeksUsed: number; rawTotalPAR: number } {
   const {
     fromWeek,
     toWeek,
@@ -469,7 +486,7 @@ export function playerLayeredProduction(
   const avgWeeklyPAR = weeksUsed > 0 ? totalLayeredPAR / weeksUsed : 0;
   const production = scaledPAR(avgWeeklyPAR, maxPAR);
 
-  return { production, weeksUsed };
+  return { production, weeksUsed, rawTotalPAR: totalLayeredPAR };
 }
 
 /**

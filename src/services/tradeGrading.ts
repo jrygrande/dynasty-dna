@@ -11,6 +11,9 @@ import {
   productionWeight,
   scoreToGrade,
   normalizeScore,
+  normalizeWithinLeague,
+  clamp,
+  computePercentile,
   playerLayeredProduction,
   computeSeasonalRanks,
   seasonPositionKey,
@@ -26,6 +29,7 @@ import {
   type MatchupResult,
   type PlayoffConfig,
 } from "@/services/gradingCore";
+import { batchUpsertManagerMetrics } from "@/services/batchHelper";
 
 // ============================================================
 // Draft pick resolution
@@ -201,6 +205,7 @@ export function computeValueScores(
 interface ProductionResult {
   productionScore: number;
   weeksUsed: number;
+  rawPAR: number;
 }
 
 type PickResolver = (pick: {
@@ -272,6 +277,7 @@ export function computeProductionScores(
 
     let totalProduction = 0;
     let totalWeeksUsed = 0;
+    let totalRawPAR = 0;
 
     // Look up the owner for this rosterId in the trade's league (O(1) reverse map)
     const ownerId = ctx.leagueRosterOwner
@@ -327,7 +333,7 @@ export function computeProductionScores(
         if (filteredScores.length === 0) continue;
 
         const leaguePlayoffConfig = ctx.playoffConfig.get(leagueId);
-        const { production, weeksUsed } =
+        const { production, weeksUsed, rawTotalPAR } =
           playerLayeredProduction(
             filteredScores,
             repPPG,
@@ -346,6 +352,7 @@ export function computeProductionScores(
 
         totalProduction += production;
         totalWeeksUsed += weeksUsed;
+        totalRawPAR += rawTotalPAR;
       }
     }
 
@@ -359,6 +366,7 @@ export function computeProductionScores(
     results.set(rosterId, {
       productionScore,
       weeksUsed: totalWeeksUsed,
+      rawPAR: totalRawPAR,
     });
   }
 
@@ -579,6 +587,7 @@ export async function gradeLeagueTrades(
       const rawValue = vs?.rawValue ?? 0;
       const prodScore = ps?.productionScore ?? 50;
       const weeksUsed = ps?.weeksUsed ?? 0;
+      const rawPAR = ps?.rawPAR ?? 0;
 
       const blendedScore =
         (1 - pw) * valueScore + pw * prodScore;
@@ -591,6 +600,7 @@ export async function gradeLeagueTrades(
         fantasyCalcValue: rawValue,
         productionScore: weeksUsed > 0 ? prodScore : null,
         productionWeeks: weeksUsed > 0 ? weeksUsed : null,
+        rawPAR: weeksUsed > 0 ? rawPAR : null,
         blendedScore,
         productionWeight: pw,
         grade,
@@ -616,6 +626,7 @@ export async function gradeLeagueTrades(
           fantasyCalcValue: sql`excluded.fantasy_calc_value`,
           productionScore: sql`excluded.production_score`,
           productionWeeks: sql`excluded.production_weeks`,
+          rawPAR: sql`excluded.raw_par`,
           blendedScore: sql`excluded.blended_score`,
           productionWeight: sql`excluded.production_weight`,
           grade: sql`excluded.grade`,
@@ -628,5 +639,87 @@ export async function gradeLeagueTrades(
   console.log(
     `[tradeGrading] Graded ${graded} trade sides for league ${leagueId}`,
   );
+
+  // ============================================================
+  // Aggregate trade_score per manager (quality x quantity)
+  // ============================================================
+
+  const season = leagueSeasonMap.get(leagueId);
+  if (season && allGradeRows.length > 0) {
+    // Build reverse map for this league: rosterId -> ownerId
+    const rosterOwnerMap = leagueRosterOwner.get(leagueId) ?? new Map<number, string>();
+
+    // Group grades by manager (ownerId)
+    const managerAgg = new Map<
+      string,
+      { totalBlended: number; totalRawPAR: number; count: number }
+    >();
+
+    for (const row of allGradeRows) {
+      const ownerId = rosterOwnerMap.get(row.rosterId);
+      if (!ownerId) continue;
+
+      if (!managerAgg.has(ownerId)) {
+        managerAgg.set(ownerId, { totalBlended: 0, totalRawPAR: 0, count: 0 });
+      }
+      const agg = managerAgg.get(ownerId)!;
+      agg.totalBlended += row.blendedScore ?? 0;
+      agg.totalRawPAR += row.rawPAR ?? 0;
+      agg.count++;
+    }
+
+    // Quality x quantity: blend avgQuality with normalized total production
+    const QUALITY_WEIGHT = 0.50;
+    const managerEntries = Array.from(managerAgg.entries()).filter(
+      ([, agg]) => agg.count > 0,
+    );
+    const rawPARValues = managerEntries.map(([, agg]) => agg.totalRawPAR);
+    const normalizedPAR = normalizeWithinLeague(rawPARValues);
+
+    const allScores: Array<{ managerId: string; score: number }> = [];
+    for (let i = 0; i < managerEntries.length; i++) {
+      const [managerId, agg] = managerEntries[i];
+      const avgQuality = agg.totalBlended / agg.count;
+      const quantityScore = normalizedPAR[i];
+      const score = clamp(
+        QUALITY_WEIGHT * avgQuality + (1 - QUALITY_WEIGHT) * quantityScore,
+        0,
+        100,
+      );
+      allScores.push({
+        managerId,
+        score: Math.round(score * 10) / 10,
+      });
+    }
+
+    const sortedAsc = [...allScores].sort((a, b) => a.score - b.score);
+    const now = new Date();
+
+    const metricValues = allScores.map((entry) => {
+      const percentile = computePercentile(entry, sortedAsc);
+      const agg = managerAgg.get(entry.managerId)!;
+      return {
+        leagueId,
+        managerId: entry.managerId,
+        metric: "trade_score" as const,
+        scope: `season:${season}`,
+        value: entry.score,
+        percentile,
+        meta: {
+          grade: scoreToGrade(entry.score),
+          tradesGraded: agg.count,
+          avgQuality: Math.round((agg.totalBlended / agg.count) * 10) / 10,
+          totalPAR: Math.round(agg.totalRawPAR * 10) / 10,
+        },
+        computedAt: now,
+      };
+    });
+
+    await batchUpsertManagerMetrics(metricValues);
+    console.log(
+      `[tradeGrading] Wrote trade_score for ${metricValues.length} managers in ${leagueId}`,
+    );
+  }
+
   return graded;
 }

@@ -6,6 +6,8 @@ import {
   productionWeight,
   scoreToGrade,
   normalizeScore,
+  normalizeWithinLeague,
+  clamp,
   playerSeasonalPAR,
   computeSeasonalRanks,
   computePercentile,
@@ -174,7 +176,7 @@ export async function gradeLeagueDrafts(
     // Per-manager aggregation
     const managerAgg = new Map<
       string,
-      { totalScore: number; count: number }
+      { totalScore: number; totalRawPAR: number; count: number }
     >();
     const picks = picksByDraft.get(draft.id);
     if (!picks || picks.length === 0) continue;
@@ -338,9 +340,11 @@ export async function gradeLeagueDrafts(
         if (ownerId) {
           const agg = managerAgg.get(ownerId) ?? {
             totalScore: 0,
+            totalRawPAR: 0,
             count: 0,
           };
           agg.totalScore += finalScore;
+          agg.totalRawPAR += pickedProduction;
           agg.count++;
           managerAgg.set(ownerId, agg);
         }
@@ -381,18 +385,30 @@ export async function gradeLeagueDrafts(
       graded += gradeRows.length;
     }
 
-    // Write per-manager draft_score to managerMetrics
+    // Write per-manager draft_score to managerMetrics (quality x quantity)
     const season = draft.season;
-    const allScores: Array<{
-      managerId: string;
-      score: number;
-    }> = [];
+    const QUALITY_WEIGHT = 0.60;
 
-    for (const [managerId, agg] of managerAgg) {
-      if (agg.count === 0) continue;
-      const avgScore =
-        Math.round((agg.totalScore / agg.count) * 10) / 10;
-      allScores.push({ managerId, score: avgScore });
+    const managerEntries = Array.from(managerAgg.entries()).filter(
+      ([, agg]) => agg.count > 0,
+    );
+    const rawPARValues = managerEntries.map(([, agg]) => agg.totalRawPAR);
+    const normalizedPAR = normalizeWithinLeague(rawPARValues);
+
+    const allScores: Array<{ managerId: string; score: number }> = [];
+    for (let i = 0; i < managerEntries.length; i++) {
+      const [managerId, agg] = managerEntries[i];
+      const avgQuality = agg.totalScore / agg.count;
+      const quantityScore = normalizedPAR[i];
+      const score = clamp(
+        QUALITY_WEIGHT * avgQuality + (1 - QUALITY_WEIGHT) * quantityScore,
+        0,
+        100,
+      );
+      allScores.push({
+        managerId,
+        score: Math.round(score * 10) / 10,
+      });
     }
 
     const sortedAsc = [...allScores].sort(
@@ -413,6 +429,8 @@ export async function gradeLeagueDrafts(
         meta: {
           grade: scoreToGrade(entry.score),
           picksGraded: agg.count,
+          avgQuality: Math.round((agg.totalScore / agg.count) * 10) / 10,
+          totalPAR: Math.round(agg.totalRawPAR * 10) / 10,
         },
         computedAt: now,
       };

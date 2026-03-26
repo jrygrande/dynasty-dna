@@ -445,6 +445,7 @@ export const tradeGrades = pgTable(
     // Production component
     productionScore: real("production_score"), // normalized 0-100, based on PPG vs positional average
     productionWeeks: integer("production_weeks"), // how many weeks of data used
+    rawPAR: real("raw_par"), // unnormalized total layered PAR — used for quantity dimension
     // Blended result
     blendedScore: real("blended_score"), // weighted combination of value + production
     productionWeight: real("production_weight"), // 0-1, how much production influenced this grade
@@ -458,6 +459,45 @@ export const tradeGrades = pgTable(
     uniqueTrade: uniqueIndex("trade_grades_unique_idx").on(
       tg.transactionId,
       tg.rosterId
+    ),
+  })
+);
+
+export const waiverGrades = pgTable(
+  "waiver_grades",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    transactionId: text("transaction_id")
+      .notNull()
+      .references(() => transactions.id, { onDelete: "cascade" }),
+    rosterId: integer("roster_id").notNull(),
+    playerId: text("player_id"),
+    droppedPlayerId: text("dropped_player_id"),
+    // Value component
+    valueScore: real("value_score"), // normalized 0-100
+    playerValue: real("player_value"), // raw FantasyCalc value of acquired player
+    droppedValue: real("dropped_value"), // raw FantasyCalc value of dropped player
+    // FAAB component
+    faabBid: integer("faab_bid"),
+    faabEfficiency: real("faab_efficiency"), // value-per-dollar (nullable for non-FAAB leagues)
+    // Production component
+    productionScore: real("production_score"), // normalized 0-100
+    productionWeeks: integer("production_weeks"),
+    rawPAR: real("raw_par"), // unnormalized total layered PAR — used for quantity dimension
+    // Blended result
+    blendedScore: real("blended_score"),
+    productionWeight: real("production_weight"),
+    grade: text("grade"),
+    computedAt: timestamp("computed_at", { mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (wg) => ({
+    txIdx: index("waiver_grades_tx_idx").on(wg.transactionId),
+    playerIdx: index("waiver_grades_player_idx").on(wg.playerId),
+    uniqueWaiver: uniqueIndex("waiver_grades_unique_idx").on(
+      wg.transactionId,
+      wg.rosterId,
     ),
   })
 );
