@@ -3,14 +3,13 @@ import { eq, and, inArray, sql } from "drizzle-orm";
 import { batchUpsertManagerMetrics } from "@/services/batchHelper";
 import { syncFantasyCalcValues } from "@/services/fantasyCalcSync";
 import {
+  QUALITY_WEIGHTS,
   productionWeight,
   scoreToGrade,
   normalizeScore,
-  normalizeWithinLeague,
-  clamp,
+  computeQualityQuantityScores,
   playerSeasonalPAR,
   computeSeasonalRanks,
-  computePercentile,
   loadLeagueScoringConfig,
   loadFamilyLeagueMap,
   loadFantasyCalcSnapshot,
@@ -386,54 +385,21 @@ export async function gradeLeagueDrafts(
     }
 
     // Write per-manager draft_score to managerMetrics (quality x quantity)
-    const season = draft.season;
-    const QUALITY_WEIGHT = 0.60;
-
-    const managerEntries = Array.from(managerAgg.entries()).filter(
-      ([, agg]) => agg.count > 0,
-    );
-    const rawPARValues = managerEntries.map(([, agg]) => agg.totalRawPAR);
-    const normalizedPAR = normalizeWithinLeague(rawPARValues);
-
-    const allScores: Array<{ managerId: string; score: number }> = [];
-    for (let i = 0; i < managerEntries.length; i++) {
-      const [managerId, agg] = managerEntries[i];
-      const avgQuality = agg.totalScore / agg.count;
-      const quantityScore = normalizedPAR[i];
-      const score = clamp(
-        QUALITY_WEIGHT * avgQuality + (1 - QUALITY_WEIGHT) * quantityScore,
-        0,
-        100,
-      );
-      allScores.push({
-        managerId,
-        score: Math.round(score * 10) / 10,
-      });
+    // Remap totalScore -> totalQuality for the shared aggregation helper
+    const qualityAgg = new Map<
+      string,
+      { totalQuality: number; totalRawPAR: number; count: number }
+    >();
+    for (const [id, agg] of managerAgg) {
+      qualityAgg.set(id, { totalQuality: agg.totalScore, totalRawPAR: agg.totalRawPAR, count: agg.count });
     }
 
-    const sortedAsc = [...allScores].sort(
-      (a, b) => a.score - b.score,
-    );
-    const now = new Date();
-
-    const metricValues = allScores.map((entry) => {
-      const percentile = computePercentile(entry, sortedAsc);
-      const agg = managerAgg.get(entry.managerId)!;
-      return {
-        leagueId,
-        managerId: entry.managerId,
-        metric: "draft_score" as const,
-        scope: `season:${season}`,
-        value: entry.score,
-        percentile,
-        meta: {
-          grade: scoreToGrade(entry.score),
-          picksGraded: agg.count,
-          avgQuality: Math.round((agg.totalScore / agg.count) * 10) / 10,
-          totalPAR: Math.round(agg.totalRawPAR * 10) / 10,
-        },
-        computedAt: now,
-      };
+    const metricValues = computeQualityQuantityScores(qualityAgg, {
+      leagueId,
+      season: draft.season,
+      metric: "draft_score",
+      qualityWeight: QUALITY_WEIGHTS.draft_score,
+      countLabel: "picksGraded",
     });
 
     await batchUpsertManagerMetrics(metricValues);

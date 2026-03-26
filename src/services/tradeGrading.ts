@@ -8,12 +8,11 @@ import {
 } from "@/lib/draft";
 import {
   GRADE_CONFIG,
+  QUALITY_WEIGHTS,
   productionWeight,
   scoreToGrade,
   normalizeScore,
-  normalizeWithinLeague,
-  clamp,
-  computePercentile,
+  computeQualityQuantityScores,
   playerLayeredProduction,
   computeSeasonalRanks,
   seasonPositionKey,
@@ -646,73 +645,30 @@ export async function gradeLeagueTrades(
 
   const season = leagueSeasonMap.get(leagueId);
   if (season && allGradeRows.length > 0) {
-    // Build reverse map for this league: rosterId -> ownerId
     const rosterOwnerMap = leagueRosterOwner.get(leagueId) ?? new Map<number, string>();
 
-    // Group grades by manager (ownerId)
     const managerAgg = new Map<
       string,
-      { totalBlended: number; totalRawPAR: number; count: number }
+      { totalQuality: number; totalRawPAR: number; count: number }
     >();
-
     for (const row of allGradeRows) {
       const ownerId = rosterOwnerMap.get(row.rosterId);
       if (!ownerId) continue;
-
       if (!managerAgg.has(ownerId)) {
-        managerAgg.set(ownerId, { totalBlended: 0, totalRawPAR: 0, count: 0 });
+        managerAgg.set(ownerId, { totalQuality: 0, totalRawPAR: 0, count: 0 });
       }
       const agg = managerAgg.get(ownerId)!;
-      agg.totalBlended += row.blendedScore ?? 0;
+      agg.totalQuality += row.blendedScore ?? 0;
       agg.totalRawPAR += row.rawPAR ?? 0;
       agg.count++;
     }
 
-    // Quality x quantity: blend avgQuality with normalized total production
-    const QUALITY_WEIGHT = 0.50;
-    const managerEntries = Array.from(managerAgg.entries()).filter(
-      ([, agg]) => agg.count > 0,
-    );
-    const rawPARValues = managerEntries.map(([, agg]) => agg.totalRawPAR);
-    const normalizedPAR = normalizeWithinLeague(rawPARValues);
-
-    const allScores: Array<{ managerId: string; score: number }> = [];
-    for (let i = 0; i < managerEntries.length; i++) {
-      const [managerId, agg] = managerEntries[i];
-      const avgQuality = agg.totalBlended / agg.count;
-      const quantityScore = normalizedPAR[i];
-      const score = clamp(
-        QUALITY_WEIGHT * avgQuality + (1 - QUALITY_WEIGHT) * quantityScore,
-        0,
-        100,
-      );
-      allScores.push({
-        managerId,
-        score: Math.round(score * 10) / 10,
-      });
-    }
-
-    const sortedAsc = [...allScores].sort((a, b) => a.score - b.score);
-    const now = new Date();
-
-    const metricValues = allScores.map((entry) => {
-      const percentile = computePercentile(entry, sortedAsc);
-      const agg = managerAgg.get(entry.managerId)!;
-      return {
-        leagueId,
-        managerId: entry.managerId,
-        metric: "trade_score" as const,
-        scope: `season:${season}`,
-        value: entry.score,
-        percentile,
-        meta: {
-          grade: scoreToGrade(entry.score),
-          tradesGraded: agg.count,
-          avgQuality: Math.round((agg.totalBlended / agg.count) * 10) / 10,
-          totalPAR: Math.round(agg.totalRawPAR * 10) / 10,
-        },
-        computedAt: now,
-      };
+    const metricValues = computeQualityQuantityScores(managerAgg, {
+      leagueId,
+      season,
+      metric: "trade_score",
+      qualityWeight: QUALITY_WEIGHTS.trade_score,
+      countLabel: "tradesGraded",
     });
 
     await batchUpsertManagerMetrics(metricValues);
