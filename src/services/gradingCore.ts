@@ -329,7 +329,7 @@ export function computeQualityQuantityScores(
     qualityWeight: number;
     countLabel: string;
   },
-): Array<typeof import("@/db").schema.managerMetrics.$inferInsert> {
+): Array<typeof schema.managerMetrics.$inferInsert> {
   const entries = Array.from(managerAgg.entries()).filter(
     ([, agg]) => agg.count > 0,
   );
