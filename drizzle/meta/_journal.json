@@ -57,6 +57,13 @@
       "when": 1774526045231,
       "tag": "0007_volatile_eternals",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1774538784264,
+      "tag": "0008_bouncy_luminals",
+      "breakpoints": true
     }
   ]
 }
