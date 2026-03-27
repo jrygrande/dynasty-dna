@@ -168,15 +168,27 @@ let cachedConfig: AlgorithmConfig | null = null;
 let cacheTimestamp = 0;
 const CACHE_TTL_MS = 60_000;
 
-function deepMerge(defaults: AlgorithmConfig, overrides: Partial<AlgorithmConfig>): AlgorithmConfig {
+/**
+ * Recursively merge overrides onto defaults. Plain objects are merged
+ * key-by-key so partial overrides (e.g., `{ qualityWeights: { trade_score: 0.7 } }`)
+ * preserve sibling fields. Arrays are fully replaced (no element-level merge).
+ */
+function deepMerge(defaults: Record<string, unknown>, overrides: Record<string, unknown>): Record<string, unknown> {
   const result = { ...defaults };
-  for (const key of Object.keys(overrides) as (keyof AlgorithmConfig)[]) {
+  for (const key of Object.keys(overrides)) {
     const val = overrides[key];
     if (val === undefined || val === null) continue;
-    if (typeof val === "object" && !Array.isArray(val) && typeof defaults[key] === "object" && !Array.isArray(defaults[key])) {
-      (result as Record<string, unknown>)[key] = { ...(defaults[key] as Record<string, unknown>), ...(val as Record<string, unknown>) };
+    const def = defaults[key];
+    if (
+      typeof val === "object" && !Array.isArray(val) &&
+      typeof def === "object" && def !== null && !Array.isArray(def)
+    ) {
+      result[key] = deepMerge(
+        def as Record<string, unknown>,
+        val as Record<string, unknown>,
+      );
     } else {
-      (result as Record<string, unknown>)[key] = val;
+      result[key] = val;
     }
   }
   return result;
@@ -201,7 +213,10 @@ export async function getActiveConfig(): Promise<AlgorithmConfig> {
       .limit(1);
 
     if (row?.config && typeof row.config === "object") {
-      cachedConfig = deepMerge(DEFAULT_CONFIG, row.config as Partial<AlgorithmConfig>);
+      cachedConfig = deepMerge(
+        DEFAULT_CONFIG as unknown as Record<string, unknown>,
+        row.config as Record<string, unknown>,
+      ) as unknown as AlgorithmConfig;
     } else {
       cachedConfig = DEFAULT_CONFIG;
     }
