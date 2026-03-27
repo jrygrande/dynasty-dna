@@ -140,7 +140,7 @@ export const DEFAULT_CONFIG: AlgorithmConfig = {
   },
 
   waiverValueScaling: 3000,
-  faabBonusMax: 10,
+  faabBonusMax: 0, // Experiment 08 rejected — FAAB bonus adds noise, not signal
 
   defaultRoundAverages: { 1: 6000, 2: 2500, 3: 1000, 4: 250 },
 
