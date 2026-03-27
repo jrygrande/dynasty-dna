@@ -193,6 +193,7 @@ export async function rollupManagerGrades(familyId: string): Promise<void> {
   }
 
   // Delete stale all_time rows (prevents duplicates across different leagueIds)
+  // Scoped to this family's leagueIds so other families are untouched
   const allManagerIds = [...managerAllTime.keys()];
   if (allManagerIds.length > 0) {
     await db
@@ -200,6 +201,7 @@ export async function rollupManagerGrades(familyId: string): Promise<void> {
       .where(
         and(
           inArray(schema.managerMetrics.managerId, allManagerIds),
+          inArray(schema.managerMetrics.leagueId, leagueIds),
           eq(schema.managerMetrics.scope, "all_time"),
         ),
       );

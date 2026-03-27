@@ -161,7 +161,7 @@ export default function ManagerPage() {
                             {metric ? (
                               <div className="flex items-center justify-center gap-2">
                                 <span className="font-mono text-sm">
-                                  {Math.round(metric.percentile)}
+                                  {Math.round(metric.percentile)}%
                                 </span>
                                 <GradeBadge grade={metric.grade} size="xs" />
                               </div>
