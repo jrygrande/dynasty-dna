@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb, schema } from "@/db";
 import { eq, and, inArray, desc } from "drizzle-orm";
 import { resolveFamily } from "@/lib/familyResolution";
+import { percentileToGrade } from "@/services/gradingCore";
 
 export async function GET(
   req: NextRequest,
@@ -48,7 +49,7 @@ export async function GET(
       db
         .select()
         .from(schema.managerMetrics)
-        .where(eq(schema.managerMetrics.managerId, userId)),
+        .where(inArray(schema.managerMetrics.leagueId, leagueIds)),
       db
         .select({
           id: schema.transactions.id,
@@ -111,7 +112,7 @@ export async function GET(
       return false;
     }).slice(0, 10);
 
-    // Parse metrics into structured response
+    // Parse metrics — compute global percentiles across all managers
     const pillarTypes = [
       "trade_score",
       "draft_score",
@@ -119,21 +120,40 @@ export async function GET(
       "lineup_score",
     ];
 
-    // All-time pillar scores
+    // Build global score distributions per metric+scope for percentile ranking
+    const globalScores = new Map<string, number[]>(); // "metric:scope" -> sorted values
+    for (const m of allMetrics) {
+      const key = `${m.metric}:${m.scope}`;
+      if (!globalScores.has(key)) globalScores.set(key, []);
+      globalScores.get(key)!.push(m.value);
+    }
+    for (const arr of globalScores.values()) arr.sort((a, b) => a - b);
+
+    function globalPercentile(metric: string, scope: string, value: number): number {
+      const sorted = globalScores.get(`${metric}:${scope}`);
+      if (!sorted || sorted.length <= 1) return 50;
+      const rank = sorted.filter((v) => v < value).length;
+      return Math.round((rank / (sorted.length - 1)) * 1000) / 10;
+    }
+
+    // Filter to this manager's metrics
+    const myMetrics = allMetrics.filter((r) => r.managerId === userId);
+
+    // All-time pillar scores with global percentile grades
     const pillarScores: Record<
       string,
       { value: number; grade: string; percentile: number } | null
     > = {};
     for (const pillar of pillarTypes) {
-      const m = allMetrics.find(
+      const m = myMetrics.find(
         (r) => r.metric === pillar && r.scope === "all_time",
       );
       if (m) {
-        const meta = m.meta as Record<string, unknown> | null;
+        const pctl = globalPercentile(pillar, "all_time", m.value);
         pillarScores[pillar] = {
           value: m.value,
-          grade: (meta?.grade as string) ?? "",
-          percentile: m.percentile ?? 0,
+          grade: percentileToGrade(pctl),
+          percentile: pctl,
         };
       } else {
         pillarScores[pillar] = null;
@@ -141,15 +161,20 @@ export async function GET(
     }
 
     // Overall score
-    const overallMetric = allMetrics.find(
+    const overallMetric = myMetrics.find(
       (r) => r.metric === "overall_score" && r.scope === "all_time",
     );
-    const overallMeta = overallMetric?.meta as Record<string, unknown> | null;
     const overallScore = overallMetric
       ? {
           value: overallMetric.value,
-          grade: (overallMeta?.grade as string) ?? "",
-          percentile: overallMetric.percentile ?? 0,
+          grade: percentileToGrade(
+            globalPercentile("overall_score", "all_time", overallMetric.value),
+          ),
+          percentile: globalPercentile(
+            "overall_score",
+            "all_time",
+            overallMetric.value,
+          ),
         }
       : null;
 
@@ -157,7 +182,7 @@ export async function GET(
     const leagueToSeason = new Map(
       members.map((m) => [m.leagueId, m.season]),
     );
-    const seasonMetrics = allMetrics.filter((r) =>
+    const seasonMetrics = myMetrics.filter((r) =>
       r.scope.startsWith("season:"),
     );
 
@@ -168,11 +193,11 @@ export async function GET(
     for (const m of seasonMetrics) {
       const season = m.scope.replace("season:", "");
       if (!seasonMap.has(season)) seasonMap.set(season, {});
-      const meta = m.meta as Record<string, unknown> | null;
+      const pctl = globalPercentile(m.metric, m.scope, m.value);
       seasonMap.get(season)![m.metric] = {
         value: m.value,
-        grade: (meta?.grade as string) ?? "",
-        percentile: m.percentile ?? 0,
+        grade: percentileToGrade(pctl),
+        percentile: pctl,
       };
     }
 
