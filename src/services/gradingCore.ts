@@ -283,6 +283,22 @@ export function scoreToGrade(score: number, thresholds?: Record<string, number>)
   return "F";
 }
 
+/**
+ * Assign a letter grade based on global percentile rank.
+ * Used for manager-level display where grades should reflect
+ * standing across all managers in all leagues, not absolute score.
+ */
+export function percentileToGrade(percentile: number): string {
+  if (percentile >= 90) return "A+";
+  if (percentile >= 75) return "A";
+  if (percentile >= 60) return "B+";
+  if (percentile >= 45) return "B";
+  if (percentile >= 30) return "C";
+  if (percentile >= 15) return "D";
+  if (percentile >= 5) return "D-";
+  return "F";
+}
+
 /** Normalize a diff into a 0-100 score centered at 50 */
 export function normalizeScore(diff: number, scaling: number): number {
   return clamp(50 + clamp(diff / scaling, -1, 1) * 50, 0, 100);

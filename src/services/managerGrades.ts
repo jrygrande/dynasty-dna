@@ -134,7 +134,7 @@ export async function rollupManagerGrades(familyId: string): Promise<void> {
   // 4. Compute weighted all_time score per (manager, metric)
   const managerAllTime = new Map<
     string,
-    Map<string, { score: number; seasons: number }>
+    Map<string, { score: number; percentile: number; seasons: number }>
   >();
 
   const metricScores = new Map<string, Array<{ managerId: string; score: number }>>();
@@ -162,6 +162,7 @@ export async function rollupManagerGrades(familyId: string): Promise<void> {
     if (!managerAllTime.has(managerId)) managerAllTime.set(managerId, new Map());
     managerAllTime.get(managerId)!.set(metric, {
       score: allTimeScore,
+      percentile: 0, // filled after percentile computation
       seasons: entries.length,
     });
 
@@ -191,7 +192,22 @@ export async function rollupManagerGrades(familyId: string): Promise<void> {
     });
   }
 
-  // Batch upsert all all_time metrics
+  // Delete stale all_time rows (prevents duplicates across different leagueIds)
+  // Scoped to this family's leagueIds so other families are untouched
+  const allManagerIds = [...managerAllTime.keys()];
+  if (allManagerIds.length > 0) {
+    await db
+      .delete(schema.managerMetrics)
+      .where(
+        and(
+          inArray(schema.managerMetrics.managerId, allManagerIds),
+          inArray(schema.managerMetrics.leagueId, leagueIds),
+          eq(schema.managerMetrics.scope, "all_time"),
+        ),
+      );
+  }
+
+  // Batch insert fresh all_time metrics
   await batchUpsertManagerMetrics(allTimeValues);
 
   // 5. Compute percentiles per metric and batch update
@@ -199,6 +215,10 @@ export async function rollupManagerGrades(familyId: string): Promise<void> {
     const sorted = [...scores].sort((a, b) => a.score - b.score);
     for (const entry of sorted) {
       const percentile = computePercentile(entry, sorted);
+
+      // Store percentile in managerAllTime for overall_score computation
+      const mgrMetric = managerAllTime.get(entry.managerId)?.get(metric);
+      if (mgrMetric) mgrMetric.percentile = percentile;
 
       const groupKey = `${entry.managerId}::${metric}`;
       const entries = grouped.get(groupKey);
@@ -244,12 +264,13 @@ export async function rollupManagerGrades(familyId: string): Promise<void> {
     const values = Array.from(metrics.entries());
     if (values.length === 0) continue;
 
-    // Weighted overall_score using pillarWeights from config
+    // Weighted overall_score from pillar percentiles (not raw scores)
+    // This ensures pillars on different scales contribute equally
     let weightedSum = 0;
     let totalWeight = 0;
     for (const [metric, data] of values) {
       const weight = pillarWeights[metric] ?? 1;
-      weightedSum += data.score * weight;
+      weightedSum += data.percentile * weight;
       totalWeight += weight;
     }
     const overallScore =
