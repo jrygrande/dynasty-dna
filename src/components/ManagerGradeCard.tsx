@@ -1,6 +1,12 @@
 import { GradeBadge } from "@/components/GradeBadge";
 import { PILLAR_LABELS } from "@/lib/pillars";
 
+function ordinal(n: number): string {
+  const s = ["th", "st", "nd", "rd"];
+  const v = n % 100;
+  return n + (s[(v - 20) % 10] || s[v] || s[0]);
+}
+
 interface ManagerGradeCardProps {
   overallScore: {
     value: number;
@@ -28,11 +34,11 @@ export function ManagerGradeCard({
   return (
     <div className="border rounded-lg p-6">
       <div className="flex items-center gap-4 mb-6">
-        <div className="text-5xl font-bold">{overallScore.value}</div>
+        <div className="text-5xl font-bold">{ordinal(Math.round(overallScore.percentile))}</div>
         <div>
           <GradeBadge grade={overallScore.grade} size="sm" />
           <div className="text-xs text-muted-foreground mt-1">
-            Top {Math.round(100 - overallScore.percentile)}%
+            Score: {overallScore.value}
           </div>
         </div>
       </div>
@@ -48,7 +54,7 @@ export function ManagerGradeCard({
               <span className="text-sm text-muted-foreground">{label}</span>
               {pillar ? (
                 <div className="flex items-center gap-2">
-                  <span className="text-sm font-mono">{pillar.value}</span>
+                  <span className="text-sm font-mono">{ordinal(Math.round(pillar.percentile))}</span>
                   <GradeBadge grade={pillar.grade} size="xs" />
                 </div>
               ) : (

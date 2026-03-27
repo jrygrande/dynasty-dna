@@ -18,7 +18,7 @@ interface ManagerRadarChartProps {
 export function ManagerRadarChart({ pillarScores }: ManagerRadarChartProps) {
   const data = Object.entries(PILLAR_LABELS).map(([key, label]) => ({
     pillar: label,
-    score: pillarScores[key]?.value ?? 0,
+    score: pillarScores[key]?.percentile ?? 0,
     fullMark: 100,
   }));
 

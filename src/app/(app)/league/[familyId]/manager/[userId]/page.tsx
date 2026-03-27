@@ -154,14 +154,14 @@ export default function ManagerPage() {
                       </td>
                       {Object.keys(PILLAR_LABELS).map((key) => {
                         const metric = row[key] as
-                          | { value: number; grade: string }
+                          | { value: number; grade: string; percentile: number }
                           | undefined;
                         return (
                           <td key={key} className="px-4 py-3 text-center">
                             {metric ? (
                               <div className="flex items-center justify-center gap-2">
                                 <span className="font-mono text-sm">
-                                  {metric.value}
+                                  {Math.round(metric.percentile)}
                                 </span>
                                 <GradeBadge grade={metric.grade} size="xs" />
                               </div>

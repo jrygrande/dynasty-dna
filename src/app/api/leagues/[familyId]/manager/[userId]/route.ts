@@ -163,7 +163,7 @@ export async function GET(
 
     const seasonMap = new Map<
       string,
-      Record<string, { value: number; grade: string }>
+      Record<string, { value: number; grade: string; percentile: number }>
     >();
     for (const m of seasonMetrics) {
       const season = m.scope.replace("season:", "");
@@ -172,6 +172,7 @@ export async function GET(
       seasonMap.get(season)![m.metric] = {
         value: m.value,
         grade: (meta?.grade as string) ?? "",
+        percentile: m.percentile ?? 0,
       };
     }
 
