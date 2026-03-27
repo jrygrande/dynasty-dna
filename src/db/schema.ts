@@ -635,6 +635,24 @@ export const experimentRuns = pgTable(
   })
 );
 
+export const algorithmConfig = pgTable(
+  "algorithm_config",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    config: jsonb("config").notNull(),
+    experimentId: uuid("experiment_id").references(() => experimentRuns.id),
+    isActive: boolean("is_active").notNull().default(false),
+    promotedBy: text("promoted_by"),
+    notes: text("notes"),
+    createdAt: timestamp("created_at", { mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (ac) => ({
+    activeIdx: index("algorithm_config_active_idx").on(ac.isActive),
+  })
+);
+
 export const syncWatermarks = pgTable(
   "sync_watermarks",
   {

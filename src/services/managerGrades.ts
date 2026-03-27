@@ -1,6 +1,7 @@
 import { getDb, schema } from "@/db";
 import { eq, and, inArray, like } from "drizzle-orm";
 import { BATCH_SIZE, batchUpsertManagerMetrics } from "@/services/batchHelper";
+import { getActiveConfig } from "@/services/algorithmConfig";
 
 // ============================================================
 // Time-decay weighting
@@ -69,6 +70,7 @@ function computePercentile(entry: { score: number }, sortedAsc: { score: number 
  */
 export async function rollupManagerGrades(familyId: string): Promise<void> {
   const db = getDb();
+  const algoConfig = await getActiveConfig();
 
   // 1. Get all leagues in the family with their seasons
   const members = await db
@@ -236,13 +238,23 @@ export async function rollupManagerGrades(familyId: string): Promise<void> {
     (a, b) => parseInt(b.season, 10) - parseInt(a.season, 10),
   )[0].leagueId;
 
+  const pillarWeights = algoConfig.pillarWeights as Record<string, number>;
+
   for (const [managerId, metrics] of managerAllTime) {
-    const values = Array.from(metrics.values());
+    const values = Array.from(metrics.entries());
     if (values.length === 0) continue;
 
+    // Weighted overall_score using pillarWeights from config
+    let weightedSum = 0;
+    let totalWeight = 0;
+    for (const [metric, data] of values) {
+      const weight = pillarWeights[metric] ?? 1;
+      weightedSum += data.score * weight;
+      totalWeight += weight;
+    }
     const overallScore =
       Math.round(
-        (values.reduce((sum, v) => sum + v.score, 0) / values.length) * 10,
+        (totalWeight > 0 ? weightedSum / totalWeight : 0) * 10,
       ) / 10;
 
     const recentLeagueId = managerRecentLeague.get(managerId) ?? mostRecentLeagueId;

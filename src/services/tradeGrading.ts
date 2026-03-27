@@ -8,7 +8,6 @@ import {
 } from "@/lib/draft";
 import {
   GRADE_CONFIG,
-  QUALITY_WEIGHTS,
   productionWeight,
   scoreToGrade,
   normalizeScore,
@@ -29,6 +28,7 @@ import {
   type PlayoffConfig,
 } from "@/services/gradingCore";
 import { batchUpsertManagerMetrics } from "@/services/batchHelper";
+import { getActiveConfig } from "@/services/algorithmConfig";
 
 // ============================================================
 // Draft pick resolution
@@ -389,6 +389,7 @@ export async function gradeLeagueTrades(
   opts?: { syncedAt?: Date },
 ): Promise<number> {
   const db = getDb();
+  const algoConfig = await getActiveConfig();
 
   const syncedAt =
     opts?.syncedAt ??
@@ -538,7 +539,7 @@ export async function gradeLeagueTrades(
     const weeksElapsed = Math.floor(
       (Date.now() - tradeTimestamp) / (7 * 24 * 60 * 60 * 1000),
     );
-    const pw = productionWeight(weeksElapsed, "trade");
+    const pw = productionWeight(weeksElapsed, "trade", algoConfig.blendProfiles);
 
     const leagueSeason = leagueSeasonMap.get(trade.leagueId);
     const tradeSeason = leagueSeason
@@ -667,7 +668,7 @@ export async function gradeLeagueTrades(
       leagueId,
       season,
       metric: "trade_score",
-      qualityWeight: QUALITY_WEIGHTS.trade_score,
+      qualityWeight: algoConfig.qualityWeights.trade_score,
       countLabel: "tradesGraded",
     });
 

@@ -3,7 +3,6 @@ import { eq, and, inArray, sql } from "drizzle-orm";
 import { batchUpsertManagerMetrics } from "@/services/batchHelper";
 import { syncFantasyCalcValues } from "@/services/fantasyCalcSync";
 import {
-  QUALITY_WEIGHTS,
   productionWeight,
   scoreToGrade,
   normalizeScore,
@@ -14,26 +13,13 @@ import {
   loadFamilyLeagueMap,
   loadFantasyCalcSnapshot,
 } from "@/services/gradingCore";
+import { getActiveConfig } from "@/services/algorithmConfig";
 
 // ============================================================
 // Draft Grading Configuration
 // ============================================================
 
-const DRAFT_GRADE_CONFIG = {
-  benchmarkWindow: 8, // compare against next N picks after the current one
-  benchmarkTake: 6, // take the best N from that window (best-available benchmark)
-  minBenchmark: 4, // skip grading if fewer than N benchmark picks available
-  // Adaptive scaling: exponential decay from max (pick 1) to min (last pick).
-  valueScalingMax: 10000,
-  valueScalingMin: 1500,
-  productionScalingMax: 300,
-  productionScalingMin: 80,
-  // Late-pick production bonus
-  bonusStartPercentile: 0.4,
-  bonusProductionThreshold: 40,
-  bonusMaxPoints: 20,
-  bonusExcessCap: 200,
-};
+import { DEFAULT_CONFIG } from "@/services/algorithmConfig";
 
 function adaptiveScaling(
   pickPercentile: number,
@@ -51,13 +37,14 @@ function adaptiveScaling(
 function latePickProductionBonus(
   pickPercentile: number,
   production: number,
+  cfg: typeof DEFAULT_CONFIG.draftConfig = DEFAULT_CONFIG.draftConfig,
 ): number {
   const {
     bonusStartPercentile,
     bonusProductionThreshold,
     bonusMaxPoints,
     bonusExcessCap,
-  } = DRAFT_GRADE_CONFIG;
+  } = cfg;
   if (pickPercentile < bonusStartPercentile) return 0;
   if (production <= bonusProductionThreshold) return 0;
   const lateMultiplier =
@@ -98,6 +85,8 @@ export async function gradeLeagueDrafts(
   opts?: { syncedAt?: Date },
 ): Promise<number> {
   const db = getDb();
+  const algoConfig = await getActiveConfig();
+  const draftCfg = algoConfig.draftConfig;
 
   const syncedAt =
     opts?.syncedAt ??
@@ -185,7 +174,7 @@ export async function gradeLeagueDrafts(
     const weeksElapsed = Math.floor(
       (Date.now() - draftStartTime) / (7 * 24 * 60 * 60 * 1000),
     );
-    const pw = productionWeight(weeksElapsed, "draft");
+    const pw = productionWeight(weeksElapsed, "draft", algoConfig.blendProfiles);
 
     const totalPicks = picks.length;
     const gradeRows: DraftGradeRow[] = [];
@@ -202,14 +191,14 @@ export async function gradeLeagueDrafts(
         const forwardPicks = picks
           .slice(
             i + 1,
-            i + 1 + DRAFT_GRADE_CONFIG.benchmarkWindow,
+            i + 1 + draftCfg.benchmarkWindow,
           )
           .filter((p) => p.playerId !== null);
 
         let windowPicks: typeof forwardPicks;
         if (
           forwardPicks.length >=
-          DRAFT_GRADE_CONFIG.minBenchmark
+          draftCfg.minBenchmark
         ) {
           windowPicks = forwardPicks;
         } else {
@@ -217,7 +206,7 @@ export async function gradeLeagueDrafts(
             .slice(
               Math.max(
                 0,
-                i - DRAFT_GRADE_CONFIG.benchmarkWindow,
+                i - draftCfg.benchmarkWindow,
               ),
               i,
             )
@@ -225,7 +214,7 @@ export async function gradeLeagueDrafts(
         }
 
         if (
-          windowPicks.length < DRAFT_GRADE_CONFIG.minBenchmark
+          windowPicks.length < draftCfg.minBenchmark
         )
           continue;
 
@@ -235,7 +224,7 @@ export async function gradeLeagueDrafts(
             value: snapshot.get(p.playerId!) ?? 0,
           }))
           .sort((a, b) => b.value - a.value)
-          .slice(0, DRAFT_GRADE_CONFIG.benchmarkTake);
+          .slice(0, draftCfg.benchmarkTake);
 
         if (benchmarkValues.length === 0) continue;
 
@@ -252,7 +241,7 @@ export async function gradeLeagueDrafts(
           valueScalingMin,
           productionScalingMax,
           productionScalingMin,
-        } = DRAFT_GRADE_CONFIG;
+        } = draftCfg;
         const vScaling = adaptiveScaling(
           pickPercentile,
           valueScalingMax,
@@ -303,6 +292,7 @@ export async function gradeLeagueDrafts(
         const bonus = latePickProductionBonus(
           pickPercentile,
           pickedProduction,
+          draftCfg,
         );
         const finalScore = Math.min(
           100,
@@ -398,7 +388,7 @@ export async function gradeLeagueDrafts(
       leagueId,
       season: draft.season,
       metric: "draft_score",
-      qualityWeight: QUALITY_WEIGHTS.draft_score,
+      qualityWeight: algoConfig.qualityWeights.draft_score,
       countLabel: "picksGraded",
     });
 

@@ -84,8 +84,11 @@ const REPLACEMENT_RANK_SF: Record<string, number> = {
 export function getReplacementRank(
   position: string,
   isSuperFlex: boolean,
+  overrides?: { replacementRank?: Record<string, number>; replacementRankSF?: Record<string, number> },
 ): number {
-  const table = isSuperFlex ? REPLACEMENT_RANK_SF : REPLACEMENT_RANK;
+  const table = isSuperFlex
+    ? (overrides?.replacementRankSF ?? REPLACEMENT_RANK_SF)
+    : (overrides?.replacementRank ?? REPLACEMENT_RANK);
   return table[position] ?? 12;
 }
 
@@ -115,10 +118,7 @@ export function scaledPAR(par: number, maxPAR: number): number {
 
 export type BlendContext = "trade" | "draft" | "waiver";
 
-interface BlendBreakpoint {
-  weeks: number;
-  weight: number;
-}
+import { type BlendBreakpoint } from "@/services/algorithmConfig";
 
 /**
  * Blend profiles define how production weight ramps over time.
@@ -153,8 +153,9 @@ const BLEND_PROFILES: Record<BlendContext, BlendBreakpoint[]> = {
 export function productionWeight(
   weeksElapsed: number,
   context: BlendContext = "trade",
+  profiles?: Record<BlendContext, { weeks: number; weight: number }[]>,
 ): number {
-  const profile = BLEND_PROFILES[context];
+  const profile = (profiles ?? BLEND_PROFILES)[context];
   if (weeksElapsed <= 0) return profile[0].weight;
 
   for (let i = 1; i < profile.length; i++) {
@@ -270,8 +271,8 @@ export function clamp(val: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, val));
 }
 
-export function scoreToGrade(score: number): string {
-  const t = GRADE_CONFIG.thresholds;
+export function scoreToGrade(score: number, thresholds?: Record<string, number>): string {
+  const t = thresholds ?? GRADE_CONFIG.thresholds;
   if (score >= t["A+"]) return "A+";
   if (score >= t["A"]) return "A";
   if (score >= t["B+"]) return "B+";
@@ -308,12 +309,9 @@ export function normalizeWithinLeague(values: number[]): number[] {
 // Quality x Quantity Aggregation
 // ============================================================
 
-/** Per-pillar quality weights for the quality x quantity blend */
-export const QUALITY_WEIGHTS: Record<string, number> = {
-  trade_score: 0.50,
-  draft_score: 0.60,
-  waiver_score: 0.40,
-};
+/** Per-pillar quality weights — sourced from DEFAULT_CONFIG for backwards compat */
+import { DEFAULT_CONFIG } from "@/services/algorithmConfig";
+export const QUALITY_WEIGHTS: Record<string, number> = DEFAULT_CONFIG.qualityWeights;
 
 /**
  * Shared aggregation for quality x quantity manager scoring.

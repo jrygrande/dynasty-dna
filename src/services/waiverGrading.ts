@@ -3,7 +3,6 @@ import { eq, and, inArray, sql } from "drizzle-orm";
 import { syncFantasyCalcValues } from "@/services/fantasyCalcSync";
 import {
   GRADE_CONFIG,
-  QUALITY_WEIGHTS,
   productionWeight,
   scoreToGrade,
   normalizeScore,
@@ -23,16 +22,14 @@ import {
 } from "@/services/gradingCore";
 import { batchUpsertManagerMetrics, BATCH_SIZE } from "@/services/batchHelper";
 import { type ProductionContext } from "@/services/tradeGrading";
+import { getActiveConfig } from "@/services/algorithmConfig";
 
 // ============================================================
 // Waiver Grading Configuration
 // ============================================================
 
-/** Waiver players have smaller value diffs than trades — use a lower scaling factor */
-const WAIVER_VALUE_SCALING = 3000;
-
-/** Max FAAB bonus points added to the blended score */
-const FAAB_BONUS_MAX = 10;
+// Note: waiver-specific constants (waiverValueScaling, faabBonusMax) are now
+// read from algoConfig inside gradeLeagueWaivers(). Defaults live in algorithmConfig.ts.
 
 // ============================================================
 // Types
@@ -149,6 +146,7 @@ export async function gradeLeagueWaivers(
   opts?: { syncedAt?: Date },
 ): Promise<number> {
   const db = getDb();
+  const algoConfig = await getActiveConfig();
 
   const syncedAt =
     opts?.syncedAt ??
@@ -243,7 +241,7 @@ export async function gradeLeagueWaivers(
       : 0;
     const valueScore = normalizeScore(
       acquiredValue - droppedValue,
-      WAIVER_VALUE_SCALING,
+      algoConfig.waiverValueScaling,
     );
 
     // Production scoring
@@ -271,7 +269,7 @@ export async function gradeLeagueWaivers(
     }
 
     // Blend value + production
-    const pw = productionWeight(weeksElapsed, "waiver");
+    const pw = productionWeight(weeksElapsed, "waiver", algoConfig.blendProfiles);
     const blendedScore = (1 - pw) * valueScore + pw * productionScore;
 
     // FAAB efficiency
@@ -323,7 +321,7 @@ export async function gradeLeagueWaivers(
     let faabBonus = 0;
     if (pg.faabEfficiency !== null) {
       const pct = computePercentile({ score: pg.faabEfficiency }, sortedFaab);
-      faabBonus = (pct / 100) * FAAB_BONUS_MAX;
+      faabBonus = (pct / 100) * algoConfig.faabBonusMax;
     }
     const finalScore = clamp(pg.blendedScore + faabBonus, 0, 100);
 
@@ -419,7 +417,7 @@ export async function gradeLeagueWaivers(
       leagueId,
       season,
       metric: "waiver_score",
-      qualityWeight: QUALITY_WEIGHTS.waiver_score,
+      qualityWeight: algoConfig.qualityWeights.waiver_score,
       countLabel: "pickupsGraded",
     });
 
