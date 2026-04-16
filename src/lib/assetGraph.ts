@@ -236,20 +236,22 @@ function computeStats(
   }
 
   const picksTradedKeys = new Set<string>();
+  const nodeById = new Map(nodes.map((n) => [n.id, n]));
   for (const edge of edges) {
-    if (edge.kind === "pick_trade_out" || edge.kind === "pick_trade_in") {
-      const pickNode = nodes.find((n) => n.id === edge.source || n.id === edge.target);
-      if (pickNode && pickNode.kind === "pick") {
-        picksTradedKeys.add(
-          pickKey({
-            kind: "pick",
-            leagueId: pickNode.leagueId,
-            pickSeason: pickNode.pickSeason,
-            pickRound: pickNode.pickRound,
-            pickOriginalRosterId: pickNode.pickOriginalRosterId,
-          }),
-        );
-      }
+    if (edge.kind !== "pick_trade_out" && edge.kind !== "pick_trade_in") continue;
+    const src = nodeById.get(edge.source);
+    const tgt = nodeById.get(edge.target);
+    const pick = src?.kind === "pick" ? src : tgt?.kind === "pick" ? tgt : null;
+    if (pick) {
+      picksTradedKeys.add(
+        pickKey({
+          kind: "pick",
+          leagueId: pick.leagueId,
+          pickSeason: pick.pickSeason,
+          pickRound: pick.pickRound,
+          pickOriginalRosterId: pick.pickOriginalRosterId,
+        }),
+      );
     }
   }
 
@@ -297,20 +299,22 @@ function recomputeStatsFromGraph(
   }
 
   const picksTradedKeys = new Set<string>();
+  const nodeById = new Map(nodes.map((n) => [n.id, n]));
   for (const edge of edges) {
-    if (edge.kind === "pick_trade_out" || edge.kind === "pick_trade_in") {
-      const pickNode = nodes.find((n) => n.id === edge.source || n.id === edge.target);
-      if (pickNode && pickNode.kind === "pick") {
-        picksTradedKeys.add(
-          pickKey({
-            kind: "pick",
-            leagueId: pickNode.leagueId,
-            pickSeason: pickNode.pickSeason,
-            pickRound: pickNode.pickRound,
-            pickOriginalRosterId: pickNode.pickOriginalRosterId,
-          }),
-        );
-      }
+    if (edge.kind !== "pick_trade_out" && edge.kind !== "pick_trade_in") continue;
+    const src = nodeById.get(edge.source);
+    const tgt = nodeById.get(edge.target);
+    const pick = src?.kind === "pick" ? src : tgt?.kind === "pick" ? tgt : null;
+    if (pick) {
+      picksTradedKeys.add(
+        pickKey({
+          kind: "pick",
+          leagueId: pick.leagueId,
+          pickSeason: pick.pickSeason,
+          pickRound: pick.pickRound,
+          pickOriginalRosterId: pick.pickOriginalRosterId,
+        }),
+      );
     }
   }
 

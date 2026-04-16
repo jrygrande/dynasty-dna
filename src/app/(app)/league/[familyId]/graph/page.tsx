@@ -1,20 +1,14 @@
 "use client";
 
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
+  applyGraphFilters,
   pickKey,
-  type GraphEdge,
+  type Graph,
   type GraphEdgeKind,
   type GraphFocus,
-  type GraphNode,
   type GraphResponse,
   type GraphSelection,
 } from "@/lib/assetGraph";
@@ -26,33 +20,6 @@ import { CopyLinkButton } from "@/components/graph/CopyLinkButton";
 import { MobileDigest } from "@/components/graph/MobileDigest";
 import { trackEvent } from "@/lib/analytics";
 import { AssetGraph } from "@/components/graph/AssetGraph";
-
-interface AssetGraphRendererProps {
-  nodes: GraphNode[];
-  edges: GraphEdge[];
-  transactions: Record<string, EnrichedTransaction>;
-  layoutMode: "band" | "dagre";
-  selection: GraphSelection | null;
-  onSelectionChange: (next: GraphSelection | null) => void;
-}
-
-function AssetGraphRenderer({
-  nodes,
-  edges,
-  layoutMode,
-  selection,
-  onSelectionChange,
-}: AssetGraphRendererProps) {
-  return (
-    <AssetGraph
-      nodes={nodes}
-      edges={edges}
-      layoutMode={layoutMode}
-      selection={selection}
-      onSelect={onSelectionChange}
-    />
-  );
-}
 
 type FromSource = "overview" | "player" | "transactions" | "manager" | "deeplink";
 
@@ -101,29 +68,6 @@ function serializeSelection(sel: GraphSelection | null): string | null {
   if (!sel) return null;
   if (sel.type === "node") return `node:${sel.nodeId}`;
   return `edge:${sel.edgeId}`;
-}
-
-class InlineErrorBoundary extends React.Component<
-  { children: React.ReactNode; fallback: React.ReactNode },
-  { hasError: boolean }
-> {
-  constructor(props: { children: React.ReactNode; fallback: React.ReactNode }) {
-    super(props);
-    this.state = { hasError: false };
-  }
-  static getDerivedStateFromError() {
-    return { hasError: true };
-  }
-  componentDidCatch(error: unknown) {
-    if (process.env.NODE_ENV !== "production") {
-      // eslint-disable-next-line no-console
-      console.error("[graph] renderer error", error);
-    }
-  }
-  render() {
-    if (this.state.hasError) return this.props.fallback;
-    return this.props.children;
-  }
 }
 
 export default function GraphPage() {
@@ -216,27 +160,20 @@ export default function GraphPage() {
     return Boolean(window.localStorage.getItem("graph_tooltip_dismissed"));
   });
 
-  const fetchKey = useMemo(() => {
-    return JSON.stringify({
-      seasons: selectedSeasons,
-      managers: selectedManagers,
-      eventTypes: selectedEventTypes,
-      focusPlayerId,
-      focusPickKey,
-      focusManagerId,
-      focusHops,
-      layout: layoutMode,
-    });
-  }, [
-    selectedSeasons,
-    selectedManagers,
-    selectedEventTypes,
-    focusPlayerId,
-    focusPickKey,
-    focusManagerId,
-    focusHops,
-    layoutMode,
-  ]);
+  // Only focus / layout changes trigger a refetch — seasons/managers/eventTypes
+  // are applied client-side via applyGraphFilters (see fetched-graph useMemo
+  // below). This keeps filter toggles instant and avoids DB round-trips.
+  const fetchKey = useMemo(
+    () =>
+      JSON.stringify({
+        focusPlayerId,
+        focusPickKey,
+        focusManagerId,
+        focusHops,
+        layout: layoutMode,
+      }),
+    [focusPlayerId, focusPickKey, focusManagerId, focusHops, layoutMode],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -245,9 +182,6 @@ export default function GraphPage() {
       setError(null);
       try {
         const qs = new URLSearchParams();
-        if (selectedSeasons.length > 0) qs.set("seasons", selectedSeasons.join(","));
-        if (selectedManagers.length > 0) qs.set("managers", selectedManagers.join(","));
-        if (selectedEventTypes.length > 0) qs.set("eventTypes", selectedEventTypes.join(","));
         if (focusPlayerId) qs.set("focusPlayerId", focusPlayerId);
         if (focusPickKey) qs.set("focusPickKey", focusPickKey);
         if (focusManagerId) qs.set("focusManagerId", focusManagerId);
@@ -273,6 +207,24 @@ export default function GraphPage() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [familyId, fetchKey]);
+
+  // Apply user filters client-side against the fetched graph. Only seasons /
+  // managers / eventTypes participate here; focus+hops+layout were already
+  // applied server-side (see route.ts `focusSubgraph` + layout()).
+  const filteredGraph: Graph | null = useMemo(() => {
+    if (!response) return null;
+    return applyGraphFilters(
+      { nodes: response.nodes, edges: response.edges, stats: response.stats },
+      {
+        seasons: selectedSeasons,
+        managers: selectedManagers,
+        eventTypes: selectedEventTypes,
+        focus: null,
+        focusHops: 0,
+        layout: layoutMode,
+      },
+    );
+  }, [response, selectedSeasons, selectedManagers, selectedEventTypes, layoutMode]);
 
   // Bootstrap: default seasons = latest season once first response lands.
   useEffect(() => {
@@ -309,26 +261,21 @@ export default function GraphPage() {
       return;
     }
     focusBootstrappedRef.current = true;
-    if (top.managers.length > 0) {
-      // Find a manager userId via response.managers — rosterId in EnrichedTransaction
-      // is per-league; we map to userId by matching display name where possible.
-      const managerRosterId = top.managers[0].rosterId;
-      const managerName = top.managers[0].name;
-      const managerNode = response.nodes.find(
-        (n) => n.kind === "manager" && n.displayName === managerName,
-      );
-      if (managerNode && managerNode.kind === "manager") {
-        updateUrl({ focusManagerId: managerNode.userId });
-        trackEvent("graph_focus_set", { focusType: "manager", hops: focusHops });
-        return;
-      }
-      // Fallback: focus on first add's player.
-      if (top.adds.length > 0) {
-        updateUrl({ focusPlayerId: top.adds[0].playerId });
-        trackEvent("graph_focus_set", { focusType: "player", hops: focusHops });
-      }
-      // Unreferenced in fallback: managerRosterId.
-      void managerRosterId;
+    // Manager userId is stable across leagues but EnrichedTransaction only
+    // carries per-league rosterId/name — match by display name against the
+    // graph's manager nodes to recover the userId.
+    const managerName = top.managers[0]?.name;
+    const managerNode = managerName
+      ? response.nodes.find((n) => n.kind === "manager" && n.displayName === managerName)
+      : undefined;
+    if (managerNode && managerNode.kind === "manager") {
+      updateUrl({ focusManagerId: managerNode.userId });
+      trackEvent("graph_focus_set", { focusType: "manager", hops: focusHops });
+      return;
+    }
+    if (top.adds.length > 0) {
+      updateUrl({ focusPlayerId: top.adds[0].playerId });
+      trackEvent("graph_focus_set", { focusType: "player", hops: focusHops });
     }
   }, [response, focus, focusHops, updateUrl]);
 
@@ -435,8 +382,8 @@ export default function GraphPage() {
           </Link>
           <h1 className="text-lg font-semibold whitespace-nowrap">Trade network</h1>
           <div className="flex-1" />
-          {response && (
-            <GraphHeaderStats stats={response.stats} seasonLabel={seasonLabel} />
+          {filteredGraph && (
+            <GraphHeaderStats stats={filteredGraph.stats} seasonLabel={seasonLabel} />
           )}
           <CopyLinkButton hasFocus={Boolean(focus)} filterCount={filterCount} />
         </div>
@@ -485,25 +432,14 @@ export default function GraphPage() {
               </div>
             </div>
           )}
-          {response && !error && (
-            <InlineErrorBoundary
-              fallback={
-                <div className="flex items-center justify-center h-full p-6">
-                  <p className="text-sm text-destructive">
-                    Graph renderer crashed. Try changing filters or reloading.
-                  </p>
-                </div>
-              }
-            >
-              <AssetGraphRenderer
-                nodes={response.nodes}
-                edges={response.edges}
-                transactions={response.transactions}
-                layoutMode={layoutMode}
-                selection={selection}
-                onSelectionChange={handleSelectionChange}
-              />
-            </InlineErrorBoundary>
+          {filteredGraph && !error && (
+            <AssetGraph
+              nodes={filteredGraph.nodes}
+              edges={filteredGraph.edges}
+              layoutMode={layoutMode}
+              selection={selection}
+              onSelect={handleSelectionChange}
+            />
           )}
 
           {/* Onboarding toast */}
@@ -527,11 +463,11 @@ export default function GraphPage() {
         </div>
 
         {/* Right drawer (conditional) */}
-        {selection && response && (
+        {selection && filteredGraph && response && (
           <GraphDetailDrawer
             selection={selection}
-            nodes={response.nodes}
-            edges={response.edges}
+            nodes={filteredGraph.nodes}
+            edges={filteredGraph.edges}
             transactions={response.transactions}
             familyId={familyId}
             onClose={handleCloseSelection}

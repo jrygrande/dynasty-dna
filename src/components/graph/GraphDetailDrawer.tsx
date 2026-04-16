@@ -103,7 +103,7 @@ export function GraphDetailDrawer({
     <div
       ref={panelRef}
       role="dialog"
-      aria-modal="false"
+      aria-modal="true"
       aria-label="Graph detail"
       className="absolute top-0 right-0 bottom-0 w-96 bg-card border-l shadow-lg overflow-y-auto z-10"
     >
