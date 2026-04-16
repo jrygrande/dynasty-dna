@@ -7,6 +7,7 @@ import {
   TransactionCard,
   type TransactionData,
 } from "@/components/TransactionCard";
+import { useFlag } from "@/lib/useFlag";
 
 interface TransactionsResponse {
   transactions: TransactionData[];
@@ -21,6 +22,7 @@ export default function TransactionsPage() {
   const familyId = params.familyId as string;
   const [data, setData] = useState<TransactionsResponse | null>(null);
   const [loading, setLoading] = useState(true);
+  const graphEnabled = useFlag("ASSET_GRAPH_BROWSER");
   const [selectedSeason, setSelectedSeason] = useState<string | null>(null);
   const [selectedType, setSelectedType] = useState<string | null>(null);
   const [page, setPage] = useState(1);
@@ -69,6 +71,14 @@ export default function TransactionsPage() {
               &larr; League
             </Link>
             <h1 className="text-lg font-semibold">Transactions</h1>
+            {graphEnabled && (
+              <Link
+                href={`/league/${familyId}/graph?from=transactions`}
+                className="text-sm text-muted-foreground hover:text-foreground ml-auto"
+              >
+                View as network &rarr;
+              </Link>
+            )}
           </div>
         </div>
 

@@ -7,6 +7,7 @@ import {
   LineupEfficiencyCard,
   type RosterGrade,
 } from "@/components/LineupEfficiencyCard";
+import { useFlag } from "@/lib/useFlag";
 
 interface Roster {
   rosterId: number;
@@ -47,6 +48,21 @@ export default function LeagueOverviewPage() {
   const [syncing, setSyncing] = useState(false);
   const [selectedSeason, setSelectedSeason] = useState<string | null>(null);
   const [lineupGrades, setLineupGrades] = useState<RosterGrade[] | null>(null);
+  const graphEnabled = useFlag("ASSET_GRAPH_BROWSER");
+  const [showGraphBadge, setShowGraphBadge] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && graphEnabled) {
+      setShowGraphBadge(!window.localStorage.getItem("graph_button_seen"));
+    }
+  }, [graphEnabled]);
+
+  function handleGraphClick() {
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("graph_button_seen", "1");
+    }
+    setShowGraphBadge(false);
+  }
 
   useEffect(() => {
     loadLeagueData();
@@ -159,6 +175,20 @@ export default function LeagueOverviewPage() {
               >
                 Drafts
               </Link>
+              {graphEnabled && (
+                <Link
+                  href={`/league/${familyId}/graph?from=overview`}
+                  onClick={handleGraphClick}
+                  className="px-3 py-1.5 text-sm rounded-md border hover:bg-secondary transition-colors inline-flex items-center gap-2"
+                >
+                  Trade network
+                  {showGraphBadge && (
+                    <span className="px-1.5 py-0.5 text-[10px] font-semibold rounded-full bg-primary text-primary-foreground">
+                      New
+                    </span>
+                  )}
+                </Link>
+              )}
               <button
                 onClick={handleSync}
                 disabled={syncing}

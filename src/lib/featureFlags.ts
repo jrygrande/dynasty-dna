@@ -23,7 +23,14 @@ export interface FeatureFlag {
   issueUrl?: string;
 }
 
-export const FLAGS: Record<string, FeatureFlag> = {
+/**
+ * CONVENTION: Callers pass the OBJECT KEY of the FLAGS map (e.g., "ASSET_GRAPH_BROWSER"),
+ * NOT the `flag.id` field (e.g., "asset-graph-browser"). `isEnabled()` looks up by
+ * object key. Callers using flag.id will silently get `false` back.
+ *
+ * Use the `FlagKey` type to keep calls type-safe.
+ */
+export const FLAGS = {
   TRADE_COUNTERFACTUAL: {
     id: "trade-counterfactual",
     title: "Trade Counterfactual Analysis",
@@ -49,6 +56,13 @@ export const FLAGS: Record<string, FeatureFlag> = {
       "Cross-feature navigation (lineup -> trades -> drafts)",
     ],
   },
+  /**
+   * Operational metric definitions (for the experiment):
+   * - "Multi-hop trade chain": a transaction with ≥3 asset legs (adds.length + draftPicks.length ≥ 3).
+   * - "Share rate": graph_link_copied / graph_view_opened, computed per session.
+   *
+   * Promotion criteria (disabled → experiment → enabled) live at docs/experiments/asset-graph-browser.md.
+   */
   ASSET_GRAPH_BROWSER: {
     id: "asset-graph-browser",
     title: "Asset Graph Browser",
@@ -61,7 +75,9 @@ export const FLAGS: Record<string, FeatureFlag> = {
       "Share rate of graph visualizations",
     ],
   },
-};
+} satisfies Record<string, FeatureFlag>;
+
+export type FlagKey = keyof typeof FLAGS;
 
 /**
  * Deterministic hash for consistent user bucketing.
@@ -85,7 +101,7 @@ function simpleHash(str: string): number {
  * - "experiment" flags use deterministic bucketing based on userId
  */
 export function isEnabled(flagId: string, userId?: string): boolean {
-  const flag = FLAGS[flagId];
+  const flag = (FLAGS as Record<string, FeatureFlag>)[flagId];
   if (!flag) return false;
   if (flag.status === "enabled") return true;
   if (flag.status === "disabled") return false;
