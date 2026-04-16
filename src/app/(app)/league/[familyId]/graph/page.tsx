@@ -24,16 +24,9 @@ import { GraphHeaderStats } from "@/components/graph/GraphHeaderStats";
 import { CopyLinkButton } from "@/components/graph/CopyLinkButton";
 import { MobileDigest } from "@/components/graph/MobileDigest";
 import { trackEvent } from "@/lib/analytics";
+import { AssetGraph } from "@/components/graph/AssetGraph";
 
-// Defensive integration with Module C's <AssetGraph>. The component is expected
-// at "@/components/graph/AssetGraph" after Module C merges. While it does not
-// exist in isolation, we render an inline placeholder so this page builds and
-// behaves correctly. On merge, replace `AssetGraphRenderer` below with:
-//   import { AssetGraph } from "@/components/graph/AssetGraph";
-//   ...
-//   <AssetGraph nodes=... edges=... transactions=... layoutMode=... selection=...
-//     onSelectionChange=... />
-interface AssetGraphProps {
+interface AssetGraphRendererProps {
   nodes: GraphNode[];
   edges: GraphEdge[];
   transactions: Record<string, EnrichedTransaction>;
@@ -42,13 +35,21 @@ interface AssetGraphProps {
   onSelectionChange: (next: GraphSelection | null) => void;
 }
 
-function AssetGraphRenderer(_props: AssetGraphProps) {
+function AssetGraphRenderer({
+  nodes,
+  edges,
+  layoutMode,
+  selection,
+  onSelectionChange,
+}: AssetGraphRendererProps) {
   return (
-    <div className="flex items-center justify-center border rounded-lg p-6 h-full">
-      <p className="text-muted-foreground">
-        Graph renderer not yet integrated (Module C).
-      </p>
-    </div>
+    <AssetGraph
+      nodes={nodes}
+      edges={edges}
+      layoutMode={layoutMode}
+      selection={selection}
+      onSelect={onSelectionChange}
+    />
   );
 }
 
