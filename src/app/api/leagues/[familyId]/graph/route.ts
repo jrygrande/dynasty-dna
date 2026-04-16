@@ -32,6 +32,7 @@ import {
   type GraphResponse,
   type Graph,
 } from "@/lib/assetGraph";
+import { layout } from "@/components/graph/layout";
 
 const ALLOWED_EVENT_TYPES: ReadonlyArray<string> = [
   "trade",
@@ -82,36 +83,11 @@ function parsePickKey(key: string):
   return { leagueId, pickSeason, pickRound, pickOriginalRosterId };
 }
 
-type LayoutFn = (graph: Graph, mode: "band" | "dagre") => Map<string, { x: number; y: number }>;
-
-async function tryApplyLayout(graph: Graph, mode: "band" | "dagre"): Promise<void> {
-  // Graceful dynamic import — Module C may not be merged yet. We obfuscate the
-  // specifier with a variable + eval-style require so webpack's static analysis
-  // doesn't fail to resolve it at build time.
-  try {
-    // Use an indirect require through `eval` so Next/webpack doesn't try to
-    // statically resolve "@/components/graph/layout" at build time when the
-    // module doesn't exist yet. At runtime, Node's require handles the miss
-    // by throwing — we catch + warn, same as the dynamic-import path.
-    const specifier = "../../../../../components/graph/layout";
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const mod = eval("require")(specifier) as { layout?: LayoutFn };
-    if (typeof mod.layout !== "function") {
-      console.warn(
-        "[graph-api] components/graph/layout loaded but does not export `layout`; skipping layout",
-      );
-      return;
-    }
-    const positions = mod.layout(graph, mode);
-    for (const n of graph.nodes) {
-      const pos = positions.get(n.id);
-      if (pos) (n as GraphNode & { layout?: { x: number; y: number } }).layout = pos;
-    }
-  } catch {
-    // Module not available — this is expected when Module C hasn't merged yet.
-    console.warn(
-      "[graph-api] components/graph/layout not available; skipping server-side layout",
-    );
+function applyLayout(graph: Graph, mode: "band" | "dagre"): void {
+  const positions = layout(graph, mode);
+  for (const n of graph.nodes) {
+    const pos = positions.get(n.id);
+    if (pos) (n as GraphNode & { layout?: { x: number; y: number } }).layout = pos;
   }
 }
 
@@ -423,9 +399,9 @@ export async function GET(
   }
 
   // ---------------------------------------------------------------
-  // 14. Apply server-side layout (gracefully skip if Module C missing)
+  // 14. Apply server-side layout
   // ---------------------------------------------------------------
-  await tryApplyLayout(graph, layoutMode);
+  applyLayout(graph, layoutMode);
 
   // Noop-touch of filter params (for future in-query filtering). The current
   // MVP applies filters client-side via applyGraphFilters(); we simply echo

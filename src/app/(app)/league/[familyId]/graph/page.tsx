@@ -9,13 +9,14 @@ import React, {
 } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import type {
-  GraphEdge,
-  GraphEdgeKind,
-  GraphFocus,
-  GraphNode,
-  GraphResponse,
-  GraphSelection,
+import {
+  pickKey,
+  type GraphEdge,
+  type GraphEdgeKind,
+  type GraphFocus,
+  type GraphNode,
+  type GraphResponse,
+  type GraphSelection,
 } from "@/lib/assetGraph";
 import type { EnrichedTransaction } from "@/lib/transactionEnrichment";
 import { GraphFilterSidebar } from "@/components/graph/GraphFilterSidebar";
@@ -375,9 +376,8 @@ export default function GraphPage() {
         focusManagerId: null,
       };
       if (f?.kind === "player") updates.focusPlayerId = f.playerId;
-      else if (f?.kind === "pick") {
-        updates.focusPickKey = `${f.leagueId}:${f.pickSeason}:${f.pickRound}:${f.pickOriginalRosterId}`;
-      } else if (f?.kind === "manager") updates.focusManagerId = f.userId;
+      else if (f?.kind === "pick") updates.focusPickKey = pickKey(f);
+      else if (f?.kind === "manager") updates.focusManagerId = f.userId;
       updateUrl(updates);
       if (f) trackEvent("graph_focus_set", { focusType: f.kind, hops: focusHops });
     },
