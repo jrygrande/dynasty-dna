@@ -1,0 +1,41 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="_card.css"></head>
+<body><div class="card" style="padding:0;">
+<style>
+  .nav { display:flex; align-items:center; justify-content:space-between; padding: 16px 24px; border-bottom: 1px solid var(--cream-300); background: var(--cream-50); }
+  .brand { font-family: var(--font-sans); font-weight: 700; font-size: 17px; letter-spacing: -0.01em; color: var(--slate-900); }
+  .brand .dna { color: var(--sage-600); }
+  .links { display:flex; align-items:center; gap: 24px; }
+  .links a { text-decoration: none; color: var(--slate-500); font-size: 14px; }
+  .links a.active { color: var(--slate-900); font-weight: 500; }
+  .cta { padding: 7px 14px; border-radius: 6px; background: var(--sage-500); color: #fff; font-size: 13.5px; font-weight: 500; }
+
+  .subnav { display:flex; align-items:center; justify-content:space-between; padding: 12px 24px; border-bottom: 1px solid var(--cream-300); background: var(--cream-50); }
+  .bc { display:flex; align-items:center; gap: 14px; }
+  .bc .back { color: var(--slate-500); font-size: 13px; text-decoration: none; }
+  .bc h1 { font-family: var(--font-sans); font-weight: 600; font-size: 16px; color: var(--slate-900); }
+  .bc .season { color: var(--slate-500); font-size: 13px; font-family: var(--font-mono); }
+  .actions { display:flex; gap: 8px; }
+  .btn { padding: 6px 12px; border-radius: 6px; font-size: 13px; border: 1px solid var(--cream-300); background: #fff; color: var(--slate-800); }
+</style>
+<div class="nav">
+  <div class="brand">Dynasty <span class="dna">DNA</span></div>
+  <div class="links">
+    <a href="#">Roadmap</a>
+    <a href="#" class="active">Changelog</a>
+    <a href="#">Experiments</a>
+    <a href="#" class="cta">Sign in</a>
+  </div>
+</div>
+<div class="subnav">
+  <div class="bc">
+    <a href="#" class="back">← Dashboard</a>
+    <h1>The Commissioner's League</h1>
+    <span class="season">2025</span>
+  </div>
+  <div class="actions">
+    <button class="btn">Transactions</button>
+    <button class="btn">Drafts</button>
+    <button class="btn">Sync data</button>
+  </div>
+</div>
+</div></body></html>

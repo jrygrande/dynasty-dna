@@ -1,0 +1,31 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="_card.css"></head>
+<body><div class="card">
+<style>
+  .title { font-family: var(--font-serif); font-size: 18px; font-weight: 500; margin-bottom: 12px; letter-spacing:-0.01em; }
+  .sub { color: var(--slate-500); font-size: 12px; margin-bottom: 20px; }
+  .grid { display:grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+  .card-ex { background: #fff; padding: 18px; min-height: 90px; display:flex; flex-direction:column; justify-content:flex-end; }
+  .lbl { font-family: var(--font-mono); font-size: 10.5px; color: var(--slate-500); }
+  .rule { font-family: var(--font-sans); font-size: 11px; color: var(--slate-700); margin-top: 2px; }
+</style>
+<div class="title">Elevation — borders before shadows</div>
+<div class="sub">Dynasty DNA defaults to hairlines. Shadows appear only on floating surfaces (menus, modals, toasts).</div>
+<div class="grid">
+  <div class="card-ex" style="border: 1px solid var(--cream-300); border-radius: 8px;">
+    <div class="lbl">shadow-none</div>
+    <div class="rule">default card</div>
+  </div>
+  <div class="card-ex" style="border: 1px solid var(--cream-300); border-radius: 8px; box-shadow: 0 1px 2px rgba(31,30,27,0.04);">
+    <div class="lbl">shadow-xs</div>
+    <div class="rule">subtle lift</div>
+  </div>
+  <div class="card-ex" style="border: 1px solid var(--cream-300); border-radius: 8px; box-shadow: 0 4px 12px rgba(31,30,27,0.06), 0 2px 4px rgba(31,30,27,0.04);">
+    <div class="lbl">shadow-md</div>
+    <div class="rule">popover / menu</div>
+  </div>
+  <div class="card-ex" style="border: 1px solid var(--cream-300); border-radius: 8px; box-shadow: 0 12px 32px rgba(31,30,27,0.08), 0 4px 8px rgba(31,30,27,0.04);">
+    <div class="lbl">shadow-lg</div>
+    <div class="rule">modal / dialog</div>
+  </div>
+</div>
+</div></body></html>

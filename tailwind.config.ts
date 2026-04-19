@@ -16,6 +16,11 @@ export default {
       },
     },
     extend: {
+      fontFamily: {
+        sans: ["var(--font-sans)", "-apple-system", "BlinkMacSystemFont", "Segoe UI", "sans-serif"],
+        serif: ["var(--font-serif)", "Georgia", "serif"],
+        mono: ["var(--font-mono)", "SF Mono", "Menlo", "Consolas", "monospace"],
+      },
       colors: {
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
@@ -50,11 +55,58 @@ export default {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
+        cream: {
+          50: "var(--cream-50)",
+          100: "var(--cream-100)",
+          200: "var(--cream-200)",
+          300: "var(--cream-300)",
+        },
+        slate: {
+          300: "var(--slate-300)",
+          400: "var(--slate-400)",
+          500: "var(--slate-500)",
+          700: "var(--slate-700)",
+          800: "var(--slate-800)",
+          900: "var(--slate-900)",
+        },
+        sage: {
+          50: "var(--sage-50)",
+          100: "var(--sage-100)",
+          200: "var(--sage-200)",
+          300: "var(--sage-300)",
+          400: "var(--sage-400)",
+          500: "var(--sage-500)",
+          600: "var(--sage-600)",
+          700: "var(--sage-700)",
+          800: "var(--sage-800)",
+          900: "var(--sage-900)",
+        },
+        grade: {
+          a: "var(--grade-a)",
+          b: "var(--grade-b)",
+          c: "var(--grade-c)",
+          d: "var(--grade-d)",
+          f: "var(--grade-f)",
+        },
+        chart: {
+          1: "var(--chart-1)",
+          2: "var(--chart-2)",
+          3: "var(--chart-3)",
+          4: "var(--chart-4)",
+          5: "var(--chart-5)",
+          6: "var(--chart-6)",
+        },
       },
       borderRadius: {
         lg: "var(--radius)",
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
+      },
+      boxShadow: {
+        xs: "var(--shadow-xs)",
+        sm: "var(--shadow-sm)",
+        md: "var(--shadow-md)",
+        lg: "var(--shadow-lg)",
       },
       keyframes: {
         "accordion-down": {
@@ -74,4 +126,3 @@ export default {
   },
   plugins: [require("tailwindcss-animate")],
 } satisfies Config;
-

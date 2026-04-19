@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 64" width="320" height="64">
+  <g fill="none" stroke="#6F8A60" stroke-width="3" stroke-linecap="round">
+    <path d="M10 10 C 42 22, 10 42, 42 54"></path>
+    <path d="M42 10 C 10 22, 42 42, 10 54"></path>
+    <path d="M16 16 L 36 16" opacity="0.55"></path>
+    <path d="M12 26 L 40 26" opacity="0.55"></path>
+    <path d="M12 38 L 40 38" opacity="0.55"></path>
+    <path d="M16 48 L 36 48" opacity="0.55"></path>
+  </g>
+  <text x="62" y="42" font-family="&#39;Source Serif 4&#39;, Georgia, serif" font-size="28" font-weight="500" fill="#1F1E1B" letter-spacing="-0.5">
+    Dynasty <tspan fill="#6F8A60">DNA</tspan>
+  </text>
+</svg>
