@@ -24,7 +24,7 @@ export default function LandingPage() {
         <AuthCTA />
         <p className="text-xs text-muted-foreground mt-6">
           Only for Sleeper leagues &middot; Player valuations by FantasyCalc
-          and NFL data from nflverse
+          &middot; NFL data from nflverse
         </p>
       </section>
 
