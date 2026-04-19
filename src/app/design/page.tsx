@@ -18,6 +18,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { GradeBadge } from "@/components/GradeBadge";
+import { StatusBadge } from "@/components/StatusBadge";
+import { TypeBadge } from "@/components/TransactionCard";
 
 export const metadata: Metadata = {
   title: "Design system — Dynasty DNA",
@@ -163,6 +166,53 @@ export default function DesignSystemPage() {
                 <p className="text-xs text-muted-foreground">
                   Separator above renders as a single hairline.
                 </p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Grade badges</CardTitle>
+                <CardDescription>
+                  Earned colors: A sage → B dusty blue → C ochre → D
+                  terracotta → F muted red.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="flex flex-wrap gap-2">
+                {["A+", "A", "B+", "B", "C", "D", "D-", "F"].map((g) => (
+                  <GradeBadge key={g} grade={g} />
+                ))}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Status pills</CardTitle>
+                <CardDescription>
+                  Shipped / in progress / planned / exploring. Used on
+                  roadmap + experiments.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="flex flex-wrap gap-2">
+                <StatusBadge status="shipped" />
+                <StatusBadge status="in-progress" />
+                <StatusBadge status="planned" />
+                <StatusBadge status="exploring" />
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Transaction type pills</CardTitle>
+                <CardDescription>
+                  Trade / waiver / free agent / commissioner. Match the
+                  grade palette so the type signal sits beside grades.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="flex flex-wrap gap-2">
+                <TypeBadge type="trade" />
+                <TypeBadge type="waiver" />
+                <TypeBadge type="free_agent" />
+                <TypeBadge type="commissioner" />
               </CardContent>
             </Card>
 

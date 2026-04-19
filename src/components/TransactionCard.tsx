@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { AssetIdentifier } from "./AssetTimeline";
+import { GradeBadge } from "./GradeBadge";
 
 interface TransactionAdd {
   playerId: string;
@@ -89,50 +90,26 @@ function formatDate(timestamp: number | null): string {
   });
 }
 
-function TypeBadge({ type }: { type: string }) {
-  const styles: Record<string, string> = {
-    trade: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400",
-    waiver:
-      "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400",
-    free_agent:
-      "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
-    commissioner:
-      "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400",
-  };
+const TYPE_STYLES: Record<string, string> = {
+  trade: "bg-grade-b/12 text-grade-b",
+  waiver: "bg-grade-c/15 text-grade-c",
+  free_agent: "bg-grade-a/12 text-grade-a",
+  commissioner: "bg-chart-4/15 text-chart-4",
+};
 
-  const labels: Record<string, string> = {
-    trade: "Trade",
-    waiver: "Waiver",
-    free_agent: "Free Agent",
-    commissioner: "Commissioner",
-  };
+const TYPE_LABELS: Record<string, string> = {
+  trade: "Trade",
+  waiver: "Waiver",
+  free_agent: "Free agent",
+  commissioner: "Commissioner",
+};
 
+export function TypeBadge({ type }: { type: string }) {
   return (
     <span
-      className={`px-2 py-0.5 text-xs font-medium rounded-full ${styles[type] || "bg-gray-100 text-gray-800"}`}
+      className={`px-2 py-0.5 text-xs font-medium rounded-full ${TYPE_STYLES[type] || "bg-muted text-muted-foreground"}`}
     >
-      {labels[type] || type}
-    </span>
-  );
-}
-
-function GradeBadge({ grade }: { grade: string }) {
-  const styles: Record<string, string> = {
-    "A+": "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
-    A: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
-    "B+": "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400",
-    B: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400",
-    C: "bg-gray-100 text-gray-800 dark:bg-gray-700/30 dark:text-gray-400",
-    D: "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400",
-    "D-": "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400",
-    F: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400",
-  };
-
-  return (
-    <span
-      className={`px-1.5 py-0.5 text-xs font-bold rounded ${styles[grade] || "bg-gray-100 text-gray-800"}`}
-    >
-      {grade}
+      {TYPE_LABELS[type] || type}
     </span>
   );
 }
@@ -232,7 +209,7 @@ function TradeCard({ tx, familyId, onAssetClick }: { tx: TransactionData; family
               <div>
                 <p className="text-xs text-muted-foreground mb-1">Received</p>
                 {side.received.map((a) => (
-                  <p key={a.playerId} className="text-sm text-green-600 dark:text-green-400">
+                  <p key={a.playerId} className="text-sm text-primary">
                     + <PlayerLink playerId={a.playerId} playerName={a.playerName} familyId={familyId} />
                     {onAssetClick && (
                       <TimelineIcon onClick={() => onAssetClick({ kind: "player", playerId: a.playerId })} />
@@ -247,7 +224,7 @@ function TradeCard({ tx, familyId, onAssetClick }: { tx: TransactionData; family
                   <p className="text-xs text-muted-foreground mb-1">Received</p>
                 )}
                 {side.picksReceived.map((p, i) => (
-                  <p key={i} className="text-sm text-green-600 dark:text-green-400">
+                  <p key={i} className="text-sm text-primary">
                     + {p.season} {p.round}{getRoundSuffix(p.round)} Round Pick
                     {p.originalOwnerName && p.originalOwnerName !== side.managerName && (
                       <span className="text-xs text-muted-foreground ml-1">
@@ -270,8 +247,8 @@ function TradeCard({ tx, familyId, onAssetClick }: { tx: TransactionData; family
               <div>
                 <p className="text-xs text-muted-foreground mb-1">Sent</p>
                 {side.sent.map((d) => (
-                  <p key={d.playerId} className="text-sm text-red-600 dark:text-red-400">
-                    - <PlayerLink playerId={d.playerId} playerName={d.playerName} familyId={familyId} />
+                  <p key={d.playerId} className="text-sm text-muted-foreground">
+                    − <PlayerLink playerId={d.playerId} playerName={d.playerName} familyId={familyId} />
                     {onAssetClick && (
                       <TimelineIcon onClick={() => onAssetClick({ kind: "player", playerId: d.playerId })} />
                     )}
@@ -285,8 +262,8 @@ function TradeCard({ tx, familyId, onAssetClick }: { tx: TransactionData; family
                   <p className="text-xs text-muted-foreground mb-1">Sent</p>
                 )}
                 {side.picksSent.map((p, i) => (
-                  <p key={i} className="text-sm text-red-600 dark:text-red-400">
-                    - {p.season} {p.round}{getRoundSuffix(p.round)} Round Pick
+                  <p key={i} className="text-sm text-muted-foreground">
+                    − {p.season} {p.round}{getRoundSuffix(p.round)} Round Pick
                     {p.originalOwnerName && p.originalOwnerName !== side.managerName && (
                       <span className="text-xs text-muted-foreground ml-1">
                         ({p.originalOwnerName}&apos;s)
@@ -326,7 +303,7 @@ function SimpleTransactionCard({ tx, familyId }: { tx: TransactionData; familyId
             Week {tx.week} &middot; {formatDate(tx.createdAt)}
           </span>
           {waiverBid !== null && (
-            <span className="text-xs text-amber-600 dark:text-amber-400 font-mono">
+            <span className="text-xs text-foreground font-mono">
               ${waiverBid}
             </span>
           )}
@@ -337,7 +314,7 @@ function SimpleTransactionCard({ tx, familyId }: { tx: TransactionData; familyId
       <div className="space-y-1">
         {tx.adds.map((a) => (
           <p key={a.playerId} className="text-sm">
-            <span className="text-green-600 dark:text-green-400 font-medium">
+            <span className="text-primary font-medium">
               + <PlayerLink playerId={a.playerId} playerName={a.playerName} familyId={familyId} />
             </span>
             <span className="text-muted-foreground ml-2">
@@ -347,8 +324,8 @@ function SimpleTransactionCard({ tx, familyId }: { tx: TransactionData; familyId
         ))}
         {tx.drops.map((d) => (
           <p key={d.playerId} className="text-sm">
-            <span className="text-red-600 dark:text-red-400 font-medium">
-              - <PlayerLink playerId={d.playerId} playerName={d.playerName} familyId={familyId} />
+            <span className="text-muted-foreground font-medium">
+              − <PlayerLink playerId={d.playerId} playerName={d.playerName} familyId={familyId} />
             </span>
             <span className="text-muted-foreground ml-2">
               from {d.managerName}

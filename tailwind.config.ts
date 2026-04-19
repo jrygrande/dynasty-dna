@@ -82,19 +82,19 @@ export default {
           900: "var(--sage-900)",
         },
         grade: {
-          a: "var(--grade-a)",
-          b: "var(--grade-b)",
-          c: "var(--grade-c)",
-          d: "var(--grade-d)",
-          f: "var(--grade-f)",
+          a: "rgb(var(--grade-a) / <alpha-value>)",
+          b: "rgb(var(--grade-b) / <alpha-value>)",
+          c: "rgb(var(--grade-c) / <alpha-value>)",
+          d: "rgb(var(--grade-d) / <alpha-value>)",
+          f: "rgb(var(--grade-f) / <alpha-value>)",
         },
         chart: {
-          1: "var(--chart-1)",
-          2: "var(--chart-2)",
-          3: "var(--chart-3)",
-          4: "var(--chart-4)",
-          5: "var(--chart-5)",
-          6: "var(--chart-6)",
+          1: "rgb(var(--chart-1) / <alpha-value>)",
+          2: "rgb(var(--chart-2) / <alpha-value>)",
+          3: "rgb(var(--chart-3) / <alpha-value>)",
+          4: "rgb(var(--chart-4) / <alpha-value>)",
+          5: "rgb(var(--chart-5) / <alpha-value>)",
+          6: "rgb(var(--chart-6) / <alpha-value>)",
         },
       },
       borderRadius: {
@@ -107,6 +107,12 @@ export default {
         sm: "var(--shadow-sm)",
         md: "var(--shadow-md)",
         lg: "var(--shadow-lg)",
+      },
+      opacity: {
+        8: "0.08",
+        12: "0.12",
+        15: "0.15",
+        28: "0.28",
       },
       keyframes: {
         "accordion-down": {

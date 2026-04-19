@@ -37,14 +37,18 @@ type TimelineEntry =
   | { type: "event"; event: EventData }
   | { type: "stint"; stint: StintData };
 
-const EVENT_STYLES: Record<string, { color: string; icon: string; label: string }> = {
-  draft_selected: { color: "bg-blue-500", icon: "D", label: "Drafted" },
-  trade: { color: "bg-purple-500", icon: "T", label: "Traded" },
-  pick_trade: { color: "bg-purple-500", icon: "P", label: "Pick Traded" },
-  waiver_add: { color: "bg-amber-500", icon: "W", label: "Waiver Claim" },
-  waiver_drop: { color: "bg-red-500", icon: "W", label: "Waiver Drop" },
-  free_agent_add: { color: "bg-green-500", icon: "F", label: "FA Pickup" },
-  free_agent_drop: { color: "bg-red-500", icon: "F", label: "FA Drop" },
+type EventStyle = { dot: string; text: string; icon: string; label: string };
+
+/* Add vs drop is conveyed by filled vs outlined dot, not just by opacity —
+   at 20px an alpha shift alone is near-invisible (and inaccessible). */
+const EVENT_STYLES: Record<string, EventStyle> = {
+  draft_selected: { dot: "bg-primary", text: "text-primary-foreground", icon: "D", label: "Drafted" },
+  trade: { dot: "bg-grade-b", text: "text-white", icon: "T", label: "Traded" },
+  pick_trade: { dot: "bg-grade-b", text: "text-white", icon: "P", label: "Pick traded" },
+  waiver_add: { dot: "bg-grade-c", text: "text-white", icon: "W", label: "Waiver claim" },
+  waiver_drop: { dot: "bg-background border-2 border-grade-c", text: "text-grade-c", icon: "W", label: "Waiver drop" },
+  free_agent_add: { dot: "bg-grade-a", text: "text-white", icon: "F", label: "FA pickup" },
+  free_agent_drop: { dot: "bg-background border-2 border-grade-a", text: "text-grade-a", icon: "F", label: "FA drop" },
 };
 
 function formatDate(timestamp: number | null): string {
@@ -189,8 +193,9 @@ export function AssetTimeline({
           }
 
           const event = entry.event;
-          const style = EVENT_STYLES[event.eventType] || {
-            color: "bg-gray-500",
+          const style: EventStyle = EVENT_STYLES[event.eventType] || {
+            dot: "bg-muted-foreground",
+            text: "text-white",
             icon: "?",
             label: event.eventType,
           };
@@ -201,9 +206,9 @@ export function AssetTimeline({
               <div key={event.id} className="relative pl-12">
                 {/* Event dot */}
                 <div
-                  className={`absolute left-[10px] top-3 w-5 h-5 rounded-full ${style.color} flex items-center justify-center z-10`}
+                  className={`absolute left-[10px] top-3 w-5 h-5 rounded-full ${style.dot} flex items-center justify-center z-10`}
                 >
-                  <span className="text-[9px] font-bold text-white">{style.icon}</span>
+                  <span className={`text-[9px] font-bold ${style.text}`}>{style.icon}</span>
                 </div>
 
                 <div className="mb-1">
@@ -225,9 +230,9 @@ export function AssetTimeline({
             <div key={event.id} className="relative pl-12">
               {/* Event dot */}
               <div
-                className={`absolute left-[10px] top-3 w-5 h-5 rounded-full ${style.color} flex items-center justify-center z-10`}
+                className={`absolute left-[10px] top-3 w-5 h-5 rounded-full ${style.dot} flex items-center justify-center z-10`}
               >
-                <span className="text-[9px] font-bold text-white">{style.icon}</span>
+                <span className={`text-[9px] font-bold ${style.text}`}>{style.icon}</span>
               </div>
 
               <div className="border rounded-lg p-3">
@@ -242,7 +247,7 @@ export function AssetTimeline({
                   <p className="text-xs text-muted-foreground">
                     Pick #{event.draftDetails.pickNo}, Round {event.draftDetails.round}
                     {event.draftDetails.isKeeper && (
-                      <span className="ml-1 text-blue-500">(Keeper)</span>
+                      <span className="ml-1 text-primary">(Keeper)</span>
                     )}
                   </p>
                 )}
@@ -251,13 +256,13 @@ export function AssetTimeline({
                 {event.transaction && event.eventType !== "trade" && (
                   <div className="text-sm text-muted-foreground mt-1">
                     {event.transaction.adds.map((a) => (
-                      <p key={a.playerId} className="text-green-600 dark:text-green-400">
+                      <p key={a.playerId} className="text-primary">
                         + {a.playerName} → {a.managerName}
                       </p>
                     ))}
                     {event.transaction.drops.map((d) => (
-                      <p key={d.playerId} className="text-red-600 dark:text-red-400">
-                        - {d.playerName} from {d.managerName}
+                      <p key={d.playerId} className="text-muted-foreground">
+                        − {d.playerName} from {d.managerName}
                       </p>
                     ))}
                   </div>
