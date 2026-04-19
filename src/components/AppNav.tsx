@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
 import { useEffect, useState } from "react";
 import { Menu, X } from "lucide-react";
+import { BrandLockup } from "./BrandMark";
 
 export function AppNav() {
   const { data: session } = useSession();
@@ -20,10 +21,8 @@ export function AppNav() {
   return (
     <header className="border-b">
       <div className="container mx-auto px-6 py-4 flex items-center justify-between">
-        <Link href="/dashboard" className="flex items-center gap-2">
-          <span className="text-lg font-bold tracking-tight">
-            Dynasty <span className="text-primary">DNA</span>
-          </span>
+        <Link href="/dashboard" aria-label="Dynasty DNA dashboard">
+          <BrandLockup />
         </Link>
 
         {/* Desktop nav */}
