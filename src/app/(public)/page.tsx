@@ -22,9 +22,9 @@ export default function LandingPage() {
           Trace how every decision ripples through your dynasty league.
         </p>
         <AuthCTA />
-        <p className="text-xs text-muted-foreground mt-6">
-          Only for Sleeper leagues &middot; Player valuations by FantasyCalc
-          &middot; NFL data from nflverse
+        <p className="text-xs text-muted-foreground mt-6 flex flex-wrap justify-center gap-x-2 gap-y-0.5">
+          <span>Only for Sleeper leagues</span>
+          <span>&middot; Player valuations by FantasyCalc &middot; NFL data from nflverse</span>
         </p>
       </section>
 
