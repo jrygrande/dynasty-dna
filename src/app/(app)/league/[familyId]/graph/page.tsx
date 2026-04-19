@@ -6,9 +6,9 @@ import Link from "next/link";
 import {
   applyGraphFilters,
   type Graph,
-  type GraphEdgeKind,
   type GraphResponse,
   type GraphSelection,
+  type TransactionKind,
 } from "@/lib/assetGraph";
 import { useGraphVisibility } from "@/lib/useGraphVisibility";
 import { GraphFilterSidebar } from "@/components/graph/GraphFilterSidebar";
@@ -21,24 +21,13 @@ import { AssetGraph } from "@/components/graph/AssetGraph";
 
 type FromSource = "overview" | "player" | "transactions" | "manager" | "deeplink";
 
-const DEFAULT_EVENT_TYPES: GraphEdgeKind[] = [
-  "trade_out",
-  "trade_in",
-  "pick_trade_out",
-  "pick_trade_in",
-  "draft_selected_mgr",
-  "draft_selected_pick",
-];
-
-const ALL_EDGE_KINDS: GraphEdgeKind[] = [
-  "trade_out",
-  "trade_in",
-  "pick_trade_out",
-  "pick_trade_in",
-  "draft_selected_mgr",
-  "draft_selected_pick",
-  "waiver_add",
-  "free_agent_add",
+const DEFAULT_TX_KINDS: TransactionKind[] = ["draft", "trade", "waiver", "free_agent"];
+const ALL_TX_KINDS: TransactionKind[] = [
+  "draft",
+  "trade",
+  "waiver",
+  "free_agent",
+  "commissioner",
 ];
 
 function parseCsv(value: string | null): string[] {
@@ -46,9 +35,9 @@ function parseCsv(value: string | null): string[] {
   return value.split(",").map((s) => s.trim()).filter(Boolean);
 }
 
-function parseEventTypes(value: string | null): GraphEdgeKind[] {
+function parseTxKinds(value: string | null): TransactionKind[] {
   const arr = parseCsv(value);
-  return arr.filter((k): k is GraphEdgeKind => ALL_EDGE_KINDS.includes(k as GraphEdgeKind));
+  return arr.filter((k): k is TransactionKind => ALL_TX_KINDS.includes(k as TransactionKind));
 }
 
 function parseSelection(value: string | null): GraphSelection | null {
@@ -74,12 +63,11 @@ export default function GraphPage() {
   const searchParams = useSearchParams();
   const familyId = params.familyId as string;
 
-  // URL state.
   const selectedSeasons = useMemo(() => parseCsv(searchParams.get("seasons")), [searchParams]);
   const selectedManagers = useMemo(() => parseCsv(searchParams.get("managers")), [searchParams]);
-  const selectedEventTypes = useMemo<GraphEdgeKind[]>(() => {
-    const parsed = parseEventTypes(searchParams.get("eventTypes"));
-    return parsed.length > 0 ? parsed : DEFAULT_EVENT_TYPES;
+  const selectedTxKinds = useMemo<TransactionKind[]>(() => {
+    const parsed = parseTxKinds(searchParams.get("txKinds"));
+    return parsed.length > 0 ? parsed : DEFAULT_TX_KINDS;
   }, [searchParams]);
 
   const seedRaw = searchParams.get("seed");
@@ -89,8 +77,6 @@ export default function GraphPage() {
   const expanded = useMemo(() => new Set(parseCsv(expandedRaw)), [expandedRaw]);
   const removed = useMemo(() => new Set(parseCsv(removedRaw)), [removedRaw]);
 
-  const layoutMode: "band" | "dagre" =
-    searchParams.get("layout") === "dagre" ? "dagre" : "band";
   const selection = parseSelection(searchParams.get("selection"));
   const from = ((): FromSource => {
     const raw = searchParams.get("from");
@@ -141,9 +127,7 @@ export default function GraphPage() {
       setError(null);
       try {
         const res = await fetch(`/api/leagues/${familyId}/graph`);
-        if (!res.ok) {
-          throw new Error(`Graph API ${res.status}`);
-        }
+        if (!res.ok) throw new Error(`Graph API ${res.status}`);
         const json = (await res.json()) as GraphResponse;
         if (!cancelled) setResponse(json);
       } catch (err) {
@@ -160,7 +144,6 @@ export default function GraphPage() {
     };
   }, [familyId]);
 
-  // Season/manager/eventType filters are client-side on the fetched graph.
   const filteredGraph: Graph | null = useMemo(() => {
     if (!response) return null;
     return applyGraphFilters(
@@ -168,15 +151,11 @@ export default function GraphPage() {
       {
         seasons: selectedSeasons,
         managers: selectedManagers,
-        eventTypes: selectedEventTypes,
-        focus: null,
-        focusHops: 0,
-        layout: layoutMode,
+        txKinds: selectedTxKinds,
       },
     );
-  }, [response, selectedSeasons, selectedManagers, selectedEventTypes, layoutMode]);
+  }, [response, selectedSeasons, selectedManagers, selectedTxKinds]);
 
-  // Progressive-disclosure visibility: seed + expansions − removed.
   const visibility = useGraphVisibility(filteredGraph, { seed, expanded, removed });
 
   const visibleGraph: Graph | null = useMemo(() => {
@@ -188,7 +167,6 @@ export default function GraphPage() {
     };
   }, [filteredGraph, visibility]);
 
-  // Bootstrap default seasons once response lands.
   useEffect(() => {
     if (!response || seasonsBootstrappedRef.current) return;
     if (selectedSeasons.length === 0 && response.seasons.length > 0) {
@@ -199,6 +177,38 @@ export default function GraphPage() {
       seasonsBootstrappedRef.current = true;
     }
   }, [response, selectedSeasons.length, updateUrl]);
+
+  // Resolve seedPlayerId → concrete seed node ids (the most recent tenure
+  // edge for that player; endpoints become the seed). Clears seasons filter
+  // so the seed is visible regardless of the default latest-season bootstrap.
+  const seedPlayerId = searchParams.get("seedPlayerId");
+  useEffect(() => {
+    if (!seedPlayerId || !response || seed.length > 0) return;
+    const playerEdges = response.edges
+      .filter((e) => e.assetKind === "player" && e.playerId === seedPlayerId);
+    if (playerEdges.length === 0) {
+      updateUrl({ seedPlayerId: null });
+      return;
+    }
+    // Most recent: isOpen wins; otherwise latest end season/week.
+    const latest = playerEdges.reduce((best, e) => {
+      if (!best) return e;
+      if (e.isOpen && !best.isOpen) return e;
+      if (!e.isOpen && best.isOpen) return best;
+      const bestSeason = best.endSeason ?? best.startSeason;
+      const eSeason = e.endSeason ?? e.startSeason;
+      if (eSeason !== bestSeason) return eSeason > bestSeason ? e : best;
+      const bestWeek = best.endWeek ?? best.startWeek;
+      const eWeek = e.endWeek ?? e.startWeek;
+      return eWeek > bestWeek ? e : best;
+    });
+    const seedIds = Array.from(new Set([latest.source, latest.target]));
+    updateUrl({
+      seed: seedIds.join(","),
+      seedPlayerId: null,
+      seasons: null,
+    });
+  }, [seedPlayerId, response, seed.length, updateUrl]);
 
   useEffect(() => {
     if (!response || analyticsFiredRef.current) return;
@@ -229,12 +239,8 @@ export default function GraphPage() {
     (m: string[]) => updateUrl({ managers: m.join(",") || null }),
     [updateUrl],
   );
-  const handleEventTypesChange = useCallback(
-    (e: GraphEdgeKind[]) => updateUrl({ eventTypes: e.join(",") || null }),
-    [updateUrl],
-  );
-  const handleLayoutModeChange = useCallback(
-    (m: "band" | "dagre") => updateUrl({ layout: m }),
+  const handleTxKindsChange = useCallback(
+    (k: TransactionKind[]) => updateUrl({ txKinds: k.join(",") || null }),
     [updateUrl],
   );
   const handleCloseSelection = useCallback(() => updateUrl({ selection: null }), [updateUrl]);
@@ -282,11 +288,10 @@ export default function GraphPage() {
     let n = 0;
     if (selectedSeasons.length > 0) n += 1;
     if (selectedManagers.length > 0) n += 1;
-    if (selectedEventTypes.length !== DEFAULT_EVENT_TYPES.length) n += 1;
+    if (selectedTxKinds.length !== DEFAULT_TX_KINDS.length) n += 1;
     if (seed.length > 0) n += 1;
-    if (layoutMode !== "band") n += 1;
     return n;
-  }, [selectedSeasons, selectedManagers, selectedEventTypes, seed, layoutMode]);
+  }, [selectedSeasons, selectedManagers, selectedTxKinds, seed]);
 
   const seasonLabel = useMemo(() => {
     if (selectedSeasons.length === 1) return selectedSeasons[0];
@@ -331,12 +336,10 @@ export default function GraphPage() {
               managers={response.managers}
               selectedSeasons={selectedSeasons}
               selectedManagers={selectedManagers}
-              selectedEventTypes={selectedEventTypes}
-              layoutMode={layoutMode}
+              selectedTxKinds={selectedTxKinds}
               onSeasonsChange={handleSeasonsChange}
               onManagersChange={handleManagersChange}
-              onEventTypesChange={handleEventTypesChange}
-              onLayoutModeChange={handleLayoutModeChange}
+              onTxKindsChange={handleTxKindsChange}
             />
           ) : (
             <SidebarSkeleton />
@@ -364,7 +367,6 @@ export default function GraphPage() {
             <AssetGraph
               nodes={visibleGraph.nodes}
               edges={visibleGraph.edges}
-              layoutMode={layoutMode}
               selection={selection}
               onSelect={handleSelectionChange}
               expandedNodeIds={expanded}
@@ -379,7 +381,7 @@ export default function GraphPage() {
               className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 max-w-md px-4 py-2.5 rounded-md bg-foreground text-background shadow-lg flex items-center gap-3"
             >
               <span className="text-xs">
-                Click a node to expand its trade partners. Click again to see details. Hover for the × to remove.
+                Click a transaction to pull in its trade partners. Edges are player tenures — the spans between transactions.
               </span>
               <button
                 type="button"
@@ -413,9 +415,9 @@ function EmptyState({ familyId }: { familyId: string }) {
       <div className="max-w-md text-center space-y-4">
         <h2 className="text-lg font-semibold">Start with an asset</h2>
         <p className="text-sm text-muted-foreground leading-relaxed">
-          The trade network grows around whatever you seed it with. Open a player,
-          manager, or transaction to start — then click nodes to pull in their
-          partners one hop at a time.
+          The trade network grows around whatever you seed it with. Open a player
+          page to trace their movement, or open a transaction to see the
+          tenures that flowed through it.
         </p>
         <div className="flex items-center justify-center gap-3 pt-2">
           <Link

@@ -198,7 +198,7 @@ export default function PlayerDetailPage() {
               </Link>
               {graphEnabled && (
                 <Link
-                  href={`/league/${familyId}/graph?seed=player:${playerId}&from=player`}
+                  href={`/league/${familyId}/graph?seedPlayerId=${playerId}&from=player`}
                   className="text-sm text-muted-foreground hover:text-foreground"
                 >
                   See trade network &rarr;

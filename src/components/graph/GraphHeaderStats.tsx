@@ -7,21 +7,14 @@ interface GraphHeaderStatsProps {
   seasonLabel: string;
 }
 
-/**
- * One-line at-a-glance strip summarizing graph activity for the selected
- * season(s). Part of the Asset Graph Browser header.
- */
 export function GraphHeaderStats({ stats, seasonLabel }: GraphHeaderStatsProps) {
-  const trades = stats.totalTrades ?? 0;
-  const multiHop = stats.multiHopChains ?? 0;
-  const picksTraded = stats.picksTraded ?? 0;
   return (
     <div className="text-sm text-muted-foreground">
-      <span className="font-medium text-foreground">{trades}</span> trades
+      <span className="font-mono font-medium text-foreground">{stats.totalTransactions}</span> transactions
       <span className="mx-1.5">·</span>
-      <span className="font-medium text-foreground">{multiHop}</span> multi-hop chains
+      <span className="font-mono font-medium text-foreground">{stats.totalTenures}</span> tenures
       <span className="mx-1.5">·</span>
-      <span className="font-medium text-foreground">{picksTraded}</span> picks traded
+      <span className="font-mono font-medium text-foreground">{stats.playersInvolved}</span> players
       {seasonLabel ? (
         <>
           {" "}in <span className="font-medium text-foreground">{seasonLabel}</span>

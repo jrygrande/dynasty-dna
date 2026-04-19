@@ -1,129 +1,166 @@
 /**
- * Asset Graph Browser — frozen type/id contract.
+ * Asset Graph Browser — transaction-node + tenure-edge model.
  *
- * This file is the FROZEN type and id-helper contract for the Asset Graph
- * Browser feature (Issue #26). All downstream modules (API route, React Flow
- * adapter, filter UI, server aggregator) depend on these exact signatures.
+ * Each node is a transaction (draft pick, trade, waiver add, FA add) or a
+ * pseudo-anchor (a manager's current roster). Each edge is a single
+ * continuous span of "player X on manager Y's roster" — its source is the
+ * transaction that put the player there, its target is the transaction that
+ * took them off (or the current-roster anchor if the player is still
+ * rostered).
  *
- * Rules:
- *   1. Id helpers (`assetNodeId`, `managerNodeId`, `pickKey`) MUST be used
- *      by every caller on every side of the wire. Never hand-concatenate
- *      the id strings — the API and the client rely on byte-for-byte
- *      identical ids to match nodes and edges.
- *   2. Transform function bodies (`buildGraphFromEvents`, `applyGraphFilters`,
- *      `focusSubgraph`, `computeHeaderStats`) are stubbed in Phase 0. Module A
- *      owns filling those bodies. Do NOT modify their signatures without
- *      coordinating — any signature change invalidates the parallel work
- *      downstream.
- *   3. Manager nodes are keyed by Sleeper `userId` (stable across seasons and
- *      league renames). Never key manager nodes by `rosterId` — roster ids
- *      are league-scoped and reused.
- *   4. Pick nodes are keyed by the league-scoped tuple
- *      `(leagueId, pickSeason, pickRound, pickOriginalRosterId)` because
- *      picks in the schema are league-scoped. The tuple is flattened into
- *      `pickKey` for maps and into `assetNodeId` for graph node ids.
+ * Pick tenures follow the same shape: the edge represents "manager Y held
+ * pick P," sourced at the pick_trade that delivered the pick (or the first
+ * visible owner) and sunk at the next pick_trade, the draft_selected that
+ * resolved it, or the current-roster anchor.
  */
 
 import type { EnrichedTransaction } from "./transactionEnrichment";
 
-export type AssetRef =
-  | { kind: "player"; playerId: string }
-  | { kind: "pick"; leagueId: string; pickSeason: string; pickRound: number; pickOriginalRosterId: number };
+// ---------------------------------------------------------------------------
+// Id helpers
+// ---------------------------------------------------------------------------
 
-// Stable ids — byte-for-byte identical between API and client.
-// Callers MUST use these helpers; never hand-concatenate.
-export function assetNodeId(a: AssetRef): string {
-  if (a.kind === "player") return `player:${a.playerId}`;
-  return `pick:${a.leagueId}:${a.pickSeason}:${a.pickRound}:${a.pickOriginalRosterId}`;
-}
-
-export function managerNodeId(userId: string): string {
-  return `manager:${userId}`;
-}
-
-export function pickKey(p: Extract<AssetRef, { kind: "pick" }>): string {
-  return `${p.leagueId}:${p.pickSeason}:${p.pickRound}:${p.pickOriginalRosterId}`;
-}
-
-export type GraphEdgeKind =
-  | "trade_out"
-  | "trade_in"
-  | "pick_trade_out"
-  | "pick_trade_in"
-  | "draft_selected_mgr"
-  | "draft_selected_pick"
-  | "waiver_add"
-  | "free_agent_add";
-
-export interface GraphEdge {
-  id: string;
-  source: string;
-  target: string;
-  kind: GraphEdgeKind;
-  season: string;
-  week: number;
-  createdAt: number | null;
-  transactionId: string | null;
-  groupKey: string;
-}
-
-interface LayoutPos { x: number; y: number; }
-
-interface ManagerNode {
-  id: string;
-  kind: "manager";
-  userId: string;
-  displayName: string;
-  avatar: string | null;
-  seasons: string[];
-  tradeCount?: number;
-  layout?: LayoutPos;
-}
-
-interface PlayerNode {
-  id: string;
-  kind: "player";
-  playerId: string;
-  name: string;
-  position: string | null;
-  team: string | null;
-  layout?: LayoutPos;
-}
-
-interface PickNode {
-  id: string;
-  kind: "pick";
+/** Stable id for a pick (league-scoped). */
+export function pickKey(p: {
   leagueId: string;
   pickSeason: string;
   pickRound: number;
   pickOriginalRosterId: number;
-  pickOriginalOwnerUserId: string | null;
-  pickOriginalOwnerName: string | null;
-  resolvedPlayerId?: string;
-  resolvedPlayerName?: string;
+}): string {
+  return `${p.leagueId}:${p.pickSeason}:${p.pickRound}:${p.pickOriginalRosterId}`;
+}
+
+/** Node id for a transaction with a real transactionId (trade, waiver, FA). */
+export function transactionNodeId(transactionId: string): string {
+  return `tx:${transactionId}`;
+}
+
+/** Node id for a draft selection (draft events have no transactionId). */
+export function draftNodeId(eventId: string): string {
+  return `draft:${eventId}`;
+}
+
+/** Node id for a manager's current-roster anchor. */
+export function currentRosterNodeId(userId: string): string {
+  return `current:${userId}`;
+}
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+export type TransactionKind =
+  | "draft"
+  | "trade"
+  | "waiver"
+  | "free_agent"
+  | "commissioner";
+
+interface LayoutPos {
+  x: number;
+  y: number;
+}
+
+interface TransactionManagerRef {
+  userId: string;
+  displayName: string;
+}
+
+interface TransactionAssetRef {
+  kind: "player" | "pick";
+  playerId?: string;
+  playerName?: string;
+  playerPosition?: string | null;
+  playerTeam?: string | null;
+  pickSeason?: string;
+  pickRound?: number;
+  pickOriginalRosterId?: number;
+  pickLabel?: string;
+  /** Manager userId who received the asset at this transaction. */
+  toUserId: string | null;
+  /** Manager userId who gave up the asset at this transaction. null for draft/waiver/FA adds. */
+  fromUserId: string | null;
+}
+
+export interface TransactionNode {
+  id: string;
+  kind: "transaction";
+  txKind: TransactionKind;
+  transactionId: string | null;
+  leagueId: string;
+  season: string;
+  week: number;
+  createdAt: number;
+  /** Managers participating in this transaction. 1 for draft/waiver/FA, 2 for trade. */
+  managers: TransactionManagerRef[];
+  /** Assets touched by this transaction. */
+  assets: TransactionAssetRef[];
   layout?: LayoutPos;
 }
 
-export type GraphNode = ManagerNode | PlayerNode | PickNode;
-
-export interface GraphStats {
-  totalTrades: number;
-  totalDraftPicks: number;
-  totalEdges: number;
-  totalNodes: number;
-  multiHopChains: number;
-  picksTraded: number;
+export interface CurrentRosterNode {
+  id: string;
+  kind: "current_roster";
+  userId: string;
+  displayName: string;
+  avatar: string | null;
+  layout?: LayoutPos;
 }
 
-export interface GraphApiParams {
-  seasons?: string[];
-  managers?: string[];
-  eventTypes?: GraphEdgeKind[];
-  focusPlayerId?: string;
-  focusPickKey?: string;
-  focusManagerId?: string;
-  focusHops?: number;
-  layout?: "band" | "dagre";
+export type GraphNode = TransactionNode | CurrentRosterNode;
+
+export interface TenureEdge {
+  id: string;
+  source: string;
+  target: string;
+  /** The manager who held the asset during this tenure. */
+  managerUserId: string;
+  managerName: string;
+  assetKind: "player" | "pick";
+  /** For player tenures. */
+  playerId: string | null;
+  playerName: string | null;
+  playerPosition: string | null;
+  playerTeam: string | null;
+  /** For pick tenures. */
+  pickSeason: string | null;
+  pickRound: number | null;
+  pickOriginalRosterId: number | null;
+  pickLabel: string | null;
+  /** Span start (when manager acquired the asset). */
+  startSeason: string;
+  startWeek: number;
+  /** Span end. null when the tenure is still open (anchored to current_roster). */
+  endSeason: string | null;
+  endWeek: number | null;
+  /** True if target is a current_roster node. */
+  isOpen: boolean;
+}
+
+export type GraphEdge = TenureEdge;
+
+export interface GraphStats {
+  totalTransactions: number;
+  totalTenures: number;
+  openTenures: number;
+  playersInvolved: number;
+  picksInvolved: number;
+}
+
+export interface Graph {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  stats: GraphStats;
+}
+
+export type GraphSelection =
+  | { type: "node"; nodeId: string }
+  | { type: "edge"; edgeId: string };
+
+export interface GraphFilters {
+  seasons: string[];
+  managers: string[]; // userIds
+  txKinds: TransactionKind[];
 }
 
 export interface GraphResponse {
@@ -136,32 +173,9 @@ export interface GraphResponse {
   computedAt: number;
 }
 
-export type GraphSelection = { type: "node"; nodeId: string } | { type: "edge"; edgeId: string };
-
-export type GraphFocus =
-  | { kind: "player"; playerId: string }
-  | { kind: "pick"; leagueId: string; pickSeason: string; pickRound: number; pickOriginalRosterId: number }
-  | { kind: "manager"; userId: string };
-
-export interface GraphFilters {
-  seasons: string[];
-  managers: string[];
-  eventTypes: GraphEdgeKind[];
-  focus: GraphFocus | null;
-  focusHops: number;
-  layout: "band" | "dagre";
-}
-
-export interface Graph {
-  nodes: GraphNode[];
-  edges: GraphEdge[];
-  stats: GraphStats;
-}
-
-// =====================================================================
-// Transforms — STUBBED in Phase 0. Bodies filled by Module A's agent.
-// DO NOT CHANGE the signatures below without coordinating.
-// =====================================================================
+// ---------------------------------------------------------------------------
+// Build input
+// ---------------------------------------------------------------------------
 
 export interface BuildGraphInput {
   assetEvents: ReadonlyArray<{
@@ -184,639 +198,502 @@ export interface BuildGraphInput {
     details: unknown;
   }>;
   enrichedTransactions: Record<string, EnrichedTransaction>;
-  // playerId -> {name, position, team}
   players: Map<string, { name: string; position: string | null; team: string | null }>;
-  // userId -> {displayName, avatar, seasons}
   managers: Map<string, { displayName: string; avatar: string | null; seasons: string[] }>;
-  // Resolved draft picks: pickKey -> {playerId, playerName}
-  draftResolutions: Map<string, { playerId: string; playerName: string }>;
-  // leagueId + rosterId -> userId
+  /** rosterKey "leagueId:rosterId" -> userId. */
   rosterToUser: Map<string, string>;
+  /** userId -> set of playerIds currently on their roster. */
+  currentRosters: Map<string, Set<string>>;
+  /** userId -> set of pickKeys currently owned by them (pre-draft picks that haven't been used). */
+  currentPickOwners: Map<string, Set<string>>;
 }
 
-// ---------------------------------------------------------------------
-// Internal helpers
-// ---------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
 
-function rosterUserKey(leagueId: string, rosterId: number): string {
-  return `${leagueId}:${rosterId}`;
+type Ev = BuildGraphInput["assetEvents"][number];
+
+function eventNodeId(ev: Ev): string {
+  return ev.transactionId
+    ? transactionNodeId(ev.transactionId)
+    : draftNodeId(ev.id);
 }
 
-function isManagerNode(n: GraphNode): n is ManagerNode {
-  return n.kind === "manager";
+function eventTxKind(ev: Ev): TransactionKind {
+  if (ev.eventType === "draft_selected") return "draft";
+  if (ev.eventType === "trade" || ev.eventType === "pick_trade") return "trade";
+  if (ev.eventType === "waiver_add" || ev.eventType === "waiver_drop") return "waiver";
+  if (ev.eventType === "free_agent_add" || ev.eventType === "free_agent_drop") return "free_agent";
+  return "commissioner";
 }
 
-/**
- * Recompute all stats for the given nodes/edges + original enriched transactions.
- * multiHopChains is computed from `enrichedTransactions`, falling back to 0 when
- * the map is not available (e.g. after filtering, when the caller just wants a
- * refresh against the same txs — which we thread through).
- */
-function computeStats(
-  nodes: GraphNode[],
-  edges: GraphEdge[],
-  enrichedTransactions: Record<string, EnrichedTransaction>,
-  sourceAssetEvents: ReadonlyArray<{ id: string; eventType: string; transactionId: string | null }>,
-): GraphStats {
-  const tradeTxIds = new Set<string>();
-  let draftSelectedEvents = 0;
-  for (const e of sourceAssetEvents) {
-    if ((e.eventType === "trade" || e.eventType === "pick_trade") && e.transactionId) {
-      tradeTxIds.add(e.transactionId);
-    }
-    if (e.eventType === "draft_selected") draftSelectedEvents++;
-  }
-
-  let multiHopChains = 0;
-  for (const txId of tradeTxIds) {
-    const tx = enrichedTransactions[txId];
-    if (!tx) continue;
-    const legs = (tx.adds?.length ?? 0) + (tx.draftPicks?.length ?? 0);
-    if (legs >= 3) multiHopChains++;
-  }
-
-  const picksTradedKeys = new Set<string>();
-  const nodeById = new Map(nodes.map((n) => [n.id, n]));
-  for (const edge of edges) {
-    if (edge.kind !== "pick_trade_out" && edge.kind !== "pick_trade_in") continue;
-    const src = nodeById.get(edge.source);
-    const tgt = nodeById.get(edge.target);
-    const pick = src?.kind === "pick" ? src : tgt?.kind === "pick" ? tgt : null;
-    if (pick) {
-      picksTradedKeys.add(
-        pickKey({
-          kind: "pick",
-          leagueId: pick.leagueId,
-          pickSeason: pick.pickSeason,
-          pickRound: pick.pickRound,
-          pickOriginalRosterId: pick.pickOriginalRosterId,
-        }),
-      );
-    }
-  }
-
-  return {
-    totalTrades: tradeTxIds.size,
-    totalDraftPicks: draftSelectedEvents,
-    totalEdges: edges.length,
-    totalNodes: nodes.length,
-    multiHopChains,
-    picksTraded: picksTradedKeys.size,
-  };
+function pickLabel(ev: Ev, fromUserName: string | null): string {
+  if (ev.pickSeason === null || ev.pickRound === null) return "Pick";
+  const base = `${ev.pickSeason} R${ev.pickRound}`;
+  return fromUserName ? `${base} (${fromUserName})` : base;
 }
 
-/**
- * Recompute stats from an existing graph (used after filters / focus), by
- * re-walking edges/nodes. Multi-hop + trade counts are re-derived from the
- * remaining edges because we no longer have the raw assetEvents.
- */
-function recomputeStatsFromGraph(
-  nodes: GraphNode[],
-  edges: GraphEdge[],
-  multiHopTxIds: Set<string>,
-): GraphStats {
-  const tradeTxIds = new Set<string>();
-  let draftSelectedEdges = 0;
-
-  for (const e of edges) {
-    if (
-      (e.kind === "trade_in" ||
-        e.kind === "trade_out" ||
-        e.kind === "pick_trade_in" ||
-        e.kind === "pick_trade_out") &&
-      e.transactionId
-    ) {
-      tradeTxIds.add(e.transactionId);
-    }
-    if (e.kind === "draft_selected_mgr") draftSelectedEdges++;
-  }
-
-  // Multi-hop: intersect the current trade set with the originally-computed
-  // multi-hop set so filtering cannot falsely inflate the count.
-  let multiHopChains = 0;
-  for (const txId of tradeTxIds) {
-    if (multiHopTxIds.has(txId)) multiHopChains++;
-  }
-
-  const picksTradedKeys = new Set<string>();
-  const nodeById = new Map(nodes.map((n) => [n.id, n]));
-  for (const edge of edges) {
-    if (edge.kind !== "pick_trade_out" && edge.kind !== "pick_trade_in") continue;
-    const src = nodeById.get(edge.source);
-    const tgt = nodeById.get(edge.target);
-    const pick = src?.kind === "pick" ? src : tgt?.kind === "pick" ? tgt : null;
-    if (pick) {
-      picksTradedKeys.add(
-        pickKey({
-          kind: "pick",
-          leagueId: pick.leagueId,
-          pickSeason: pick.pickSeason,
-          pickRound: pick.pickRound,
-          pickOriginalRosterId: pick.pickOriginalRosterId,
-        }),
-      );
-    }
-  }
-
-  return {
-    totalTrades: tradeTxIds.size,
-    totalDraftPicks: draftSelectedEdges,
-    totalEdges: edges.length,
-    totalNodes: nodes.length,
-    multiHopChains,
-    picksTraded: picksTradedKeys.size,
-  };
+/** Events that confer new ownership (toUserId set). */
+function isEntry(ev: Ev): boolean {
+  return (
+    ev.toUserId !== null &&
+    (ev.eventType === "draft_selected" ||
+      ev.eventType === "trade" ||
+      ev.eventType === "pick_trade" ||
+      ev.eventType === "waiver_add" ||
+      ev.eventType === "free_agent_add")
+  );
 }
 
-/**
- * Carry forward which transactions were multi-hop by stamping a property on
- * the graph. We keep this non-exported and informally typed: the stats object
- * is the source of truth for consumers.
- */
-interface InternalGraph extends Graph {
-  __multiHopTxIds?: Set<string>;
+/** Events that end ownership (fromUserId set). Trade/pick_trade are both entry AND exit. */
+function isExit(ev: Ev): boolean {
+  return (
+    ev.fromUserId !== null &&
+    (ev.eventType === "trade" ||
+      ev.eventType === "pick_trade" ||
+      ev.eventType === "waiver_drop" ||
+      ev.eventType === "free_agent_drop")
+  );
 }
 
-// ---------------------------------------------------------------------
-// Transforms
-// ---------------------------------------------------------------------
+function compareEvents(a: Ev, b: Ev): number {
+  const seasonCmp = a.season.localeCompare(b.season);
+  if (seasonCmp !== 0) return seasonCmp;
+  if (a.week !== b.week) return a.week - b.week;
+  const ac = a.createdAt ?? 0;
+  const bc = b.createdAt ?? 0;
+  return ac - bc;
+}
+
+// ---------------------------------------------------------------------------
+// buildGraphFromEvents
+// ---------------------------------------------------------------------------
 
 export function buildGraphFromEvents(input: BuildGraphInput): Graph {
   const {
     assetEvents,
-    enrichedTransactions,
     players,
     managers,
-    draftResolutions,
-    rosterToUser,
+    currentRosters,
+    currentPickOwners,
   } = input;
 
-  const nodes = new Map<string, GraphNode>();
-  const edges: GraphEdge[] = [];
+  const managerName = (userId: string): string =>
+    managers.get(userId)?.displayName ?? userId;
 
-  const ensureManagerNode = (userId: string): string | null => {
-    const id = managerNodeId(userId);
-    if (!nodes.has(id)) {
+  const transactionNodes = new Map<string, TransactionNode>();
+  const currentRosterNodes = new Map<string, CurrentRosterNode>();
+  const edges: TenureEdge[] = [];
+
+  // Sort events for deterministic walk.
+  const sortedEvents = [...assetEvents].sort(compareEvents);
+
+  // -------------------------------------------------------------------------
+  // 1. Materialize transaction nodes (deduped by nodeId).
+  // -------------------------------------------------------------------------
+  // Walk once to build the node set + gather per-transaction manager+asset
+  // summaries. Multiple events can share a transactionId (a trade moves 3
+  // players = 3 events sharing one tx); we want one node per transactionId
+  // summarizing all of them.
+
+  for (const ev of sortedEvents) {
+    const nodeId = eventNodeId(ev);
+
+    let node = transactionNodes.get(nodeId);
+    if (!node) {
+      node = {
+        id: nodeId,
+        kind: "transaction",
+        txKind: eventTxKind(ev),
+        transactionId: ev.transactionId,
+        leagueId: ev.leagueId,
+        season: ev.season,
+        week: ev.week,
+        createdAt: ev.createdAt ?? 0,
+        managers: [],
+        assets: [],
+      };
+      transactionNodes.set(nodeId, node);
+    }
+
+    // Record managers participating.
+    const participantIds = new Set(node.managers.map((m) => m.userId));
+    if (ev.fromUserId && !participantIds.has(ev.fromUserId)) {
+      node.managers.push({ userId: ev.fromUserId, displayName: managerName(ev.fromUserId) });
+    }
+    if (ev.toUserId && !participantIds.has(ev.toUserId)) {
+      node.managers.push({ userId: ev.toUserId, displayName: managerName(ev.toUserId) });
+    }
+
+    // Record asset touched by this event.
+    if (ev.assetKind === "player" && ev.playerId) {
+      const p = players.get(ev.playerId);
+      const existing = node.assets.find(
+        (a) => a.kind === "player" && a.playerId === ev.playerId,
+      );
+      if (!existing) {
+        node.assets.push({
+          kind: "player",
+          playerId: ev.playerId,
+          playerName: p?.name ?? ev.playerId,
+          playerPosition: p?.position ?? null,
+          playerTeam: p?.team ?? null,
+          fromUserId: ev.fromUserId,
+          toUserId: ev.toUserId,
+        });
+      }
+    } else if (
+      ev.assetKind === "pick" &&
+      ev.pickSeason !== null &&
+      ev.pickRound !== null &&
+      ev.pickOriginalRosterId !== null
+    ) {
+      const existing = node.assets.find(
+        (a) =>
+          a.kind === "pick" &&
+          a.pickSeason === ev.pickSeason &&
+          a.pickRound === ev.pickRound &&
+          a.pickOriginalRosterId === ev.pickOriginalRosterId,
+      );
+      if (!existing) {
+        const origUser = input.rosterToUser.get(
+          `${ev.leagueId}:${ev.pickOriginalRosterId}`,
+        );
+        const origUserName = origUser ? managerName(origUser) : null;
+        node.assets.push({
+          kind: "pick",
+          pickSeason: ev.pickSeason,
+          pickRound: ev.pickRound,
+          pickOriginalRosterId: ev.pickOriginalRosterId,
+          pickLabel: pickLabel(ev, origUserName),
+          fromUserId: ev.fromUserId,
+          toUserId: ev.toUserId,
+        });
+      }
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // 2. Walk events per-asset to emit tenure edges.
+  // -------------------------------------------------------------------------
+  // For each asset (player or pick), walk its events chronologically.
+  // Maintain a "pending tenure" (the currently-open span). Each event
+  // potentially closes the pending tenure (emitting an edge) and/or opens a
+  // new one.
+
+  const playerEvents = new Map<string, Ev[]>();
+  const pickEvents = new Map<string, Ev[]>();
+
+  for (const ev of sortedEvents) {
+    if (ev.assetKind === "player" && ev.playerId) {
+      const arr = playerEvents.get(ev.playerId) ?? [];
+      arr.push(ev);
+      playerEvents.set(ev.playerId, arr);
+    }
+    if (
+      ev.pickSeason !== null &&
+      ev.pickRound !== null &&
+      ev.pickOriginalRosterId !== null
+    ) {
+      const key = pickKey({
+        leagueId: ev.leagueId,
+        pickSeason: ev.pickSeason,
+        pickRound: ev.pickRound,
+        pickOriginalRosterId: ev.pickOriginalRosterId,
+      });
+      const arr = pickEvents.get(key) ?? [];
+      arr.push(ev);
+      pickEvents.set(key, arr);
+    }
+  }
+
+  const ensureCurrentRoster = (userId: string): string => {
+    const id = currentRosterNodeId(userId);
+    if (!currentRosterNodes.has(id)) {
       const mgr = managers.get(userId);
-      nodes.set(id, {
+      currentRosterNodes.set(id, {
         id,
-        kind: "manager",
+        kind: "current_roster",
         userId,
         displayName: mgr?.displayName ?? userId,
         avatar: mgr?.avatar ?? null,
-        seasons: mgr?.seasons ?? [],
       });
     }
     return id;
   };
 
-  const ensurePlayerNode = (playerId: string): string => {
-    const id = assetNodeId({ kind: "player", playerId });
-    if (!nodes.has(id)) {
-      const p = players.get(playerId);
-      nodes.set(id, {
-        id,
-        kind: "player",
-        playerId,
-        name: p?.name ?? playerId,
-        position: p?.position ?? null,
-        team: p?.team ?? null,
-      });
-    }
-    return id;
-  };
+  // Player tenures.
+  for (const [playerId, events] of playerEvents) {
+    const player = players.get(playerId);
+    const playerName = player?.name ?? playerId;
+    const playerPosition = player?.position ?? null;
+    const playerTeam = player?.team ?? null;
 
-  const ensurePickNode = (
-    leagueId: string,
-    pickSeason: string,
-    pickRound: number,
-    pickOriginalRosterId: number,
-  ): string => {
-    const id = assetNodeId({
-      kind: "pick",
-      leagueId,
-      pickSeason,
-      pickRound,
-      pickOriginalRosterId,
-    });
-    if (!nodes.has(id)) {
-      const origUserId = rosterToUser.get(rosterUserKey(leagueId, pickOriginalRosterId)) ?? null;
-      const origOwner = origUserId ? managers.get(origUserId) : undefined;
-      const key = pickKey({
-        kind: "pick",
-        leagueId,
-        pickSeason,
-        pickRound,
-        pickOriginalRosterId,
-      });
-      const resolved = draftResolutions.get(key);
-      const pickNode: PickNode = {
-        id,
-        kind: "pick",
-        leagueId,
-        pickSeason,
-        pickRound,
-        pickOriginalRosterId,
-        pickOriginalOwnerUserId: origUserId,
-        pickOriginalOwnerName: origOwner?.displayName ?? null,
-        ...(resolved
-          ? { resolvedPlayerId: resolved.playerId, resolvedPlayerName: resolved.playerName }
-          : {}),
-      };
-      nodes.set(id, pickNode);
-    }
-    return id;
-  };
+    let tenureOwner: string | null = null;
+    let tenureStart: { nodeId: string; season: string; week: number } | null = null;
 
-  const managerIdForRoster = (leagueId: string, rosterId: number): string | null => {
-    const userId = rosterToUser.get(rosterUserKey(leagueId, rosterId));
-    return userId ?? null;
-  };
+    for (const ev of events) {
+      const nodeId = eventNodeId(ev);
+      const entry = isEntry(ev);
+      const exit = isExit(ev);
 
-  // Track multi-hop transactions for stats (transactions with >= 3 legs).
-  const multiHopTxIds = new Set<string>();
-
-  for (const ev of assetEvents) {
-    const ts = ev.createdAt;
-
-    const fromUserId = ev.fromRosterId !== null
-      ? managerIdForRoster(ev.leagueId, ev.fromRosterId)
-      : null;
-    const toUserId = ev.toRosterId !== null
-      ? managerIdForRoster(ev.leagueId, ev.toRosterId)
-      : null;
-
-    if (ev.eventType === "trade" && ev.assetKind === "player") {
-      if (!ev.playerId) {
-        console.warn(`[buildGraphFromEvents] trade event ${ev.id} missing playerId; skipping`);
-        continue;
-      }
-      const playerNodeIdStr = ensurePlayerNode(ev.playerId);
-
-      const groupKey = ev.transactionId ?? `trade:${ev.id}`;
-
-      if (fromUserId && ev.fromRosterId !== null) {
-        const mgrId = ensureManagerNode(fromUserId);
-        if (mgrId) {
-          edges.push({
-            id: `trade_out:${ev.id}`,
-            source: mgrId,
-            target: playerNodeIdStr,
-            kind: "trade_out",
-            season: ev.season,
-            week: ev.week,
-            createdAt: ts,
-            transactionId: ev.transactionId,
-            groupKey,
-          });
-        }
-      } else {
-        console.warn(
-          `[buildGraphFromEvents] trade event ${ev.id} has null fromRosterId/fromUser; skipping trade_out edge`,
-        );
-      }
-
-      if (toUserId && ev.toRosterId !== null) {
-        const mgrId = ensureManagerNode(toUserId);
-        if (mgrId) {
-          edges.push({
-            id: `trade_in:${ev.id}`,
-            source: playerNodeIdStr,
-            target: mgrId,
-            kind: "trade_in",
-            season: ev.season,
-            week: ev.week,
-            createdAt: ts,
-            transactionId: ev.transactionId,
-            groupKey,
-          });
-        }
-      } else {
-        console.warn(
-          `[buildGraphFromEvents] trade event ${ev.id} has null toRosterId/toUser; skipping trade_in edge`,
-        );
-      }
-      continue;
-    }
-
-    if (
-      (ev.eventType === "trade" || ev.eventType === "pick_trade") &&
-      ev.assetKind === "pick"
-    ) {
-      if (
-        ev.pickSeason === null ||
-        ev.pickRound === null ||
-        ev.pickOriginalRosterId === null
-      ) {
-        console.warn(
-          `[buildGraphFromEvents] pick_trade event ${ev.id} missing pick tuple (season=${ev.pickSeason}, round=${ev.pickRound}, origRoster=${ev.pickOriginalRosterId}); skipping`,
-        );
-        continue;
-      }
-      const pickNodeIdStr = ensurePickNode(
-        ev.leagueId,
-        ev.pickSeason,
-        ev.pickRound,
-        ev.pickOriginalRosterId,
-      );
-
-      const groupKey = ev.transactionId ?? `pick_trade:${ev.id}`;
-
-      if (fromUserId && ev.fromRosterId !== null) {
-        const mgrId = ensureManagerNode(fromUserId);
-        if (mgrId) {
-          edges.push({
-            id: `pick_trade_out:${ev.id}`,
-            source: mgrId,
-            target: pickNodeIdStr,
-            kind: "pick_trade_out",
-            season: ev.season,
-            week: ev.week,
-            createdAt: ts,
-            transactionId: ev.transactionId,
-            groupKey,
-          });
-        }
-      } else {
-        console.warn(
-          `[buildGraphFromEvents] pick_trade event ${ev.id} has null fromRosterId/fromUser; skipping pick_trade_out edge`,
-        );
-      }
-
-      if (toUserId && ev.toRosterId !== null) {
-        const mgrId = ensureManagerNode(toUserId);
-        if (mgrId) {
-          edges.push({
-            id: `pick_trade_in:${ev.id}`,
-            source: pickNodeIdStr,
-            target: mgrId,
-            kind: "pick_trade_in",
-            season: ev.season,
-            week: ev.week,
-            createdAt: ts,
-            transactionId: ev.transactionId,
-            groupKey,
-          });
-        }
-      } else {
-        console.warn(
-          `[buildGraphFromEvents] pick_trade event ${ev.id} has null toRosterId/toUser; skipping pick_trade_in edge`,
-        );
-      }
-      continue;
-    }
-
-    if (ev.eventType === "draft_selected" && ev.assetKind === "player") {
-      if (!ev.playerId) {
-        console.warn(`[buildGraphFromEvents] draft_selected event ${ev.id} missing playerId; skipping`);
-        continue;
-      }
-      const playerNodeIdStr = ensurePlayerNode(ev.playerId);
-      const groupKey = `draft:${ev.playerId}:${ev.season}`;
-
-      // manager -> player edge
-      if (toUserId && ev.toRosterId !== null) {
-        const mgrId = ensureManagerNode(toUserId);
-        if (mgrId) {
-          edges.push({
-            id: `draft_selected_mgr:${ev.id}`,
-            source: mgrId,
-            target: playerNodeIdStr,
-            kind: "draft_selected_mgr",
-            season: ev.season,
-            week: ev.week,
-            createdAt: ts,
-            transactionId: null,
-            groupKey,
-          });
-        }
-      } else {
-        console.warn(
-          `[buildGraphFromEvents] draft_selected event ${ev.id} has null toRosterId/toUser; skipping manager edge`,
-        );
-      }
-
-      // pick -> player edge if we can identify the pick (event carries pick metadata)
-      if (
-        ev.pickSeason !== null &&
-        ev.pickRound !== null &&
-        ev.pickOriginalRosterId !== null
-      ) {
-        const pickNodeIdStr = ensurePickNode(
-          ev.leagueId,
-          ev.pickSeason,
-          ev.pickRound,
-          ev.pickOriginalRosterId,
-        );
+      if (exit && tenureOwner && tenureStart && tenureOwner === ev.fromUserId) {
         edges.push({
-          id: `draft_selected_pick:${ev.id}`,
-          source: pickNodeIdStr,
-          target: playerNodeIdStr,
-          kind: "draft_selected_pick",
-          season: ev.season,
-          week: ev.week,
-          createdAt: ts,
-          transactionId: null,
-          groupKey,
+          id: `tenure:player:${playerId}:${tenureStart.nodeId}->${nodeId}`,
+          source: tenureStart.nodeId,
+          target: nodeId,
+          managerUserId: tenureOwner,
+          managerName: managerName(tenureOwner),
+          assetKind: "player",
+          playerId,
+          playerName,
+          playerPosition,
+          playerTeam,
+          pickSeason: null,
+          pickRound: null,
+          pickOriginalRosterId: null,
+          pickLabel: null,
+          startSeason: tenureStart.season,
+          startWeek: tenureStart.week,
+          endSeason: ev.season,
+          endWeek: ev.week,
+          isOpen: false,
+        });
+        tenureOwner = null;
+        tenureStart = null;
+      }
+
+      if (entry && ev.toUserId) {
+        tenureOwner = ev.toUserId;
+        tenureStart = { nodeId, season: ev.season, week: ev.week };
+      }
+    }
+
+    // Close open tenure against current roster (if still owned).
+    if (tenureOwner && tenureStart) {
+      const ownerRoster = currentRosters.get(tenureOwner);
+      if (ownerRoster?.has(playerId)) {
+        const anchorId = ensureCurrentRoster(tenureOwner);
+        edges.push({
+          id: `tenure:player:${playerId}:${tenureStart.nodeId}->${anchorId}`,
+          source: tenureStart.nodeId,
+          target: anchorId,
+          managerUserId: tenureOwner,
+          managerName: managerName(tenureOwner),
+          assetKind: "player",
+          playerId,
+          playerName,
+          playerPosition,
+          playerTeam,
+          pickSeason: null,
+          pickRound: null,
+          pickOriginalRosterId: null,
+          pickLabel: null,
+          startSeason: tenureStart.season,
+          startWeek: tenureStart.week,
+          endSeason: null,
+          endWeek: null,
+          isOpen: true,
         });
       }
-      continue;
+      // If player is not on the current owner's roster (data gap, or dropped
+      // without an explicit drop event), we silently truncate the open tenure.
     }
-
-    if (ev.eventType === "waiver_add") {
-      if (!ev.playerId) {
-        console.warn(`[buildGraphFromEvents] waiver_add event ${ev.id} missing playerId; skipping`);
-        continue;
-      }
-      if (!toUserId || ev.toRosterId === null) {
-        console.warn(
-          `[buildGraphFromEvents] waiver_add event ${ev.id} has null toRosterId/toUser; skipping`,
-        );
-        continue;
-      }
-      const playerNodeIdStr = ensurePlayerNode(ev.playerId);
-      const mgrId = ensureManagerNode(toUserId);
-      if (mgrId) {
-        edges.push({
-          id: `waiver_add:${ev.id}`,
-          source: mgrId,
-          target: playerNodeIdStr,
-          kind: "waiver_add",
-          season: ev.season,
-          week: ev.week,
-          createdAt: ts,
-          transactionId: ev.transactionId,
-          groupKey: ev.transactionId ?? `waiver_add:${ev.id}`,
-        });
-      }
-      continue;
-    }
-
-    if (ev.eventType === "free_agent_add") {
-      if (!ev.playerId) {
-        console.warn(`[buildGraphFromEvents] free_agent_add event ${ev.id} missing playerId; skipping`);
-        continue;
-      }
-      if (!toUserId || ev.toRosterId === null) {
-        console.warn(
-          `[buildGraphFromEvents] free_agent_add event ${ev.id} has null toRosterId/toUser; skipping`,
-        );
-        continue;
-      }
-      const playerNodeIdStr = ensurePlayerNode(ev.playerId);
-      const mgrId = ensureManagerNode(toUserId);
-      if (mgrId) {
-        edges.push({
-          id: `free_agent_add:${ev.id}`,
-          source: mgrId,
-          target: playerNodeIdStr,
-          kind: "free_agent_add",
-          season: ev.season,
-          week: ev.week,
-          createdAt: ts,
-          transactionId: ev.transactionId,
-          groupKey: ev.transactionId ?? `free_agent_add:${ev.id}`,
-        });
-      }
-      continue;
-    }
-
-    // Drops + commissioner are not rendered in MVP.
   }
 
-  // Identify multi-hop transactions from enrichedTransactions.
-  for (const [txId, tx] of Object.entries(enrichedTransactions)) {
-    const legs = (tx.adds?.length ?? 0) + (tx.draftPicks?.length ?? 0);
-    if (legs >= 3) multiHopTxIds.add(txId);
+  // Pick tenures. Events for picks are pick_trade (from/to) and draft_selected
+  // (pick resolved into player — closes the pick tenure at the draft node).
+  for (const [key, events] of pickEvents) {
+    const first = events[0];
+    if (!first) continue;
+
+    // Label for edge display — "2024 R1 (Andrew)"
+    const origUser = input.rosterToUser.get(`${first.leagueId}:${first.pickOriginalRosterId}`);
+    const origUserName = origUser ? managerName(origUser) : null;
+    const label = pickLabel(first, origUserName);
+
+    let tenureOwner: string | null = null;
+    let tenureStart: { nodeId: string; season: string; week: number } | null = null;
+
+    for (const ev of events) {
+      const nodeId = eventNodeId(ev);
+
+      if (ev.eventType === "draft_selected") {
+        // Pick resolves — close any open tenure at the draft node.
+        if (tenureOwner && tenureStart) {
+          edges.push({
+            id: `tenure:pick:${key}:${tenureStart.nodeId}->${nodeId}`,
+            source: tenureStart.nodeId,
+            target: nodeId,
+            managerUserId: tenureOwner,
+            managerName: managerName(tenureOwner),
+            assetKind: "pick",
+            playerId: null,
+            playerName: null,
+            playerPosition: null,
+            playerTeam: null,
+            pickSeason: ev.pickSeason,
+            pickRound: ev.pickRound,
+            pickOriginalRosterId: ev.pickOriginalRosterId,
+            pickLabel: label,
+            startSeason: tenureStart.season,
+            startWeek: tenureStart.week,
+            endSeason: ev.season,
+            endWeek: ev.week,
+            isOpen: false,
+          });
+          tenureOwner = null;
+          tenureStart = null;
+        }
+        continue;
+      }
+
+      // pick_trade: both exit and entry.
+      if (tenureOwner && tenureStart && tenureOwner === ev.fromUserId) {
+        edges.push({
+          id: `tenure:pick:${key}:${tenureStart.nodeId}->${nodeId}`,
+          source: tenureStart.nodeId,
+          target: nodeId,
+          managerUserId: tenureOwner,
+          managerName: managerName(tenureOwner),
+          assetKind: "pick",
+          playerId: null,
+          playerName: null,
+          playerPosition: null,
+          playerTeam: null,
+          pickSeason: ev.pickSeason,
+          pickRound: ev.pickRound,
+          pickOriginalRosterId: ev.pickOriginalRosterId,
+          pickLabel: label,
+          startSeason: tenureStart.season,
+          startWeek: tenureStart.week,
+          endSeason: ev.season,
+          endWeek: ev.week,
+          isOpen: false,
+        });
+        tenureOwner = null;
+        tenureStart = null;
+      }
+
+      if (ev.toUserId) {
+        tenureOwner = ev.toUserId;
+        tenureStart = { nodeId, season: ev.season, week: ev.week };
+      }
+    }
+
+    // Close open pick tenure against current pick owner (if still owned).
+    if (tenureOwner && tenureStart) {
+      const ownerPicks = currentPickOwners.get(tenureOwner);
+      if (ownerPicks?.has(key)) {
+        const anchorId = ensureCurrentRoster(tenureOwner);
+        edges.push({
+          id: `tenure:pick:${key}:${tenureStart.nodeId}->${anchorId}`,
+          source: tenureStart.nodeId,
+          target: anchorId,
+          managerUserId: tenureOwner,
+          managerName: managerName(tenureOwner),
+          assetKind: "pick",
+          playerId: null,
+          playerName: null,
+          playerPosition: null,
+          playerTeam: null,
+          pickSeason: first.pickSeason,
+          pickRound: first.pickRound,
+          pickOriginalRosterId: first.pickOriginalRosterId,
+          pickLabel: label,
+          startSeason: tenureStart.season,
+          startWeek: tenureStart.week,
+          endSeason: null,
+          endWeek: null,
+          isOpen: true,
+        });
+      }
+    }
   }
 
-  const nodeList = Array.from(nodes.values());
-  const stats = computeStats(nodeList, edges, enrichedTransactions, assetEvents);
+  // -------------------------------------------------------------------------
+  // 3. Emit the graph.
+  // -------------------------------------------------------------------------
 
-  const out: InternalGraph = { nodes: nodeList, edges, stats };
-  out.__multiHopTxIds = multiHopTxIds;
-  return out;
+  const allNodes: GraphNode[] = [
+    ...transactionNodes.values(),
+    ...currentRosterNodes.values(),
+  ];
+
+  const stats: GraphStats = {
+    totalTransactions: transactionNodes.size,
+    totalTenures: edges.length,
+    openTenures: edges.filter((e) => e.isOpen).length,
+    playersInvolved: new Set(
+      edges.filter((e) => e.assetKind === "player").map((e) => e.playerId),
+    ).size,
+    picksInvolved: new Set(
+      edges.filter((e) => e.assetKind === "pick").map((e) => {
+        if (e.pickSeason === null || e.pickRound === null || e.pickOriginalRosterId === null) {
+          return null;
+        }
+        return `${e.pickSeason}:${e.pickRound}:${e.pickOriginalRosterId}`;
+      }).filter((k): k is string => k !== null),
+    ).size,
+  };
+
+  return { nodes: allNodes, edges, stats };
 }
+
+// ---------------------------------------------------------------------------
+// applyGraphFilters — filter visible subset by season / manager / txKind.
+// ---------------------------------------------------------------------------
 
 export function applyGraphFilters(graph: Graph, filters: GraphFilters): Graph {
-  const eventTypeSet = new Set(filters.eventTypes);
   const seasonSet = new Set(filters.seasons);
   const managerSet = new Set(filters.managers);
+  const txKindSet = new Set(filters.txKinds);
 
-  // Build a quick manager-node lookup (id -> userId).
-  const managerIdToUserId = new Map<string, string>();
-  for (const n of graph.nodes) {
-    if (n.kind === "manager") managerIdToUserId.set(n.id, n.userId);
-  }
-
-  const filteredEdges = graph.edges.filter((e) => {
-    if (eventTypeSet.size > 0 && !eventTypeSet.has(e.kind)) return false;
-    if (seasonSet.size > 0 && !seasonSet.has(e.season)) return false;
+  const keepNode = (n: GraphNode): boolean => {
+    if (n.kind === "current_roster") {
+      if (managerSet.size > 0 && !managerSet.has(n.userId)) return false;
+      return true;
+    }
+    // transaction node
+    if (seasonSet.size > 0 && !seasonSet.has(n.season)) return false;
+    if (txKindSet.size > 0 && !txKindSet.has(n.txKind)) return false;
     if (managerSet.size > 0) {
-      const srcUser = managerIdToUserId.get(e.source);
-      const tgtUser = managerIdToUserId.get(e.target);
-      const matchesMgr = (srcUser && managerSet.has(srcUser)) || (tgtUser && managerSet.has(tgtUser));
-      if (!matchesMgr) return false;
+      const hits = n.managers.some((m) => managerSet.has(m.userId));
+      if (!hits) return false;
     }
     return true;
-  });
+  };
 
-  // Keep nodes that are:
-  //  - manager nodes (always — preserves structure), OR
-  //  - nodes that have at least one incident edge in the filtered set.
-  const incident = new Set<string>();
-  for (const e of filteredEdges) {
-    incident.add(e.source);
-    incident.add(e.target);
-  }
-
+  const keptIds = new Set<string>();
   const filteredNodes = graph.nodes.filter((n) => {
-    if (isManagerNode(n)) return true;
-    return incident.has(n.id);
+    if (keepNode(n)) {
+      keptIds.add(n.id);
+      return true;
+    }
+    return false;
   });
 
-  const multiHopTxIds = (graph as InternalGraph).__multiHopTxIds ?? new Set<string>();
-  const stats = recomputeStatsFromGraph(filteredNodes, filteredEdges, multiHopTxIds);
-
-  const out: InternalGraph = { nodes: filteredNodes, edges: filteredEdges, stats };
-  out.__multiHopTxIds = multiHopTxIds;
-  return out;
-}
-
-export function focusSubgraph(graph: Graph, focus: GraphFocus, hops: number): Graph {
-  let focusNodeId: string;
-  if (focus.kind === "manager") {
-    focusNodeId = managerNodeId(focus.userId);
-  } else if (focus.kind === "player") {
-    focusNodeId = assetNodeId({ kind: "player", playerId: focus.playerId });
-  } else {
-    focusNodeId = assetNodeId({
-      kind: "pick",
-      leagueId: focus.leagueId,
-      pickSeason: focus.pickSeason,
-      pickRound: focus.pickRound,
-      pickOriginalRosterId: focus.pickOriginalRosterId,
-    });
-  }
-
-  if (!graph.nodes.some((n) => n.id === focusNodeId)) {
-    // Focus target not present — return an empty graph (keeps invariants clean).
-    const multiHopTxIds = (graph as InternalGraph).__multiHopTxIds ?? new Set<string>();
-    const stats = recomputeStatsFromGraph([], [], multiHopTxIds);
-    const out: InternalGraph = { nodes: [], edges: [], stats };
-    out.__multiHopTxIds = multiHopTxIds;
-    return out;
-  }
-
-  // Build adjacency (undirected).
-  const adjacency = new Map<string, Set<string>>();
-  for (const e of graph.edges) {
-    if (!adjacency.has(e.source)) adjacency.set(e.source, new Set());
-    if (!adjacency.has(e.target)) adjacency.set(e.target, new Set());
-    adjacency.get(e.source)!.add(e.target);
-    adjacency.get(e.target)!.add(e.source);
-  }
-
-  // BFS
-  const reachable = new Set<string>([focusNodeId]);
-  let frontier: string[] = [focusNodeId];
-  for (let h = 0; h < Math.max(0, hops); h++) {
-    const next: string[] = [];
-    for (const id of frontier) {
-      const neigh = adjacency.get(id);
-      if (!neigh) continue;
-      for (const nid of neigh) {
-        if (!reachable.has(nid)) {
-          reachable.add(nid);
-          next.push(nid);
-        }
-      }
-    }
-    frontier = next;
-    if (frontier.length === 0) break;
-  }
-
-  const filteredNodes = graph.nodes.filter((n) => reachable.has(n.id));
   const filteredEdges = graph.edges.filter(
-    (e) => reachable.has(e.source) && reachable.has(e.target),
+    (e) => keptIds.has(e.source) && keptIds.has(e.target),
   );
 
-  const multiHopTxIds = (graph as InternalGraph).__multiHopTxIds ?? new Set<string>();
-  const stats = recomputeStatsFromGraph(filteredNodes, filteredEdges, multiHopTxIds);
-
-  const out: InternalGraph = { nodes: filteredNodes, edges: filteredEdges, stats };
-  out.__multiHopTxIds = multiHopTxIds;
-  return out;
-}
-
-export function computeHeaderStats(graph: Graph): {
-  trades: number;
-  multiHopChains: number;
-  picksTraded: number;
-} {
-  return {
-    trades: graph.stats.totalTrades,
-    multiHopChains: graph.stats.multiHopChains,
-    picksTraded: graph.stats.picksTraded,
+  const stats: GraphStats = {
+    totalTransactions: filteredNodes.filter((n) => n.kind === "transaction").length,
+    totalTenures: filteredEdges.length,
+    openTenures: filteredEdges.filter((e) => e.isOpen).length,
+    playersInvolved: new Set(
+      filteredEdges.filter((e) => e.assetKind === "player").map((e) => e.playerId),
+    ).size,
+    picksInvolved: new Set(
+      filteredEdges.filter((e) => e.assetKind === "pick").map((e) => {
+        if (e.pickSeason === null || e.pickRound === null || e.pickOriginalRosterId === null) {
+          return null;
+        }
+        return `${e.pickSeason}:${e.pickRound}:${e.pickOriginalRosterId}`;
+      }).filter((k): k is string => k !== null),
+    ).size,
   };
+
+  return { nodes: filteredNodes, edges: filteredEdges, stats };
 }

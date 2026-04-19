@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { GraphEdgeKind } from "@/lib/assetGraph";
+import type { TransactionKind } from "@/lib/assetGraph";
 import { trackEvent } from "@/lib/analytics";
 
 interface ManagerOption {
@@ -15,30 +15,21 @@ interface GraphFilterSidebarProps {
   managers: ManagerOption[];
   selectedSeasons: string[];
   selectedManagers: string[];
-  selectedEventTypes: GraphEdgeKind[];
-  layoutMode: "band" | "dagre";
+  selectedTxKinds: TransactionKind[];
   onSeasonsChange: (s: string[]) => void;
   onManagersChange: (m: string[]) => void;
-  onEventTypesChange: (e: GraphEdgeKind[]) => void;
-  onLayoutModeChange: (m: "band" | "dagre") => void;
+  onTxKindsChange: (k: TransactionKind[]) => void;
 }
 
-const TRADE_KINDS: GraphEdgeKind[] = [
-  "trade_out",
-  "trade_in",
-  "pick_trade_out",
-  "pick_trade_in",
+const TX_KIND_LABELS: Array<[TransactionKind, string]> = [
+  ["trade", "Trades"],
+  ["draft", "Drafts"],
+  ["waiver", "Waivers"],
+  ["free_agent", "Free agents"],
 ];
-const DRAFT_KINDS: GraphEdgeKind[] = ["draft_selected_mgr", "draft_selected_pick"];
-const WAIVER_KINDS: GraphEdgeKind[] = ["waiver_add"];
-const FREE_AGENT_KINDS: GraphEdgeKind[] = ["free_agent_add"];
 
 function toggle<T>(arr: T[], value: T): T[] {
   return arr.includes(value) ? arr.filter((v) => v !== value) : [...arr, value];
-}
-
-function allChecked(target: GraphEdgeKind[], selected: GraphEdgeKind[]): boolean {
-  return target.every((k) => selected.includes(k));
 }
 
 function Section({
@@ -51,10 +42,7 @@ function Section({
   defaultOpen?: boolean;
 }) {
   return (
-    <details
-      className="group border rounded-md bg-card"
-      open={defaultOpen}
-    >
+    <details className="group border rounded-md bg-card" open={defaultOpen}>
       <summary className="flex items-center justify-between cursor-pointer list-none select-none px-3 py-2 text-sm font-medium">
         <span>{title}</span>
         <span
@@ -74,12 +62,10 @@ export function GraphFilterSidebar({
   managers,
   selectedSeasons,
   selectedManagers,
-  selectedEventTypes,
-  layoutMode,
+  selectedTxKinds,
   onSeasonsChange,
   onManagersChange,
-  onEventTypesChange,
-  onLayoutModeChange,
+  onTxKindsChange,
 }: GraphFilterSidebarProps) {
   const [managerQuery, setManagerQuery] = useState("");
 
@@ -101,20 +87,14 @@ export function GraphFilterSidebar({
     trackEvent("graph_filter_changed", { filterName: "managers", newValue: next });
   }
 
-  function handleEventTypeGroupToggle(group: GraphEdgeKind[]) {
-    const hasAll = allChecked(group, selectedEventTypes);
-    const next = hasAll
-      ? selectedEventTypes.filter((k) => !group.includes(k))
-      : Array.from(new Set<GraphEdgeKind>([...selectedEventTypes, ...group]));
-    onEventTypesChange(next);
-    trackEvent("graph_filter_changed", { filterName: "eventTypes", newValue: next });
+  function handleTxKindToggle(kind: TransactionKind) {
+    const next = toggle(selectedTxKinds, kind);
+    onTxKindsChange(next);
+    trackEvent("graph_filter_changed", { filterName: "txKinds", newValue: next });
   }
 
   return (
-    <aside
-      aria-label="Graph filters"
-      className="flex flex-col gap-3 text-sm"
-    >
+    <aside aria-label="Graph filters" className="flex flex-col gap-3 text-sm">
       <Section title="Seasons">
         {seasons.length === 0 ? (
           <p className="text-xs text-muted-foreground">No seasons yet.</p>
@@ -171,84 +151,22 @@ export function GraphFilterSidebar({
         </div>
       </Section>
 
-      <Section title="Event types">
+      <Section title="Transaction types">
         <ul className="space-y-1.5">
-          <li>
-            <label className="inline-flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                className="accent-primary"
-                checked={allChecked(TRADE_KINDS, selectedEventTypes)}
-                onChange={() => handleEventTypeGroupToggle(TRADE_KINDS)}
-              />
-              <span>Trades</span>
-            </label>
-          </li>
-          <li>
-            <label className="inline-flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                className="accent-primary"
-                checked={allChecked(DRAFT_KINDS, selectedEventTypes)}
-                onChange={() => handleEventTypeGroupToggle(DRAFT_KINDS)}
-              />
-              <span>Drafts</span>
-            </label>
-          </li>
-          <li>
-            <label className="inline-flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                className="accent-primary"
-                checked={allChecked(WAIVER_KINDS, selectedEventTypes)}
-                onChange={() => handleEventTypeGroupToggle(WAIVER_KINDS)}
-              />
-              <span>Waivers</span>
-            </label>
-          </li>
-          <li>
-            <label className="inline-flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                className="accent-primary"
-                checked={allChecked(FREE_AGENT_KINDS, selectedEventTypes)}
-                onChange={() => handleEventTypeGroupToggle(FREE_AGENT_KINDS)}
-              />
-              <span>Free agents</span>
-            </label>
-          </li>
+          {TX_KIND_LABELS.map(([kind, label]) => (
+            <li key={kind}>
+              <label className="inline-flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="accent-primary"
+                  checked={selectedTxKinds.includes(kind)}
+                  onChange={() => handleTxKindToggle(kind)}
+                />
+                <span>{label}</span>
+              </label>
+            </li>
+          ))}
         </ul>
-      </Section>
-
-      <Section title="Layout" defaultOpen={false}>
-        <div className="flex items-center gap-4">
-          <label className="inline-flex items-center gap-1.5 cursor-pointer text-sm">
-            <input
-              type="radio"
-              name="graph-layout"
-              className="accent-primary"
-              checked={layoutMode === "band"}
-              onChange={() => {
-                onLayoutModeChange("band");
-                trackEvent("graph_filter_changed", { filterName: "layout", newValue: "band" });
-              }}
-            />
-            <span>Band</span>
-          </label>
-          <label className="inline-flex items-center gap-1.5 cursor-pointer text-sm">
-            <input
-              type="radio"
-              name="graph-layout"
-              className="accent-primary"
-              checked={layoutMode === "dagre"}
-              onChange={() => {
-                onLayoutModeChange("dagre");
-                trackEvent("graph_filter_changed", { filterName: "layout", newValue: "dagre" });
-              }}
-            />
-            <span>Dagre</span>
-          </label>
-        </div>
       </Section>
     </aside>
   );

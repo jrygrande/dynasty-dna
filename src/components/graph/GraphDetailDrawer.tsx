@@ -3,16 +3,11 @@
 import { useEffect, useRef } from "react";
 import Link from "next/link";
 import { X } from "lucide-react";
-import type {
-  GraphEdge,
-  GraphNode,
-  GraphSelection,
-} from "@/lib/assetGraph";
+import type { GraphEdge, GraphNode, GraphSelection } from "@/lib/assetGraph";
 import type { EnrichedTransaction } from "@/lib/transactionEnrichment";
 import { TransactionCard, type TransactionData } from "@/components/TransactionCard";
 import { trackEvent } from "@/lib/analytics";
 
-/** Adapt `EnrichedTransaction` (null) to `TransactionData` (optional). */
 function toTransactionData(tx: EnrichedTransaction): TransactionData {
   return {
     ...tx,
@@ -32,13 +27,6 @@ interface GraphDetailDrawerProps {
   onClose: () => void;
 }
 
-function getRoundSuffix(round: number): string {
-  if (round === 1) return "st";
-  if (round === 2) return "nd";
-  if (round === 3) return "rd";
-  return "th";
-}
-
 export function GraphDetailDrawer({
   selection,
   nodes,
@@ -50,7 +38,6 @@ export function GraphDetailDrawer({
   const closeBtnRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
 
-  // Analytics: fire once on mount for this selection.
   useEffect(() => {
     if (selection.type === "node") {
       const node = nodes.find((n) => n.id === selection.nodeId);
@@ -58,15 +45,13 @@ export function GraphDetailDrawer({
     } else {
       const edge = edges.find((e) => e.id === selection.edgeId);
       trackEvent("graph_edge_selected", {
-        kind: edge?.kind ?? "unknown",
-        hasTransactionId: Boolean(edge?.transactionId),
+        assetKind: edge?.assetKind ?? "unknown",
+        isOpen: edge?.isOpen ?? false,
       });
     }
-    // Only fire when the selection identity changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selection.type, selection.type === "node" ? selection.nodeId : selection.edgeId]);
 
-  // Keyboard: Esc closes. Focus trap within the drawer.
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
       if (e.key === "Escape") {
@@ -76,7 +61,7 @@ export function GraphDetailDrawer({
       }
       if (e.key === "Tab" && panelRef.current) {
         const focusable = panelRef.current.querySelectorAll<HTMLElement>(
-          'a, button, input, select, textarea, [tabindex]:not([tabindex="-1"])'
+          'a, button, input, select, textarea, [tabindex]:not([tabindex="-1"])',
         );
         if (focusable.length === 0) return;
         const first = focusable[0];
@@ -94,7 +79,6 @@ export function GraphDetailDrawer({
       }
     }
     document.addEventListener("keydown", handleKey);
-    // Focus the close button on open.
     closeBtnRef.current?.focus();
     return () => document.removeEventListener("keydown", handleKey);
   }, [onClose]);
@@ -124,13 +108,12 @@ export function GraphDetailDrawer({
         {selection.type === "node" ? (
           <NodeDetail
             node={nodes.find((n) => n.id === selection.nodeId) ?? null}
+            transactions={transactions}
             familyId={familyId}
           />
         ) : (
           <EdgeDetail
             edge={edges.find((e) => e.id === selection.edgeId) ?? null}
-            transactions={transactions}
-            nodes={nodes}
             familyId={familyId}
           />
         )}
@@ -139,150 +122,139 @@ export function GraphDetailDrawer({
   );
 }
 
-function NodeDetail({ node, familyId }: { node: GraphNode | null; familyId: string }) {
+const TX_KIND_LABEL: Record<string, string> = {
+  draft: "Draft pick",
+  trade: "Trade",
+  waiver: "Waiver",
+  free_agent: "Free agent",
+  commissioner: "Commissioner",
+};
+
+function NodeDetail({
+  node,
+  transactions,
+  familyId,
+}: {
+  node: GraphNode | null;
+  transactions: Record<string, EnrichedTransaction>;
+  familyId: string;
+}) {
   if (!node) {
     return <p className="text-sm text-muted-foreground">Node not found.</p>;
   }
 
-  if (node.kind === "manager") {
-    return (
-      <div className="space-y-3">
-        <div className="flex items-center gap-3">
-          {node.avatar ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={node.avatar}
-              alt=""
-              className="h-10 w-10 rounded-full object-cover"
-            />
-          ) : (
-            <div className="h-10 w-10 rounded-full bg-muted" aria-hidden />
-          )}
-          <div>
-            <p className="text-sm font-semibold">{node.displayName}</p>
-            <p className="text-xs text-muted-foreground">Manager</p>
-          </div>
-        </div>
-        {node.seasons.length > 0 && (
-          <div>
-            <p className="text-xs text-muted-foreground mb-1">Seasons</p>
-            <div className="flex flex-wrap gap-1">
-              {node.seasons.map((s) => (
-                <span
-                  key={s}
-                  className="px-1.5 py-0.5 text-xs rounded-md bg-muted text-muted-foreground"
-                >
-                  {s}
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
-        {typeof node.tradeCount === "number" && (
-          <p className="text-xs text-muted-foreground">
-            {node.tradeCount} trade{node.tradeCount === 1 ? "" : "s"}
-          </p>
-        )}
-      </div>
-    );
-  }
-
-  if (node.kind === "player") {
+  if (node.kind === "current_roster") {
     return (
       <div className="space-y-3">
         <div>
-          <p className="text-sm font-semibold">{node.name}</p>
-          <p className="text-xs text-muted-foreground">
-            {node.position ?? "—"}
-            {node.team ? ` · ${node.team}` : ""}
+          <p className="font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
+            Current roster
           </p>
+          <p className="text-sm font-semibold">{node.displayName}</p>
         </div>
-        <Link
-          href={`/league/${familyId}/timeline?playerId=${encodeURIComponent(node.playerId)}`}
-          className="inline-block text-xs text-primary hover:underline"
-        >
-          View full timeline &rarr;
-        </Link>
+        <p className="text-xs text-muted-foreground">
+          Assets currently held by this manager. Every incoming edge represents a
+          player or pick still on the roster.
+        </p>
       </div>
     );
   }
 
-  // pick
+  // transaction node
+  if (node.transactionId && transactions[node.transactionId]) {
+    return <TransactionCard tx={toTransactionData(transactions[node.transactionId])} familyId={familyId} />;
+  }
+
+  // draft transaction (no transactionId — render summary from node data)
+  const firstAsset = node.assets[0];
   return (
-    <div className="space-y-3">
-      <div>
-        <p className="text-sm font-semibold">
-          {node.pickSeason} R{node.pickRound}
-          {node.pickRound ? (
-            <span className="text-muted-foreground font-normal">
-              {" "}
-              ({node.pickRound}
-              {getRoundSuffix(node.pickRound)} round)
-            </span>
-          ) : null}
-        </p>
-        {node.pickOriginalOwnerName && (
-          <p className="text-xs text-muted-foreground">
-            Original owner: {node.pickOriginalOwnerName}
+    <div className="space-y-3 border rounded-lg p-3">
+      <p className="font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
+        {TX_KIND_LABEL[node.txKind] ?? node.txKind}
+      </p>
+      {node.managers.length > 0 && (
+        <div>
+          <p className="text-xs text-muted-foreground">Manager</p>
+          <p className="text-sm font-semibold">
+            {node.managers.map((m) => m.displayName).join(" · ")}
           </p>
-        )}
-      </div>
-      {node.resolvedPlayerId && node.resolvedPlayerName && (
-        <Link
-          href={`/league/${familyId}/timeline?playerId=${encodeURIComponent(node.resolvedPlayerId)}`}
-          className="inline-block text-xs text-primary hover:underline"
-        >
-          Drafted: {node.resolvedPlayerName} &rarr;
-        </Link>
+        </div>
       )}
+      {firstAsset && firstAsset.kind === "player" && (
+        <div>
+          <p className="text-xs text-muted-foreground">Player</p>
+          <p className="text-sm">
+            {firstAsset.playerPosition ? `${firstAsset.playerPosition} · ` : ""}
+            {firstAsset.playerName}
+          </p>
+          {firstAsset.playerId && (
+            <Link
+              href={`/league/${familyId}/player/${encodeURIComponent(firstAsset.playerId)}`}
+              className="inline-block mt-1 text-xs text-primary hover:underline"
+            >
+              Open player &rarr;
+            </Link>
+          )}
+        </div>
+      )}
+      {firstAsset && firstAsset.kind === "pick" && (
+        <div>
+          <p className="text-xs text-muted-foreground">Pick</p>
+          <p className="text-sm">{firstAsset.pickLabel}</p>
+        </div>
+      )}
+      <p className="text-xs text-muted-foreground">
+        {node.season}
+        {node.week ? ` · Week ${node.week}` : ""}
+      </p>
     </div>
   );
 }
 
-function EdgeDetail({
-  edge,
-  transactions,
-  nodes,
-  familyId,
-}: {
-  edge: GraphEdge | null;
-  transactions: Record<string, EnrichedTransaction>;
-  nodes: GraphNode[];
-  familyId: string;
-}) {
+function EdgeDetail({ edge, familyId }: { edge: GraphEdge | null; familyId: string }) {
   if (!edge) {
     return <p className="text-sm text-muted-foreground">Edge not found.</p>;
   }
+  const endLabel = edge.isOpen
+    ? "Ongoing"
+    : `${edge.endSeason ?? ""}${edge.endWeek ? ` · W${edge.endWeek}` : ""}`;
 
-  const tx = edge.transactionId ? transactions[edge.transactionId] : null;
-  if (tx) {
-    return <TransactionCard tx={toTransactionData(tx)} familyId={familyId} />;
-  }
-
-  // Draft pick / draft selected fallback — no backing transaction.
-  const sourceNode = nodes.find((n) => n.id === edge.source) ?? null;
-  const targetNode = nodes.find((n) => n.id === edge.target) ?? null;
   return (
-    <div className="space-y-2 border rounded-lg p-3">
-      <p className="text-xs uppercase tracking-wide text-muted-foreground">
-        {edge.kind.replace(/_/g, " ")}
+    <div className="space-y-3 border rounded-lg p-3">
+      <p className="font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
+        Tenure{edge.isOpen ? " · Open" : ""}
       </p>
-      <p className="text-sm">
-        {describeNode(sourceNode)} &rarr; {describeNode(targetNode)}
-      </p>
+      {edge.assetKind === "player" ? (
+        <div>
+          <p className="text-xs text-muted-foreground">Player</p>
+          <p className="text-sm font-semibold">
+            {edge.playerPosition ? `${edge.playerPosition} · ` : ""}
+            {edge.playerName}
+          </p>
+          {edge.playerId && (
+            <Link
+              href={`/league/${familyId}/player/${encodeURIComponent(edge.playerId)}`}
+              className="inline-block mt-1 text-xs text-primary hover:underline"
+            >
+              Open player &rarr;
+            </Link>
+          )}
+        </div>
+      ) : (
+        <div>
+          <p className="text-xs text-muted-foreground">Pick</p>
+          <p className="text-sm font-semibold">{edge.pickLabel}</p>
+        </div>
+      )}
+      <div>
+        <p className="text-xs text-muted-foreground">Manager</p>
+        <p className="text-sm">{edge.managerName}</p>
+      </div>
       <p className="text-xs text-muted-foreground">
-        {edge.season}
-        {edge.week ? ` · Week ${edge.week}` : ""}
+        {edge.startSeason} W{edge.startWeek} → {endLabel}
       </p>
     </div>
   );
-}
-
-function describeNode(n: GraphNode | null): string {
-  if (!n) return "—";
-  if (n.kind === "manager") return n.displayName;
-  if (n.kind === "player") return n.name;
-  return `${n.pickSeason} R${n.pickRound}`;
 }
 
 export default GraphDetailDrawer;

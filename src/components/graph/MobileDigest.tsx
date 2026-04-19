@@ -40,30 +40,6 @@ export function MobileDigest({ familyId, response, loading }: MobileDigestProps)
       .slice(0, 5);
   }, [response]);
 
-  const managerPairs = useMemo(() => {
-    if (!response) return [];
-    const nodes = response.nodes;
-    const managerById = new Map(
-      nodes.filter((n) => n.kind === "manager").map((n) => [n.id, n])
-    );
-    const counts = new Map<string, { a: string; b: string; count: number }>();
-    for (const e of response.edges) {
-      if (!e.transactionId) continue;
-      const source = managerById.get(e.source);
-      const target = managerById.get(e.target);
-      if (!source || !target) continue;
-      if (source.kind !== "manager" || target.kind !== "manager") continue;
-      const pair = [source.displayName, target.displayName].sort();
-      const key = `${pair[0]}||${pair[1]}`;
-      const existing = counts.get(key);
-      if (existing) existing.count += 1;
-      else counts.set(key, { a: pair[0], b: pair[1], count: 1 });
-    }
-    return Array.from(counts.values())
-      .sort((x, y) => y.count - x.count)
-      .slice(0, 8);
-  }, [response]);
-
   return (
     <div className="min-h-screen p-4 space-y-4">
       <div className="border-b pb-3">
@@ -93,12 +69,16 @@ export function MobileDigest({ familyId, response, loading }: MobileDigestProps)
       {!loading && response && (
         <>
           <section>
-            <h2 className="text-sm font-medium mb-2">Multi-hop chains this season</h2>
+            <h2 className="text-sm font-medium mb-2">Network stats</h2>
             <p className="text-sm text-muted-foreground">
-              <span className="text-foreground font-semibold text-lg">
-                {response.stats.multiHopChains}
+              <span className="text-foreground font-semibold font-mono">
+                {response.stats.totalTransactions}
               </span>{" "}
-              chain{response.stats.multiHopChains === 1 ? "" : "s"} with 3+ legs.
+              transactions ·{" "}
+              <span className="text-foreground font-semibold font-mono">
+                {response.stats.totalTenures}
+              </span>{" "}
+              tenures tracked.
             </p>
           </section>
 
@@ -119,38 +99,6 @@ export function MobileDigest({ familyId, response, loading }: MobileDigestProps)
                     <TransactionCard tx={toTransactionData(tx)} familyId={familyId} />
                   </Link>
                 ))}
-              </div>
-            )}
-          </section>
-
-          <section>
-            <h2 className="text-sm font-medium mb-2">Manager-to-manager trade frequency</h2>
-            {managerPairs.length === 0 ? (
-              <p className="text-xs text-muted-foreground">
-                No trades between managers in the current filter.
-              </p>
-            ) : (
-              <div className="border rounded-md overflow-hidden">
-                <table className="w-full text-sm">
-                  <thead className="bg-muted/50 text-xs text-muted-foreground">
-                    <tr>
-                      <th className="text-left font-medium px-3 py-2">Managers</th>
-                      <th className="text-right font-medium px-3 py-2">Edges</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {managerPairs.map((p) => (
-                      <tr key={`${p.a}||${p.b}`} className="border-t">
-                        <td className="px-3 py-2">
-                          {p.a} &harr; {p.b}
-                        </td>
-                        <td className="px-3 py-2 text-right font-mono text-xs">
-                          {p.count}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
               </div>
             )}
           </section>

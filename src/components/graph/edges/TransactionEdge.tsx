@@ -3,37 +3,17 @@
 import { memo } from "react";
 import { BaseEdge, EdgeLabelRenderer, getBezierPath, type EdgeProps } from "reactflow";
 
-import type { GraphEdgeKind } from "@/lib/assetGraph";
-
 export interface TransactionEdgeData {
-  kind: GraphEdgeKind;
-  transactionId: string | null;
-  groupKey: string;
-  /** Set by the parent when the edge is not incident to the hovered node. */
+  assetKind: "player" | "pick";
+  /** Label shown at edge midpoint: "Bijan Robinson" or "2024 R1". */
+  assetLabel: string;
+  /** Manager who held the asset during this tenure. */
+  managerName: string;
+  /** True when the edge is not incident to the hovered node. */
   dimmed?: boolean;
-  /** True when the edge shares a groupKey with the currently-hovered edge. */
-  groupHighlighted?: boolean;
+  /** True when the tenure is still open (target is a current-roster anchor). */
+  isOpen?: boolean;
 }
-
-interface EdgeStyle {
-  stroke: string;
-  strokeWidth: number;
-  dashArray: string | undefined;
-}
-
-// Styles per edge kind. Colors are Tailwind-ish explicit hex/rgb fallbacks so
-// the SVG stroke attribute reads well in light + dark mode without tying to a
-// single CSS variable (reactflow edges render outside the card tree).
-const STYLE_BY_KIND: Record<GraphEdgeKind, EdgeStyle> = {
-  trade_out:           { stroke: "#a855f7", strokeWidth: 1.5,  dashArray: "6 4" },
-  trade_in:            { stroke: "#a855f7", strokeWidth: 1.5,  dashArray: undefined },
-  pick_trade_out:      { stroke: "#a855f7", strokeWidth: 1.5,  dashArray: "6 4" },
-  pick_trade_in:       { stroke: "#a855f7", strokeWidth: 1.5,  dashArray: undefined },
-  draft_selected_mgr:  { stroke: "#3b82f6", strokeWidth: 1.5,  dashArray: undefined },
-  draft_selected_pick: { stroke: "#3b82f6", strokeWidth: 2,    dashArray: undefined },
-  waiver_add:          { stroke: "#f59e0b", strokeWidth: 1.25, dashArray: undefined },
-  free_agent_add:      { stroke: "#22c55e", strokeWidth: 1.25, dashArray: undefined },
-};
 
 function TransactionEdgeImpl(props: EdgeProps<TransactionEdgeData>) {
   const {
@@ -49,10 +29,7 @@ function TransactionEdgeImpl(props: EdgeProps<TransactionEdgeData>) {
     markerEnd,
   } = props;
 
-  const kind = data?.kind ?? "trade_in";
-  const style = STYLE_BY_KIND[kind];
-
-  const [edgePath] = getBezierPath({
+  const [edgePath, labelX, labelY] = getBezierPath({
     sourceX,
     sourceY,
     sourcePosition,
@@ -61,8 +38,14 @@ function TransactionEdgeImpl(props: EdgeProps<TransactionEdgeData>) {
     targetPosition,
   });
 
-  const dimmed = !!data?.dimmed && !data?.groupHighlighted;
-  const opacity = dimmed ? 0.15 : 1;
+  const dimmed = !!data?.dimmed;
+  const opacity = dimmed ? 0.18 : 1;
+  const isOpen = !!data?.isOpen;
+  const isPick = data?.assetKind === "pick";
+
+  const stroke = isPick ? "hsl(var(--chart-4))" : "hsl(var(--primary))";
+  const strokeWidth = selected ? 2 : 1.25;
+  const dashArray = isOpen ? "4 3" : isPick ? "2 3" : undefined;
 
   return (
     <>
@@ -71,28 +54,28 @@ function TransactionEdgeImpl(props: EdgeProps<TransactionEdgeData>) {
         path={edgePath}
         markerEnd={markerEnd}
         style={{
-          stroke: style.stroke,
-          strokeWidth: selected ? style.strokeWidth + 0.75 : style.strokeWidth,
-          strokeDasharray: style.dashArray,
+          stroke,
+          strokeWidth,
+          strokeDasharray: dashArray,
           opacity,
           transition: "opacity 120ms linear",
         }}
       />
-      {selected ? (
+      {data?.assetLabel && !dimmed ? (
         <EdgeLabelRenderer>
           <div
-            // Tiny focus ring indicator near the middle of the edge so selection is discoverable.
-            className="pointer-events-none absolute rounded-full ring-2 ring-primary"
+            className="pointer-events-none absolute font-mono text-[10px] text-foreground/80"
             style={{
-              transform: `translate(-50%, -50%) translate(${(sourceX + targetX) / 2}px,${
-                (sourceY + targetY) / 2
-              }px)`,
-              width: 6,
-              height: 6,
-              background: style.stroke,
+              transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
+              background: "hsl(var(--background) / 0.85)",
+              padding: "1px 4px",
+              borderRadius: 3,
+              whiteSpace: "nowrap",
             }}
-            aria-hidden="true"
-          />
+          >
+            {data.assetLabel}
+            <span className="ml-1 text-muted-foreground">· {data.managerName}</span>
+          </div>
         </EdgeLabelRenderer>
       ) : null}
     </>

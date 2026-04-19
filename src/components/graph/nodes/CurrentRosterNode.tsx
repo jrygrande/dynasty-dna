@@ -6,10 +6,9 @@ import { Handle, Position, type NodeProps } from "reactflow";
 import { cn } from "@/lib/utils";
 import { RemoveButton } from "./RemoveButton";
 
-export interface ManagerNodeData {
+export interface CurrentRosterNodeData {
   displayName: string;
   avatar: string | null;
-  tradeCount?: number;
   selected?: boolean;
   dimmed?: boolean;
   expanded?: boolean;
@@ -23,27 +22,24 @@ function initials(name: string): string {
   return (parts[0]![0]! + parts[parts.length - 1]![0]!).toUpperCase();
 }
 
-function ManagerNodeImpl({ id, data, selected }: NodeProps<ManagerNodeData>) {
+function CurrentRosterNodeImpl({ id, data, selected }: NodeProps<CurrentRosterNodeData>) {
   const isSelected = selected || data.selected;
   const unexpanded = data.expanded === false;
+
   return (
     <div
       className={cn(
-        "group relative flex items-center gap-2 rounded-md border bg-card px-3 py-2 shadow-sm",
-        "text-card-foreground transition-opacity",
+        "group relative flex items-center gap-2 rounded-md border-2 border-primary/40 bg-primary/5 px-3 py-2 text-card-foreground shadow-sm transition-opacity",
         isSelected && "ring-2 ring-primary",
         unexpanded && !isSelected && "border-dashed",
         data.dimmed && "opacity-30",
       )}
-      style={{ width: 140, height: 56 }}
-      aria-label={`Manager ${data.displayName}`}
+      style={{ width: 152, height: 56 }}
+      aria-label={`Current roster of ${data.displayName}`}
     >
-      <Handle type="target" position={Position.Top} className="!bg-transparent !border-0" />
+      <Handle type="target" position={Position.Left} className="!bg-transparent !border-0" />
       <div
-        className={cn(
-          "flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-semibold text-muted-foreground",
-          "ring-1 ring-border",
-        )}
+        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-semibold text-muted-foreground ring-1 ring-border"
         aria-hidden="true"
       >
         {data.avatar ? (
@@ -56,20 +52,16 @@ function ManagerNodeImpl({ id, data, selected }: NodeProps<ManagerNodeData>) {
         )}
       </div>
       <div className="min-w-0 flex-1">
-        <div className="truncate text-xs font-semibold leading-tight" title={data.displayName}>
-          {data.displayName}
+        <div className="truncate text-xs font-semibold leading-tight">{data.displayName}</div>
+        <div className="font-mono text-[9px] uppercase tracking-wide text-muted-foreground">
+          Current roster
         </div>
-        {typeof data.tradeCount === "number" && data.tradeCount > 0 ? (
-          <div className="mt-0.5 inline-flex items-center rounded-sm bg-muted px-1 py-[1px] text-[10px] font-medium text-muted-foreground">
-            {data.tradeCount} trades
-          </div>
-        ) : null}
       </div>
       {data.onRemove && <RemoveButton onRemove={() => data.onRemove?.(id)} />}
-      <Handle type="source" position={Position.Bottom} className="!bg-transparent !border-0" />
+      <Handle type="source" position={Position.Right} className="!bg-transparent !border-0" />
     </div>
   );
 }
 
-export const ManagerNode = memo(ManagerNodeImpl);
-ManagerNode.displayName = "ManagerNode";
+export const CurrentRosterNode = memo(CurrentRosterNodeImpl);
+CurrentRosterNode.displayName = "CurrentRosterNode";

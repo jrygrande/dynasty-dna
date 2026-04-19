@@ -8,7 +8,6 @@ import { ManagerRadarChart } from "@/components/ManagerRadarChart";
 import { ManagerGradeCard } from "@/components/ManagerGradeCard";
 import { TypeBadge } from "@/components/TransactionCard";
 import { PILLAR_LABELS } from "@/lib/pillars";
-import { useFlag } from "@/lib/useFlag";
 
 interface SeasonRow {
   season: string;
@@ -48,7 +47,6 @@ export default function ManagerPage() {
 
   const [data, setData] = useState<ManagerData | null>(null);
   const [loading, setLoading] = useState(true);
-  const graphEnabled = useFlag("ASSET_GRAPH_BROWSER");
 
   useEffect(() => {
     async function loadData() {
@@ -109,14 +107,6 @@ export default function ManagerPage() {
               </span>
             )}
           </div>
-          {graphEnabled && (
-            <Link
-              href={`/league/${familyId}/graph?seed=manager:${userId}&from=manager`}
-              className="text-sm text-muted-foreground hover:text-foreground"
-            >
-              Trade network for this manager &rarr;
-            </Link>
-          )}
         </div>
       </div>
 

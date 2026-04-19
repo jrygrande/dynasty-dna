@@ -8,10 +8,10 @@
  * `share rate` success metric for the ASSET_GRAPH_BROWSER experiment.
  *
  * IDENTITY INVARIANTS:
- *   - Manager nodes are keyed by Sleeper `userId` (stable across seasons).
- *     NEVER use `rosterId` — rosterId is league-scoped and churns across seasons.
- *   - Pick nodes are keyed by (leagueId, pickSeason, pickRound, pickOriginalRosterId).
- *     Picks are league-scoped in schema.
+ *   - Transaction nodes are keyed by transactionId (or event.id for draft
+ *     selections which have no transactionId).
+ *   - Pick tenure spans are keyed by (leagueId, pickSeason, pickRound,
+ *     pickOriginalRosterId).
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -20,12 +20,10 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import { buildRosterOwnerMap, enrichTransactions } from "@/lib/transactionEnrichment";
 import type { EnrichedTransaction } from "@/lib/transactionEnrichment";
 import { resolveFamily } from "@/lib/familyResolution";
-import { resolveDraftPicks, findOriginalSlot, calculatePickNumber } from "@/lib/draft";
 import {
   buildGraphFromEvents,
   pickKey,
   type BuildGraphInput,
-  type GraphEdgeKind,
   type GraphResponse,
 } from "@/lib/assetGraph";
 
@@ -34,74 +32,23 @@ const ALLOWED_EVENT_TYPES: ReadonlyArray<string> = [
   "pick_trade",
   "draft_selected",
   "waiver_add",
+  "waiver_drop",
   "free_agent_add",
+  "free_agent_drop",
 ];
 
-const VALID_EDGE_KINDS = new Set<GraphEdgeKind>([
-  "trade_out",
-  "trade_in",
-  "pick_trade_out",
-  "pick_trade_in",
-  "draft_selected_mgr",
-  "draft_selected_pick",
-  "waiver_add",
-  "free_agent_add",
-]);
-
-function parseCsvParam(value: string | null): string[] {
-  if (!value) return [];
-  return value
-    .split(",")
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0);
-}
-
-function parseEdgeKinds(value: string | null): GraphEdgeKind[] {
-  return parseCsvParam(value).filter((k): k is GraphEdgeKind =>
-    VALID_EDGE_KINDS.has(k as GraphEdgeKind),
-  );
-}
-
-function parsePickKey(key: string):
-  | { leagueId: string; pickSeason: string; pickRound: number; pickOriginalRosterId: number }
-  | null {
-  const parts = key.split(":");
-  if (parts.length < 4) return null;
-  const pickOriginalRosterId = parseInt(parts[parts.length - 1], 10);
-  const pickRound = parseInt(parts[parts.length - 2], 10);
-  const pickSeason = parts[parts.length - 3];
-  const leagueId = parts.slice(0, parts.length - 3).join(":");
-  if (Number.isNaN(pickOriginalRosterId) || Number.isNaN(pickRound)) return null;
-  return { leagueId, pickSeason, pickRound, pickOriginalRosterId };
-}
-
-
 export async function GET(
-  req: NextRequest,
+  _req: NextRequest,
   { params }: { params: { familyId: string } },
 ) {
   const db = getDb();
   const familyId = params.familyId;
 
-  // ---------------------------------------------------------------
-  // 1. Parse query params
-  // ---------------------------------------------------------------
-  const url = req.nextUrl;
-  const seasonsParam = parseCsvParam(url.searchParams.get("seasons"));
-  const managersParam = parseCsvParam(url.searchParams.get("managers"));
-  const eventTypesParam = parseEdgeKinds(url.searchParams.get("eventTypes"));
-
-  // ---------------------------------------------------------------
-  // 2. Resolve family
-  // ---------------------------------------------------------------
   const resolvedFamilyId = await resolveFamily(familyId);
   if (!resolvedFamilyId) {
     return NextResponse.json({ error: "League family not found" }, { status: 404 });
   }
 
-  // ---------------------------------------------------------------
-  // 3. Family members → leagueIds + leagueSeasonMap
-  // ---------------------------------------------------------------
   const members = await db
     .select()
     .from(schema.leagueFamilyMembers)
@@ -116,12 +63,11 @@ export async function GET(
       nodes: [],
       edges: [],
       stats: {
-        totalTrades: 0,
-        totalDraftPicks: 0,
-        totalEdges: 0,
-        totalNodes: 0,
-        multiHopChains: 0,
-        picksTraded: 0,
+        totalTransactions: 0,
+        totalTenures: 0,
+        openTenures: 0,
+        playersInvolved: 0,
+        picksInvolved: 0,
       },
       seasons: [],
       managers: [],
@@ -131,14 +77,8 @@ export async function GET(
     return NextResponse.json(empty);
   }
 
-  // ---------------------------------------------------------------
-  // 4. buildRosterOwnerMap (roster → name per league)
-  // ---------------------------------------------------------------
   const rosterOwnerMap = await buildRosterOwnerMap(allLeagueIds);
 
-  // ---------------------------------------------------------------
-  // 5. leagueUsers → rosterToUser map + manager metadata
-  // ---------------------------------------------------------------
   const [allLeagueUsers, allRosters] = await Promise.all([
     db
       .select()
@@ -178,9 +118,22 @@ export async function GET(
     rosterToUser.set(`${r.leagueId}:${r.rosterId}`, r.ownerId);
   }
 
-  // ---------------------------------------------------------------
-  // 6. Query assetEvents
-  // ---------------------------------------------------------------
+  // Current-season rosters: userId -> Set<playerId> currently rostered.
+  const mostRecentSeason = Array.from(new Set(members.map((m) => m.season))).sort().pop();
+  const currentLeagueIds = mostRecentSeason
+    ? members.filter((m) => m.season === mostRecentSeason).map((m) => m.leagueId)
+    : [];
+  const currentRosters = new Map<string, Set<string>>();
+  for (const r of allRosters) {
+    if (!r.ownerId) continue;
+    if (!currentLeagueIds.includes(r.leagueId)) continue;
+    const playerArr = Array.isArray(r.players) ? (r.players as string[]) : [];
+    const existing = currentRosters.get(r.ownerId) ?? new Set<string>();
+    for (const pid of playerArr) existing.add(pid);
+    currentRosters.set(r.ownerId, existing);
+  }
+
+  // Query asset events for all leagues.
   const events = await db
     .select()
     .from(schema.assetEvents)
@@ -196,13 +149,10 @@ export async function GET(
       sql`${schema.assetEvents.createdAt} ASC`,
     );
 
-  // ---------------------------------------------------------------
-  // 7. Fetch referenced transactions
-  // ---------------------------------------------------------------
+  // Fetch referenced transactions for enrichment (drawer rendering).
   const transactionIds = Array.from(
     new Set(events.filter((e) => e.transactionId).map((e) => e.transactionId!)),
   );
-
   let rawTransactions: (typeof schema.transactions.$inferSelect)[] = [];
   if (transactionIds.length > 0) {
     rawTransactions = await db
@@ -210,10 +160,6 @@ export async function GET(
       .from(schema.transactions)
       .where(inArray(schema.transactions.id, transactionIds));
   }
-
-  // ---------------------------------------------------------------
-  // 8. Enrich transactions
-  // ---------------------------------------------------------------
   const enrichedList = await enrichTransactions(
     rawTransactions,
     allLeagueIds,
@@ -225,60 +171,7 @@ export async function GET(
     enrichedByTxId[tx.id] = tx;
   }
 
-  // ---------------------------------------------------------------
-  // 9. Resolve draft picks → Map<pickKey, {playerId, playerName}>
-  // ---------------------------------------------------------------
-  const { draftsBySeason, draftPicksMap } = await resolveDraftPicks(allLeagueIds);
-
-  // Build draftResolutions map: "{leagueId}:{season}:{round}:{origRosterId}" -> {playerId, playerName}
-  const draftResolutions = new Map<string, { playerId: string; playerName: string }>();
-  const resolvedPlayerIds = new Set<string>();
-
-  // Iterate over pick events that have pick tuples.
-  const pickCandidates = new Set<string>();
-  for (const ev of events) {
-    if (
-      ev.pickSeason !== null &&
-      ev.pickRound !== null &&
-      ev.pickOriginalRosterId !== null
-    ) {
-      pickCandidates.add(
-        pickKey({
-          kind: "pick",
-          leagueId: ev.leagueId,
-          pickSeason: ev.pickSeason,
-          pickRound: ev.pickRound,
-          pickOriginalRosterId: ev.pickOriginalRosterId,
-        }),
-      );
-    }
-  }
-
-  for (const key of pickCandidates) {
-    const parsed = parsePickKey(key);
-    if (!parsed) continue;
-    const draftInfo = draftsBySeason.get(parsed.pickSeason);
-    if (!draftInfo || !draftInfo.slotToRosterId || draftInfo.status !== "complete") continue;
-    const originalSlot = findOriginalSlot(draftInfo.slotToRosterId, parsed.pickOriginalRosterId);
-    if (originalSlot === null) continue;
-    const pickNo = calculatePickNumber(
-      parsed.pickRound,
-      originalSlot,
-      draftInfo.totalRosters,
-      draftInfo.type === "snake",
-    );
-    const picksForDraft = draftPicksMap.get(draftInfo.draftId);
-    const playerId = picksForDraft?.get(pickNo);
-    if (playerId) {
-      resolvedPlayerIds.add(playerId);
-      draftResolutions.set(key, { playerId, playerName: playerId });
-    }
-  }
-
-  // ---------------------------------------------------------------
-  // 10. Gather playerIds from assetEvents + enriched txns + pick resolutions
-  //     Then query `players` for names/positions/teams.
-  // ---------------------------------------------------------------
+  // Resolve player metadata for all playerIds touched by events or transactions.
   const allPlayerIds = new Set<string>();
   for (const ev of events) {
     if (ev.playerId) allPlayerIds.add(ev.playerId);
@@ -290,7 +183,6 @@ export async function GET(
       if (dp.resolvedPlayerId) allPlayerIds.add(dp.resolvedPlayerId);
     }
   }
-  for (const pid of resolvedPlayerIds) allPlayerIds.add(pid);
 
   const playerRows =
     allPlayerIds.size > 0
@@ -312,15 +204,6 @@ export async function GET(
     ]),
   );
 
-  // Enrich draftResolutions with real player names.
-  for (const [key, val] of draftResolutions) {
-    const player = playersMap.get(val.playerId);
-    if (player) draftResolutions.set(key, { playerId: val.playerId, playerName: player.name });
-  }
-
-  // ---------------------------------------------------------------
-  // 11. Build managers map (userId -> {displayName, avatar, seasons[]})
-  // ---------------------------------------------------------------
   const managersMap: BuildGraphInput["managers"] = new Map();
   for (const [userId, meta] of managerMeta) {
     managersMap.set(userId, {
@@ -330,9 +213,40 @@ export async function GET(
     });
   }
 
-  // ---------------------------------------------------------------
-  // 12. Build the graph
-  // ---------------------------------------------------------------
+  // Current pick owners: walk pick_trade events chronologically per pick key,
+  // track the latest to-user. Picks resolved via draft_selected are dropped.
+  const latestPickOwner = new Map<string, string>();
+  const resolvedPicks = new Set<string>();
+  for (const ev of events) {
+    if (
+      ev.pickSeason === null ||
+      ev.pickRound === null ||
+      ev.pickOriginalRosterId === null
+    ) {
+      continue;
+    }
+    const key = pickKey({
+      leagueId: ev.leagueId,
+      pickSeason: ev.pickSeason,
+      pickRound: ev.pickRound,
+      pickOriginalRosterId: ev.pickOriginalRosterId,
+    });
+    if (ev.eventType === "draft_selected") {
+      resolvedPicks.add(key);
+      latestPickOwner.delete(key);
+      continue;
+    }
+    if (ev.eventType === "pick_trade" && ev.toUserId) {
+      if (!resolvedPicks.has(key)) latestPickOwner.set(key, ev.toUserId);
+    }
+  }
+  const currentPickOwners = new Map<string, Set<string>>();
+  for (const [key, owner] of latestPickOwner) {
+    const existing = currentPickOwners.get(owner) ?? new Set<string>();
+    existing.add(key);
+    currentPickOwners.set(owner, existing);
+  }
+
   const graph = buildGraphFromEvents({
     assetEvents: events.map((e) => ({
       id: e.id,
@@ -356,19 +270,11 @@ export async function GET(
     enrichedTransactions: enrichedByTxId,
     players: playersMap,
     managers: managersMap,
-    draftResolutions,
     rosterToUser,
+    currentRosters,
+    currentPickOwners,
   });
 
-  // Seasons/managers/eventTypes are applied client-side via applyGraphFilters;
-  // layout + visibility are derived client-side from seed/expanded/removed URL state.
-  void seasonsParam;
-  void managersParam;
-  void eventTypesParam;
-
-  // ---------------------------------------------------------------
-  // 13. Build response
-  // ---------------------------------------------------------------
   const distinctSeasons = Array.from(new Set(members.map((m) => m.season))).sort(
     (a, b) => Number(a) - Number(b),
   );

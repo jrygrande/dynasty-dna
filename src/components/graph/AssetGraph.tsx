@@ -22,15 +22,10 @@ import ReactFlow, {
 } from "reactflow";
 import "reactflow/dist/style.css";
 
-import type {
-  GraphEdge,
-  GraphNode,
-  GraphSelection,
-} from "@/lib/assetGraph";
+import type { GraphEdge, GraphNode, GraphSelection } from "@/lib/assetGraph";
 
-import { ManagerNode, type ManagerNodeData } from "./nodes/ManagerNode";
-import { PlayerNode, type PlayerNodeData } from "./nodes/PlayerNode";
-import { PickNode, type PickNodeData } from "./nodes/PickNode";
+import { TransactionNode, type TransactionNodeData } from "./nodes/TransactionNode";
+import { CurrentRosterNode, type CurrentRosterNodeData } from "./nodes/CurrentRosterNode";
 import { TransactionEdge, type TransactionEdgeData } from "./edges/TransactionEdge";
 import { layout, type LayoutMode } from "./layout";
 
@@ -45,12 +40,11 @@ export interface AssetGraphProps {
   onRemove?: (nodeId: string) => void;
 }
 
-type FlowNodeData = ManagerNodeData | PlayerNodeData | PickNodeData;
+type FlowNodeData = TransactionNodeData | CurrentRosterNodeData;
 
 const nodeTypes: NodeTypes = {
-  manager: ManagerNode,
-  player: PlayerNode,
-  pick: PickNode,
+  transaction: TransactionNode,
+  current_roster: CurrentRosterNode,
 };
 
 const edgeTypes: EdgeTypes = {
@@ -67,6 +61,26 @@ export function AssetGraph(props: AssetGraphProps) {
   );
 }
 
+function assetSummary(node: Extract<GraphNode, { kind: "transaction" }>): string {
+  const assets = node.assets;
+  if (assets.length === 0) return "—";
+  if (assets.length === 1) {
+    const a = assets[0];
+    if (a.kind === "player") {
+      const pos = a.playerPosition ? `${a.playerPosition} ` : "";
+      return `${pos}${a.playerName ?? ""}`.trim();
+    }
+    return a.pickLabel ?? `Pick ${a.pickSeason} R${a.pickRound}`;
+  }
+  const first = assets[0];
+  const firstLabel =
+    first.kind === "player"
+      ? first.playerName ?? ""
+      : first.pickLabel ?? `Pick R${first.pickRound}`;
+  const remaining = assets.length - 1;
+  return `${firstLabel} + ${remaining} more`;
+}
+
 function AssetGraphInner({
   nodes,
   edges,
@@ -78,11 +92,7 @@ function AssetGraphInner({
   onRemove,
 }: AssetGraphProps) {
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
-  const [hoveredEdgeId, setHoveredEdgeId] = useState<string | null>(null);
 
-  // Compute positions. Use server-provided node.layout when present; otherwise
-  // run the pure layout() function. Memoized on nodes.length + layoutMode so
-  // we don't re-run on hover state changes.
   const positions = useMemo(() => {
     const allHavePositions = nodes.every((n) => !!n.layout);
     if (allHavePositions) {
@@ -92,41 +102,16 @@ function AssetGraphInner({
       }
       return m;
     }
-    return layout(
-      {
-        nodes,
-        edges,
-        stats: {
-          totalTrades: 0,
-          totalDraftPicks: 0,
-          totalEdges: edges.length,
-          totalNodes: nodes.length,
-          multiHopChains: 0,
-          picksTraded: 0,
-        },
-      },
-      layoutMode,
-    );
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nodes.length, layoutMode]);
+    return layout({ nodes, edges }, layoutMode);
+  }, [nodes, edges, layoutMode]);
 
-  // Build reactflow Edge[] with hover-aware dim/highlight flags.
   const flowEdges = useMemo<Edge<TransactionEdgeData>[]>(() => {
-    const hoveredEdge = hoveredEdgeId
-      ? edges.find((e) => e.id === hoveredEdgeId) ?? null
-      : null;
-
     return edges.map((e): Edge<TransactionEdgeData> => {
-      let dimmed = false;
-      let groupHighlighted = false;
-      if (hoveredNodeId) {
-        dimmed = e.source !== hoveredNodeId && e.target !== hoveredNodeId;
-      }
-      if (hoveredEdge) {
-        const sharesGroup = e.groupKey === hoveredEdge.groupKey;
-        if (sharesGroup) groupHighlighted = true;
-        else dimmed = true;
-      }
+      const dimmed = !!hoveredNodeId && e.source !== hoveredNodeId && e.target !== hoveredNodeId;
+      const assetLabel =
+        e.assetKind === "player"
+          ? e.playerName ?? ""
+          : e.pickLabel ?? "";
       return {
         id: e.id,
         source: e.source,
@@ -134,17 +119,16 @@ function AssetGraphInner({
         type: "transaction",
         selected: selection?.type === "edge" && selection.edgeId === e.id,
         data: {
-          kind: e.kind,
-          transactionId: e.transactionId,
-          groupKey: e.groupKey,
+          assetKind: e.assetKind,
+          assetLabel,
+          managerName: e.managerName,
           dimmed,
-          groupHighlighted,
+          isOpen: e.isOpen,
         },
       };
     });
-  }, [edges, hoveredNodeId, hoveredEdgeId, selection]);
+  }, [edges, hoveredNodeId, selection]);
 
-  // Build reactflow Node[].
   const flowNodes = useMemo<Node<FlowNodeData>[]>(() => {
     return nodes.map((n): Node<FlowNodeData> => {
       const pos = positions.get(n.id) ?? { x: 0, y: 0 };
@@ -152,43 +136,22 @@ function AssetGraphInner({
       const isDimmed =
         !!hoveredNodeId &&
         hoveredNodeId !== n.id &&
-        // Dim only non-incident nodes — look at edges to decide.
         !edges.some(
           (e) =>
             (e.source === hoveredNodeId && e.target === n.id) ||
             (e.target === hoveredNodeId && e.source === n.id),
         );
-
       const isExpanded = expandedNodeIds?.has(n.id) ?? false;
 
-      if (n.kind === "manager") {
+      if (n.kind === "current_roster") {
         return {
           id: n.id,
-          type: "manager",
+          type: "current_roster",
           position: pos,
           selected: isSelected,
           data: {
             displayName: n.displayName,
             avatar: n.avatar,
-            tradeCount: n.tradeCount,
-            selected: isSelected,
-            dimmed: isDimmed,
-            expanded: isExpanded,
-            onRemove,
-          },
-        };
-      }
-
-      if (n.kind === "player") {
-        return {
-          id: n.id,
-          type: "player",
-          position: pos,
-          selected: isSelected,
-          data: {
-            name: n.name,
-            position: n.position,
-            team: n.team,
             selected: isSelected,
             dimmed: isDimmed,
             expanded: isExpanded,
@@ -199,14 +162,16 @@ function AssetGraphInner({
 
       return {
         id: n.id,
-        type: "pick",
+        type: "transaction",
         position: pos,
         selected: isSelected,
         data: {
-          pickSeason: n.pickSeason,
-          pickRound: n.pickRound,
-          pickOriginalOwnerName: n.pickOriginalOwnerName,
-          resolvedPlayerName: n.resolvedPlayerName,
+          txKind: n.txKind,
+          season: n.season,
+          week: n.week,
+          createdAt: n.createdAt,
+          managers: n.managers,
+          assetSummary: assetSummary(n),
           selected: isSelected,
           dimmed: isDimmed,
           expanded: isExpanded,
@@ -240,12 +205,6 @@ function AssetGraphInner({
   );
   const onNodeMouseLeave = useCallback(() => setHoveredNodeId(null), []);
 
-  const onEdgeMouseEnter = useCallback<EdgeMouseHandler>(
-    (_, edge) => setHoveredEdgeId(edge.id),
-    [],
-  );
-  const onEdgeMouseLeave = useCallback(() => setHoveredEdgeId(null), []);
-
   return (
     <div className="h-full w-full">
       <ReactFlow
@@ -258,8 +217,6 @@ function AssetGraphInner({
         onPaneClick={onPaneClick}
         onNodeMouseEnter={onNodeMouseEnter}
         onNodeMouseLeave={onNodeMouseLeave}
-        onEdgeMouseEnter={onEdgeMouseEnter}
-        onEdgeMouseLeave={onEdgeMouseLeave}
         fitView
         proOptions={{ hideAttribution: true }}
       >
@@ -270,10 +227,6 @@ function AssetGraphInner({
     </div>
   );
 }
-
-// ----------------------------------------------------------------------------
-// Error boundary (inline, no new dep)
-// ----------------------------------------------------------------------------
 
 interface ErrorBoundaryState {
   hasError: boolean;
@@ -291,7 +244,6 @@ class GraphErrorBoundary extends Component<{ children: ReactNode }, ErrorBoundar
   }
 
   componentDidCatch(error: Error, info: ErrorInfo): void {
-    // Surface to the browser console for debugging; swallow so the page survives.
     // eslint-disable-next-line no-console
     console.error("[AssetGraph] render failed", error, info);
   }
