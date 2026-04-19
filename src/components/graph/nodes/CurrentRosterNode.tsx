@@ -11,7 +11,6 @@ export interface CurrentRosterNodeData {
   avatar: string | null;
   selected?: boolean;
   dimmed?: boolean;
-  expanded?: boolean;
   onRemove?: (nodeId: string) => void;
 }
 
@@ -24,14 +23,12 @@ function initials(name: string): string {
 
 function CurrentRosterNodeImpl({ id, data, selected }: NodeProps<CurrentRosterNodeData>) {
   const isSelected = selected || data.selected;
-  const unexpanded = data.expanded === false;
 
   return (
     <div
       className={cn(
         "group relative flex items-center gap-2 rounded-md border-2 border-primary/40 bg-primary/5 px-3 py-2 text-card-foreground shadow-sm transition-opacity",
         isSelected && "ring-2 ring-primary",
-        unexpanded && !isSelected && "border-dashed",
         data.dimmed && "opacity-30",
       )}
       style={{ width: 152, height: 56 }}

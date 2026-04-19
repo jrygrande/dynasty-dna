@@ -114,7 +114,6 @@ export default function GraphPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const analyticsFiredRef = useRef(false);
-  const seasonsBootstrappedRef = useRef(false);
   const [tooltipDismissed, setTooltipDismissed] = useState<boolean>(() => {
     if (typeof window === "undefined") return true;
     return Boolean(window.localStorage.getItem("graph_tooltip_dismissed"));
@@ -167,16 +166,10 @@ export default function GraphPage() {
     };
   }, [filteredGraph, visibility]);
 
-  useEffect(() => {
-    if (!response || seasonsBootstrappedRef.current) return;
-    if (selectedSeasons.length === 0 && response.seasons.length > 0) {
-      const latest = [...response.seasons].sort().reverse()[0];
-      seasonsBootstrappedRef.current = true;
-      updateUrl({ seasons: latest });
-    } else {
-      seasonsBootstrappedRef.current = true;
-    }
-  }, [response, selectedSeasons.length, updateUrl]);
+  // Season bootstrap removed. In the transaction-node model a seed anchors
+  // the view regardless of date — defaulting to the latest season would hide
+  // older transactions that belong to the seed's thread. Empty seasons
+  // filter means "all seasons," and that's the desired starting state.
 
   // Resolve seedPlayerId → concrete seed node ids (the most recent tenure
   // edge for that player; endpoints become the seed). Clears seasons filter
@@ -249,16 +242,16 @@ export default function GraphPage() {
     [updateUrl],
   );
 
-  const handleExpand = useCallback(
-    (nodeId: string) => {
-      if (expanded.has(nodeId)) return;
-      const next = Array.from(expanded);
-      next.push(nodeId);
+  const handleAssetExpand = useCallback(
+    (nodeId: string, assetKey: string) => {
+      const entry = `${nodeId}~${assetKey}`;
+      const next = new Set(expanded);
+      if (next.has(entry)) next.delete(entry);
+      else next.add(entry);
       updateUrl({
-        expanded: next.join(","),
-        selection: `node:${nodeId}`,
+        expanded: Array.from(next).join(",") || null,
       });
-      trackEvent("graph_node_expanded", { nodeId });
+      trackEvent("graph_asset_expanded", { nodeId, assetKey });
     },
     [expanded, updateUrl],
   );
@@ -296,12 +289,8 @@ export default function GraphPage() {
   const seasonLabel = useMemo(() => {
     if (selectedSeasons.length === 1) return selectedSeasons[0];
     if (selectedSeasons.length > 1) return selectedSeasons.join(", ");
-    if (response?.seasons?.length) {
-      const sorted = [...response.seasons].sort().reverse();
-      return sorted[0];
-    }
     return "";
-  }, [selectedSeasons, response]);
+  }, [selectedSeasons]);
 
   if (isNarrow) {
     return <MobileDigest familyId={familyId} response={response} loading={loading} />;
@@ -369,8 +358,8 @@ export default function GraphPage() {
               edges={visibleGraph.edges}
               selection={selection}
               onSelect={handleSelectionChange}
-              expandedNodeIds={expanded}
-              onExpand={handleExpand}
+              expandedEntries={expanded}
+              onAssetExpand={handleAssetExpand}
               onRemove={handleRemove}
             />
           )}
@@ -381,7 +370,7 @@ export default function GraphPage() {
               className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 max-w-md px-4 py-2.5 rounded-md bg-foreground text-background shadow-lg flex items-center gap-3"
             >
               <span className="text-xs">
-                Click a transaction to pull in its trade partners. Edges are player tenures — the spans between transactions.
+                Click an asset row to trace its thread. Each edge is a player or pick tenure — the time they spent on one manager&apos;s roster.
               </span>
               <button
                 type="button"

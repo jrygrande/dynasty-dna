@@ -24,7 +24,7 @@ import "reactflow/dist/style.css";
 
 import type { GraphEdge, GraphNode, GraphSelection } from "@/lib/assetGraph";
 
-import { TransactionNode, type TransactionNodeData } from "./nodes/TransactionNode";
+import { TransactionNode, type TransactionNodeData, type TransactionNodeAsset } from "./nodes/TransactionNode";
 import { CurrentRosterNode, type CurrentRosterNodeData } from "./nodes/CurrentRosterNode";
 import { TransactionEdge, type TransactionEdgeData } from "./edges/TransactionEdge";
 import { layout, type LayoutMode } from "./layout";
@@ -35,8 +35,8 @@ export interface AssetGraphProps {
   selection: GraphSelection | null;
   onSelect: (s: GraphSelection | null) => void;
   layoutMode?: LayoutMode;
-  expandedNodeIds?: Set<string>;
-  onExpand?: (nodeId: string) => void;
+  expandedEntries?: Set<string>;
+  onAssetExpand?: (nodeId: string, assetKey: string) => void;
   onRemove?: (nodeId: string) => void;
 }
 
@@ -61,37 +61,35 @@ export function AssetGraph(props: AssetGraphProps) {
   );
 }
 
-function assetSummary(node: Extract<GraphNode, { kind: "transaction" }>): string {
-  const assets = node.assets;
-  if (assets.length === 0) return "—";
-  if (assets.length === 1) {
-    const a = assets[0];
-    if (a.kind === "player") {
-      const pos = a.playerPosition ? `${a.playerPosition} ` : "";
-      return `${pos}${a.playerName ?? ""}`.trim();
-    }
-    return a.pickLabel ?? `Pick ${a.pickSeason} R${a.pickRound}`;
-  }
-  const first = assets[0];
-  const firstLabel =
-    first.kind === "player"
-      ? first.playerName ?? ""
-      : first.pickLabel ?? `Pick R${first.pickRound}`;
-  const remaining = assets.length - 1;
-  return `${firstLabel} + ${remaining} more`;
-}
-
 function AssetGraphInner({
   nodes,
   edges,
   selection,
   onSelect,
   layoutMode = "band",
-  expandedNodeIds,
-  onExpand,
+  expandedEntries,
+  onAssetExpand,
   onRemove,
 }: AssetGraphProps) {
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
+
+  const assetExpansionsByNode = useMemo(() => {
+    const m = new Map<string, Set<string>>();
+    if (!expandedEntries) return m;
+    for (const entry of expandedEntries) {
+      const sepIdx = entry.indexOf("~");
+      if (sepIdx === -1) continue;
+      const nodeId = entry.slice(0, sepIdx);
+      const assetKey = entry.slice(sepIdx + 1);
+      let set = m.get(nodeId);
+      if (!set) {
+        set = new Set();
+        m.set(nodeId, set);
+      }
+      set.add(assetKey);
+    }
+    return m;
+  }, [expandedEntries]);
 
   const positions = useMemo(() => {
     const allHavePositions = nodes.every((n) => !!n.layout);
@@ -141,7 +139,6 @@ function AssetGraphInner({
             (e.source === hoveredNodeId && e.target === n.id) ||
             (e.target === hoveredNodeId && e.source === n.id),
         );
-      const isExpanded = expandedNodeIds?.has(n.id) ?? false;
 
       if (n.kind === "current_roster") {
         return {
@@ -154,11 +151,37 @@ function AssetGraphInner({
             avatar: n.avatar,
             selected: isSelected,
             dimmed: isDimmed,
-            expanded: isExpanded,
             onRemove,
           },
         };
       }
+
+      const nameByUser = new Map(n.managers.map((m) => [m.userId, m.displayName]));
+      const transactionAssets: TransactionNodeAsset[] = n.assets.map((a) => {
+        const toName = a.toUserId ? nameByUser.get(a.toUserId) ?? null : null;
+        if (a.kind === "player") {
+          const position = a.playerPosition ?? null;
+          const name = a.playerName ?? a.playerId ?? "Player";
+          return {
+            kind: "player",
+            assetKey: `player:${a.playerId}`,
+            label: name,
+            position,
+            toUserId: a.toUserId,
+            toName,
+            fromUserId: a.fromUserId,
+          };
+        }
+        const label = a.pickLabel ?? `${a.pickSeason} R${a.pickRound}`;
+        return {
+          kind: "pick",
+          assetKey: `pick:${a.pickSeason}:${a.pickRound}:${a.pickOriginalRosterId}`,
+          label,
+          toUserId: a.toUserId,
+          toName,
+          fromUserId: a.fromUserId,
+        };
+      });
 
       return {
         id: n.id,
@@ -171,25 +194,21 @@ function AssetGraphInner({
           week: n.week,
           createdAt: n.createdAt,
           managers: n.managers,
-          assetSummary: assetSummary(n),
+          assets: transactionAssets,
+          expandedAssets: assetExpansionsByNode.get(n.id) ?? new Set(),
           selected: isSelected,
           dimmed: isDimmed,
-          expanded: isExpanded,
           onRemove,
+          onAssetClick: onAssetExpand,
+          onSelect: (nodeId) => onSelect({ type: "node", nodeId }),
         },
       };
     });
-  }, [nodes, edges, positions, selection, hoveredNodeId, expandedNodeIds, onRemove]);
+  }, [nodes, edges, positions, selection, hoveredNodeId, assetExpansionsByNode, onRemove, onAssetExpand, onSelect]);
 
   const onNodeClick = useCallback<NodeMouseHandler>(
-    (_, node) => {
-      if (expandedNodeIds && !expandedNodeIds.has(node.id) && onExpand) {
-        onExpand(node.id);
-        return;
-      }
-      onSelect({ type: "node", nodeId: node.id });
-    },
-    [expandedNodeIds, onExpand, onSelect],
+    (_, node) => onSelect({ type: "node", nodeId: node.id }),
+    [onSelect],
   );
 
   const onEdgeClick = useCallback<EdgeMouseHandler>(
