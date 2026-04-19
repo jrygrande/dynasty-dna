@@ -19,13 +19,12 @@ export default function LandingPage() {
           Decode your dynasty <span className="text-primary">DNA</span>
         </h1>
         <p className="text-lg text-muted-foreground mb-8 max-w-xl mx-auto leading-relaxed">
-          Find out if you won the trade, graded every pick right, and where
-          you&apos;re leaving points on your bench — all from your Sleeper data.
+          Trace how every decision ripples through your dynasty league.
         </p>
         <AuthCTA />
-        <p className="text-xs text-muted-foreground mt-6">
-          Powered by 50+ data points per player &middot; FantasyCalc &middot;
-          nflverse
+        <p className="text-xs text-muted-foreground mt-6 flex flex-wrap justify-center gap-x-2 gap-y-0.5">
+          <span>Only for Sleeper leagues</span>
+          <span>&middot; Player valuations by FantasyCalc &middot; NFL data from nflverse</span>
         </p>
       </section>
 
