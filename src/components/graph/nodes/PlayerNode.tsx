@@ -13,14 +13,13 @@ export interface PlayerNodeData {
   dimmed?: boolean;
 }
 
-// Position → Tailwind stripe color. Falls back to gray.
 const POSITION_STRIPE: Record<string, string> = {
-  QB: "bg-red-500",
-  RB: "bg-green-500",
-  WR: "bg-blue-500",
-  TE: "bg-orange-500",
-  K: "bg-gray-500",
-  DEF: "bg-purple-500",
+  QB: "bg-grade-f",
+  RB: "bg-grade-b",
+  WR: "bg-grade-a",
+  TE: "bg-grade-d",
+  K: "bg-chart-4",
+  DEF: "bg-muted-foreground",
 };
 
 function PlayerNodeImpl({ data, selected }: NodeProps<PlayerNodeData>) {
