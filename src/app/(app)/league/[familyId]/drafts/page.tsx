@@ -247,7 +247,7 @@ function DraftBoard({ draft, familyId }: { draft: DraftData; familyId: string })
                         <div className="flex items-center gap-1.5">
                           {pick.position && (
                             <span
-                              className={`px-1.5 py-0.5 text-[10px] font-semibold rounded ${POSITION_COLORS[pick.position] || ""}`}
+                              className={`px-1.5 py-0 text-[10px] font-mono font-medium tracking-wide uppercase rounded-full ${POSITION_COLORS[pick.position] || ""}`}
                             >
                               {pick.position}
                             </span>
