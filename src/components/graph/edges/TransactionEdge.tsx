@@ -5,13 +5,13 @@ import { BaseEdge, EdgeLabelRenderer, getBezierPath, type EdgeProps } from "reac
 
 export interface TransactionEdgeData {
   assetKind: "player" | "pick";
-  /** Label shown at edge midpoint: "Bijan Robinson" or "2024 R1". */
   assetLabel: string;
-  /** Manager who held the asset during this tenure. */
   managerName: string;
-  /** True when the edge is not incident to the hovered node. */
+  /** Edge faded because another node/asset is currently highlighted. */
   dimmed?: boolean;
-  /** True when the tenure is still open (target is a current-roster anchor). */
+  /** Edge bolded because its asset is currently hovered. */
+  highlighted?: boolean;
+  /** Tenure is still active (target is a current-roster anchor). */
   isOpen?: boolean;
 }
 
@@ -39,12 +39,13 @@ function TransactionEdgeImpl(props: EdgeProps<TransactionEdgeData>) {
   });
 
   const dimmed = !!data?.dimmed;
+  const highlighted = !!data?.highlighted;
   const opacity = dimmed ? 0.18 : 1;
   const isOpen = !!data?.isOpen;
   const isPick = data?.assetKind === "pick";
 
   const stroke = isPick ? "hsl(var(--chart-4))" : "hsl(var(--primary))";
-  const strokeWidth = selected ? 2 : 1.25;
+  const strokeWidth = selected || highlighted ? 2.25 : 1.25;
   const dashArray = isOpen ? "4 3" : isPick ? "2 3" : undefined;
 
   return (

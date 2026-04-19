@@ -25,10 +25,13 @@ export interface TransactionNodeData {
   managers: Array<{ userId: string; displayName: string }>;
   assets: TransactionNodeAsset[];
   expandedAssets: Set<string>;
+  /** Asset key currently hovered anywhere in the graph — matching rows highlight. */
+  hoveredAssetKey?: string | null;
   selected?: boolean;
   dimmed?: boolean;
   onRemove?: (nodeId: string) => void;
   onAssetClick?: (nodeId: string, assetKey: string) => void;
+  onAssetHover?: (assetKey: string | null) => void;
   onSelect?: (nodeId: string) => void;
 }
 
@@ -57,6 +60,19 @@ const POSITION_COLOR: Record<string, string> = {
   DEF: "bg-muted text-muted-foreground",
 };
 
+const POSITION_ORDER: Record<string, number> = { QB: 0, RB: 1, WR: 2, TE: 3, K: 4, DEF: 5 };
+
+function sortAssets(a: TransactionNodeAsset, b: TransactionNodeAsset): number {
+  if (a.kind !== b.kind) return a.kind === "player" ? -1 : 1;
+  if (a.kind === "player") {
+    const aP = POSITION_ORDER[a.position ?? ""] ?? 99;
+    const bP = POSITION_ORDER[b.position ?? ""] ?? 99;
+    if (aP !== bP) return aP - bP;
+    return a.label.localeCompare(b.label);
+  }
+  return a.label.localeCompare(b.label);
+}
+
 function formatDate(createdAt: number, season: string, week: number): string {
   if (!createdAt) return week > 0 ? `${season} · W${week}` : season;
   const d = new Date(createdAt);
@@ -83,6 +99,9 @@ function TransactionNodeImpl({ id, data, selected }: NodeProps<TransactionNodeDa
     const bucket = buckets.get(key);
     if (bucket) bucket.assets.push(a);
     else buckets.set(key, { userId: a.toUserId, displayName: name, assets: [a] });
+  }
+  for (const bucket of buckets.values()) {
+    bucket.assets.sort(sortAssets);
   }
 
   function handleNodeClick(e: MouseEvent<HTMLDivElement>) {
@@ -134,7 +153,9 @@ function TransactionNodeImpl({ id, data, selected }: NodeProps<TransactionNodeDa
                 key={asset.assetKey}
                 asset={asset}
                 isExpanded={data.expandedAssets.has(asset.assetKey)}
+                isHovered={data.hoveredAssetKey === asset.assetKey}
                 onClick={() => data.onAssetClick?.(id, asset.assetKey)}
+                onHover={(hovered) => data.onAssetHover?.(hovered ? asset.assetKey : null)}
               />
             ))}
           </div>
@@ -149,11 +170,15 @@ function TransactionNodeImpl({ id, data, selected }: NodeProps<TransactionNodeDa
 function AssetRow({
   asset,
   isExpanded,
+  isHovered,
   onClick,
+  onHover,
 }: {
   asset: TransactionNodeAsset;
   isExpanded: boolean;
+  isHovered: boolean;
   onClick: () => void;
+  onHover: (hovered: boolean) => void;
 }) {
   function handleClick(e: MouseEvent<HTMLButtonElement>) {
     e.stopPropagation();
@@ -173,10 +198,13 @@ function AssetRow({
       data-asset-row
       onClick={handleClick}
       onMouseDown={(e) => e.stopPropagation()}
+      onMouseEnter={() => onHover(true)}
+      onMouseLeave={() => onHover(false)}
       className={cn(
         "w-full flex items-center gap-2 px-3 py-1 text-left transition-colors border-t border-border/50 first:border-t-0",
         "hover:bg-accent/40",
         isExpanded && "bg-primary/5",
+        isHovered && !isExpanded && "bg-accent/30",
       )}
       aria-label={`${isExpanded ? "Collapse" : "Expand"} ${asset.label}`}
     >

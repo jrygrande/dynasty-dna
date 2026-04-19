@@ -13,11 +13,11 @@ import type { Graph, GraphNode } from "@/lib/assetGraph";
 
 export type LayoutMode = "band" | "dagre";
 
-const COLUMN_WIDTH = 200;
-const ROW_HEIGHT = 96;
+const COLUMN_WIDTH = 320;
+const ROW_HEIGHT = 280;
 const COLUMN_X0 = 80;
 const ROW_Y0 = 40;
-const CURRENT_ROSTER_GAP = 80;
+const CURRENT_ROSTER_GAP = 120;
 
 type Pos = { x: number; y: number };
 

@@ -23,6 +23,7 @@ import ReactFlow, {
 import "reactflow/dist/style.css";
 
 import type { GraphEdge, GraphNode, GraphSelection } from "@/lib/assetGraph";
+import { edgeAssetKey } from "@/lib/useGraphVisibility";
 
 import { TransactionNode, type TransactionNodeData, type TransactionNodeAsset } from "./nodes/TransactionNode";
 import { CurrentRosterNode, type CurrentRosterNodeData } from "./nodes/CurrentRosterNode";
@@ -72,6 +73,7 @@ function AssetGraphInner({
   onRemove,
 }: AssetGraphProps) {
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
+  const [hoveredAssetKey, setHoveredAssetKey] = useState<string | null>(null);
 
   const assetExpansionsByNode = useMemo(() => {
     const m = new Map<string, Set<string>>();
@@ -105,11 +107,15 @@ function AssetGraphInner({
 
   const flowEdges = useMemo<Edge<TransactionEdgeData>[]>(() => {
     return edges.map((e): Edge<TransactionEdgeData> => {
-      const dimmed = !!hoveredNodeId && e.source !== hoveredNodeId && e.target !== hoveredNodeId;
+      const eKey = edgeAssetKey(e);
+      const matchesHoveredAsset = !!hoveredAssetKey && eKey === hoveredAssetKey;
+      const nodeIncident = !!hoveredNodeId && (e.source === hoveredNodeId || e.target === hoveredNodeId);
+      const dimmed =
+        (!!hoveredAssetKey && !matchesHoveredAsset) ||
+        (!hoveredAssetKey && !!hoveredNodeId && !nodeIncident);
+      const highlighted = matchesHoveredAsset;
       const assetLabel =
-        e.assetKind === "player"
-          ? e.playerName ?? ""
-          : e.pickLabel ?? "";
+        e.assetKind === "player" ? e.playerName ?? "" : e.pickLabel ?? "";
       return {
         id: e.id,
         source: e.source,
@@ -121,11 +127,12 @@ function AssetGraphInner({
           assetLabel,
           managerName: e.managerName,
           dimmed,
+          highlighted,
           isOpen: e.isOpen,
         },
       };
     });
-  }, [edges, hoveredNodeId, selection]);
+  }, [edges, hoveredNodeId, hoveredAssetKey, selection]);
 
   const flowNodes = useMemo<Node<FlowNodeData>[]>(() => {
     return nodes.map((n): Node<FlowNodeData> => {
@@ -196,15 +203,17 @@ function AssetGraphInner({
           managers: n.managers,
           assets: transactionAssets,
           expandedAssets: assetExpansionsByNode.get(n.id) ?? new Set(),
+          hoveredAssetKey,
           selected: isSelected,
           dimmed: isDimmed,
           onRemove,
           onAssetClick: onAssetExpand,
+          onAssetHover: setHoveredAssetKey,
           onSelect: (nodeId) => onSelect({ type: "node", nodeId }),
         },
       };
     });
-  }, [nodes, edges, positions, selection, hoveredNodeId, assetExpansionsByNode, onRemove, onAssetExpand, onSelect]);
+  }, [nodes, edges, positions, selection, hoveredNodeId, hoveredAssetKey, assetExpansionsByNode, onRemove, onAssetExpand, onSelect]);
 
   const onNodeClick = useCallback<NodeMouseHandler>(
     (_, node) => onSelect({ type: "node", nodeId: node.id }),
