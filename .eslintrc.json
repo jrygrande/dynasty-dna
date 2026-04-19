@@ -1,0 +1,24 @@
+{
+  "extends": "next/core-web-vitals",
+  "rules": {
+    "no-restricted-syntax": [
+      "error",
+      {
+        "selector": "JSXAttribute[name.name='className'] Literal[value=/\\b(text|bg|border|ring|divide|from|to|via|outline|decoration|placeholder|caret|accent|fill|stroke)-(blue|emerald|red|green|yellow|amber|orange|purple|pink|sky|teal|lime|rose|fuchsia|cyan|indigo|violet|gray|zinc|neutral|stone)-\\d/]",
+        "message": "Use design-system tokens (primary, muted, grade-*, chart-*, sage-*, cream-*) instead of raw Tailwind palette classes. See CLAUDE.md § Design system and /design for examples."
+      },
+      {
+        "selector": "JSXAttribute[name.name='className'] TemplateElement[value.raw=/\\b(text|bg|border|ring|divide|from|to|via|outline|decoration|placeholder|caret|accent|fill|stroke)-(blue|emerald|red|green|yellow|amber|orange|purple|pink|sky|teal|lime|rose|fuchsia|cyan|indigo|violet|gray|zinc|neutral|stone)-\\d/]",
+        "message": "Use design-system tokens (primary, muted, grade-*, chart-*, sage-*, cream-*) instead of raw Tailwind palette classes. See CLAUDE.md § Design system and /design for examples."
+      }
+    ]
+  },
+  "overrides": [
+    {
+      "files": ["src/app/design/page.tsx", "src/components/ui/**/*.tsx"],
+      "rules": {
+        "no-restricted-syntax": "off"
+      }
+    }
+  ]
+}

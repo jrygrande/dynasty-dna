@@ -106,6 +106,22 @@ export default function DesignSystemPage() {
             eyeball tokens + components as we roll the redesign into real
             screens.
           </p>
+          <p className="mt-4 text-xs text-muted-foreground max-w-2xl">
+            Conventions + token reference live in{" "}
+            <a
+              href="https://github.com/jrygrande/dynasty-dna/blob/main/CLAUDE.md#design-system"
+              target="_blank"
+              rel="noreferrer"
+              className="text-primary hover:underline"
+            >
+              CLAUDE.md § Design system
+            </a>
+            . Raw Tailwind palette classes (<code className="font-mono">bg-blue-500</code>,{" "}
+            <code className="font-mono">text-red-400</code>, etc.) are lint errors —
+            use <code className="font-mono">text-primary</code>,{" "}
+            <code className="font-mono">text-grade-a..f</code>,{" "}
+            <code className="font-mono">bg-chart-1..6</code> instead.
+          </p>
         </div>
       </header>
 
