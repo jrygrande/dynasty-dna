@@ -1,4 +1,23 @@
 import type { Metadata } from "next";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Separator } from "@/components/ui/separator";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 export const metadata: Metadata = {
   title: "Design system — Dynasty DNA",
@@ -88,6 +107,107 @@ export default function DesignSystemPage() {
       </header>
 
       <div className="container mx-auto px-6 py-12 max-w-5xl space-y-16">
+        <section>
+          <h2 className="text-xs uppercase tracking-wider text-muted-foreground mb-2">
+            Shadcn primitives (live)
+          </h2>
+          <p className="text-sm text-muted-foreground mb-6 max-w-2xl">
+            Rendered with the live tokens. Compare against the specimen
+            iframes below — button/badge/card/input/table/separator should
+            read sage-on-cream with hairline borders.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Buttons</CardTitle>
+                <CardDescription>
+                  Default is sage; secondary/outline/ghost stay quiet.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="flex flex-wrap gap-3">
+                <Button>Primary</Button>
+                <Button variant="secondary">Secondary</Button>
+                <Button variant="outline">Outline</Button>
+                <Button variant="ghost">Ghost</Button>
+                <Button variant="link">Link</Button>
+                <Button variant="destructive">Destructive</Button>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Badges</CardTitle>
+                <CardDescription>
+                  Default, secondary, outline, destructive.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="flex flex-wrap gap-2">
+                <Badge>Default</Badge>
+                <Badge variant="secondary">Secondary</Badge>
+                <Badge variant="outline">Outline</Badge>
+                <Badge variant="destructive">Destructive</Badge>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Input</CardTitle>
+                <CardDescription>
+                  Focus ring uses sage; border is a cream hairline.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <Input placeholder="you@example.com" />
+                <Input placeholder="Disabled" disabled />
+                <Separator />
+                <p className="text-xs text-muted-foreground">
+                  Separator above renders as a single hairline.
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Table</CardTitle>
+                <CardDescription>
+                  Hairline rows, tabular numbers on mono columns.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Manager</TableHead>
+                      <TableHead className="text-right">Pts</TableHead>
+                      <TableHead className="text-right">Eff.</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    <TableRow>
+                      <TableCell>Team A</TableCell>
+                      <TableCell className="text-right font-mono">
+                        1,428.6
+                      </TableCell>
+                      <TableCell className="text-right font-mono">
+                        92.4%
+                      </TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell>Team B</TableCell>
+                      <TableCell className="text-right font-mono">
+                        1,391.2
+                      </TableCell>
+                      <TableCell className="text-right font-mono">
+                        87.3%
+                      </TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </div>
+        </section>
+
         {GROUPS.map((group) => (
           <section key={group.label}>
             <h2 className="text-xs uppercase tracking-wider text-muted-foreground mb-6">
