@@ -28,7 +28,7 @@ function LoginContent() {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-background to-secondary/20">
       <div className="max-w-sm w-full mx-auto px-6">
         <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold tracking-tight mb-2">
+          <h1 className="font-serif text-4xl font-medium tracking-tight mb-2">
             Dynasty <span className="text-primary">DNA</span>
           </h1>
           <p className="text-muted-foreground">
@@ -37,7 +37,7 @@ function LoginContent() {
         </div>
 
         {error && (
-          <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg p-3 mb-4 text-center dark:bg-red-950 dark:border-red-900 dark:text-red-400">
+          <div className="text-sm text-grade-f bg-grade-f/8 border border-grade-f/25 rounded-lg p-3 mb-4 text-center">
             Sign-in failed. Please try again.
           </div>
         )}
@@ -45,14 +45,14 @@ function LoginContent() {
         <div className="flex flex-col gap-3">
           <button
             onClick={() => signIn("google")}
-            className="flex items-center justify-center gap-3 px-6 py-3 rounded-lg bg-white text-gray-800 border border-gray-300 hover:bg-gray-50 transition-colors font-medium"
+            className="flex items-center justify-center gap-3 px-6 py-3 rounded-lg bg-card text-foreground border border-border hover:border-primary/50 transition-colors font-medium"
           >
             <GoogleIcon />
             Sign in with Google
           </button>
           <button
             onClick={() => signIn("github")}
-            className="flex items-center justify-center gap-3 px-6 py-3 rounded-lg bg-gray-900 text-white hover:bg-gray-800 transition-colors font-medium"
+            className="flex items-center justify-center gap-3 px-6 py-3 rounded-lg bg-foreground text-background hover:bg-foreground/90 transition-colors font-medium"
           >
             <GitHubIcon />
             Sign in with GitHub
