@@ -15,10 +15,10 @@ export default function LandingPage() {
     <div className="min-h-screen bg-gradient-to-b from-background to-secondary/20">
       {/* Hero */}
       <section className="container mx-auto px-6 py-24 text-center max-w-3xl">
-        <h1 className="text-5xl font-bold tracking-tight mb-4">
+        <h1 className="font-serif text-5xl md:text-6xl font-medium tracking-tight mb-4 leading-[1.05]">
           Decode your dynasty <span className="text-primary">DNA</span>
         </h1>
-        <p className="text-xl text-muted-foreground mb-8 max-w-xl mx-auto">
+        <p className="text-lg text-muted-foreground mb-8 max-w-xl mx-auto leading-relaxed">
           Find out if you won the trade, graded every pick right, and where
           you&apos;re leaving points on your bench — all from your Sleeper data.
         </p>
@@ -58,7 +58,7 @@ export default function LandingPage() {
       {/* How It's Built */}
       <section className="border-t bg-muted/30">
         <div className="container mx-auto px-6 py-16 max-w-5xl">
-          <h2 className="text-2xl font-bold tracking-tight mb-2 text-center">
+          <h2 className="font-serif text-3xl md:text-4xl font-medium tracking-tight mb-3 text-center">
             Built by a dynasty player, for dynasty players
           </h2>
           <p className="text-muted-foreground text-center mb-10 max-w-lg mx-auto">
@@ -114,7 +114,7 @@ function FeatureCard({
   description: string;
 }) {
   return (
-    <div className="rounded-lg border bg-card p-6">
+    <div className="rounded-lg border bg-card p-6 hover:border-primary/50 transition-colors">
       <div className="mb-3">{icon}</div>
       <h3 className="font-semibold mb-1">{title}</h3>
       <p className="text-sm text-muted-foreground">{description}</p>

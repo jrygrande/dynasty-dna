@@ -72,31 +72,31 @@ function formatLift(lift: number): string {
 
 const VERDICT_STYLES: Record<string, { bg: string; border: string; text: string; dot: string }> = {
   confirmed: {
-    bg: "bg-emerald-50 dark:bg-emerald-950/40",
-    border: "border-emerald-200 dark:border-emerald-800",
-    text: "text-emerald-800 dark:text-emerald-200",
-    dot: "bg-emerald-500",
+    bg: "bg-grade-a/8",
+    border: "border-grade-a/25",
+    text: "text-grade-a",
+    dot: "bg-grade-a",
   },
   rejected: {
-    bg: "bg-red-50 dark:bg-red-950/40",
-    border: "border-red-200 dark:border-red-800",
-    text: "text-red-800 dark:text-red-200",
-    dot: "bg-red-500",
+    bg: "bg-grade-f/8",
+    border: "border-grade-f/25",
+    text: "text-grade-f",
+    dot: "bg-grade-f",
   },
   inconclusive: {
-    bg: "bg-amber-50 dark:bg-amber-950/40",
-    border: "border-amber-200 dark:border-amber-800",
-    text: "text-amber-800 dark:text-amber-200",
-    dot: "bg-amber-500",
+    bg: "bg-grade-c/8",
+    border: "border-grade-c/25",
+    text: "text-grade-c",
+    dot: "bg-grade-c",
   },
 };
 
 function VerdictBlock({ verdict, reason }: { verdict: string | null; reason: string | null }) {
   const style = VERDICT_STYLES[verdict ?? ""] ?? {
-    bg: "bg-gray-50 dark:bg-gray-900",
-    border: "border-gray-200 dark:border-gray-700",
-    text: "text-gray-500 dark:text-gray-400",
-    dot: "bg-gray-400",
+    bg: "bg-muted/50",
+    border: "border-border",
+    text: "text-muted-foreground",
+    dot: "bg-muted-foreground",
   };
 
   return (
@@ -131,8 +131,8 @@ function LiftCell({ metric }: { metric: ScorecardMetric }) {
   const color = metric.lift === 0
     ? "text-muted-foreground"
     : isGood
-      ? "text-emerald-600 dark:text-emerald-400"
-      : "text-red-600 dark:text-red-400";
+      ? "text-grade-a"
+      : "text-grade-f";
 
   return (
     <span className={`font-mono font-medium ${color}`}>
@@ -159,7 +159,7 @@ function ScorecardTable({
     variant === "primary"
       ? "text-foreground"
       : variant === "guardrail"
-        ? "text-amber-700 dark:text-amber-400"
+        ? "text-grade-c"
         : "text-muted-foreground";
 
   return (
@@ -293,7 +293,7 @@ function ExperimentCard({ run }: { run: ExperimentRun }) {
         )}
 
         {run.error && (
-          <div className="p-3 bg-red-50 dark:bg-red-900/20 rounded-md text-sm text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800">
+          <div className="p-3 bg-grade-f/8 rounded-md text-sm text-grade-f border border-grade-f/25">
             {run.error}
           </div>
         )}
@@ -302,7 +302,7 @@ function ExperimentCard({ run }: { run: ExperimentRun }) {
       <div className="border-t px-5 py-3 bg-muted/20">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3 text-xs text-muted-foreground">
-            <span className={`inline-flex items-center gap-1 ${run.status === "success" ? "text-emerald-600 dark:text-emerald-400" : run.status === "failed" ? "text-red-600 dark:text-red-400" : "text-blue-600"}`}>
+            <span className={`inline-flex items-center gap-1 ${run.status === "success" ? "text-grade-a" : run.status === "failed" ? "text-grade-f" : "text-grade-b"}`}>
               <span className="inline-block h-1.5 w-1.5 rounded-full bg-current" />
               {run.status}
             </span>
@@ -396,7 +396,7 @@ export default function ExperimentsPage() {
     <div className="min-h-screen bg-background">
       <main className="container mx-auto px-6 py-8 max-w-3xl">
         <div className="mb-10">
-          <h1 className="text-2xl font-bold tracking-tight">Experiments</h1>
+          <h1 className="font-serif text-4xl font-medium tracking-tight">Experiments</h1>
           <p className="text-muted-foreground mt-2 text-sm leading-relaxed max-w-2xl">
             Experiments tune Manager Process Score (MPS) — our composite
             grading algorithm — to be predictive of actual fantasy league
@@ -411,7 +411,7 @@ export default function ExperimentsPage() {
         )}
 
         {error && (
-          <div className="p-4 bg-red-50 dark:bg-red-900/20 rounded-lg text-sm text-red-700 dark:text-red-300 mb-6">
+          <div className="p-4 bg-grade-f/8 rounded-lg text-sm text-grade-f border border-grade-f/25 mb-6">
             {error}
           </div>
         )}
