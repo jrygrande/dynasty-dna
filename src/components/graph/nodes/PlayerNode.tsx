@@ -4,6 +4,7 @@ import { memo } from "react";
 import { Handle, Position, type NodeProps } from "reactflow";
 
 import { cn } from "@/lib/utils";
+import { RemoveButton } from "./RemoveButton";
 
 export interface PlayerNodeData {
   name: string;
@@ -11,6 +12,8 @@ export interface PlayerNodeData {
   team: string | null;
   selected?: boolean;
   dimmed?: boolean;
+  expanded?: boolean;
+  onRemove?: (nodeId: string) => void;
 }
 
 const POSITION_STRIPE: Record<string, string> = {
@@ -22,15 +25,17 @@ const POSITION_STRIPE: Record<string, string> = {
   DEF: "bg-muted-foreground",
 };
 
-function PlayerNodeImpl({ data, selected }: NodeProps<PlayerNodeData>) {
+function PlayerNodeImpl({ id, data, selected }: NodeProps<PlayerNodeData>) {
   const isSelected = selected || data.selected;
   const stripe = (data.position && POSITION_STRIPE[data.position]) || "bg-muted-foreground";
+  const unexpanded = data.expanded === false;
   return (
     <div
       className={cn(
-        "relative flex items-center gap-2 overflow-hidden rounded-md border bg-card px-3 py-1.5 shadow-sm",
+        "group relative flex items-center gap-2 overflow-hidden rounded-md border bg-card px-3 py-1.5 shadow-sm",
         "text-card-foreground transition-opacity",
         isSelected && "ring-2 ring-primary",
+        unexpanded && !isSelected && "border-dashed",
         data.dimmed && "opacity-30",
       )}
       style={{ width: 128, height: 48 }}
@@ -49,6 +54,7 @@ function PlayerNodeImpl({ data, selected }: NodeProps<PlayerNodeData>) {
           {[data.position ?? "?", data.team ?? "--"].join(" · ")}
         </div>
       </div>
+      {data.onRemove && <RemoveButton onRemove={() => data.onRemove?.(id)} />}
       <Handle type="source" position={Position.Bottom} className="!bg-transparent !border-0" />
     </div>
   );

@@ -4,6 +4,7 @@ import { memo } from "react";
 import { Handle, Position, type NodeProps } from "reactflow";
 
 import { cn } from "@/lib/utils";
+import { RemoveButton } from "./RemoveButton";
 
 export interface ManagerNodeData {
   displayName: string;
@@ -11,6 +12,8 @@ export interface ManagerNodeData {
   tradeCount?: number;
   selected?: boolean;
   dimmed?: boolean;
+  expanded?: boolean;
+  onRemove?: (nodeId: string) => void;
 }
 
 function initials(name: string): string {
@@ -20,14 +23,16 @@ function initials(name: string): string {
   return (parts[0]![0]! + parts[parts.length - 1]![0]!).toUpperCase();
 }
 
-function ManagerNodeImpl({ data, selected }: NodeProps<ManagerNodeData>) {
+function ManagerNodeImpl({ id, data, selected }: NodeProps<ManagerNodeData>) {
   const isSelected = selected || data.selected;
+  const unexpanded = data.expanded === false;
   return (
     <div
       className={cn(
-        "flex items-center gap-2 rounded-md border bg-card px-3 py-2 shadow-sm",
+        "group relative flex items-center gap-2 rounded-md border bg-card px-3 py-2 shadow-sm",
         "text-card-foreground transition-opacity",
         isSelected && "ring-2 ring-primary",
+        unexpanded && !isSelected && "border-dashed",
         data.dimmed && "opacity-30",
       )}
       style={{ width: 140, height: 56 }}
@@ -42,7 +47,6 @@ function ManagerNodeImpl({ data, selected }: NodeProps<ManagerNodeData>) {
         aria-hidden="true"
       >
         {data.avatar ? (
-          // Avatar URL from Sleeper — render as background image so we don't add next/image config.
           <span
             className="block h-full w-full rounded-full bg-cover bg-center"
             style={{ backgroundImage: `url(${data.avatar})` }}
@@ -61,6 +65,7 @@ function ManagerNodeImpl({ data, selected }: NodeProps<ManagerNodeData>) {
           </div>
         ) : null}
       </div>
+      {data.onRemove && <RemoveButton onRemove={() => data.onRemove?.(id)} />}
       <Handle type="source" position={Position.Bottom} className="!bg-transparent !border-0" />
     </div>
   );

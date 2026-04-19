@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { GraphEdgeKind, GraphFocus } from "@/lib/assetGraph";
+import type { GraphEdgeKind } from "@/lib/assetGraph";
 import { trackEvent } from "@/lib/analytics";
 
 interface ManagerOption {
@@ -16,14 +16,10 @@ interface GraphFilterSidebarProps {
   selectedSeasons: string[];
   selectedManagers: string[];
   selectedEventTypes: GraphEdgeKind[];
-  focus: GraphFocus | null;
-  focusHops: number;
   layoutMode: "band" | "dagre";
   onSeasonsChange: (s: string[]) => void;
   onManagersChange: (m: string[]) => void;
   onEventTypesChange: (e: GraphEdgeKind[]) => void;
-  onFocusChange: (f: GraphFocus | null) => void;
-  onFocusHopsChange: (n: number) => void;
   onLayoutModeChange: (m: "band" | "dagre") => void;
 }
 
@@ -79,14 +75,10 @@ export function GraphFilterSidebar({
   selectedSeasons,
   selectedManagers,
   selectedEventTypes,
-  focus,
-  focusHops,
   layoutMode,
   onSeasonsChange,
   onManagersChange,
   onEventTypesChange,
-  onFocusChange,
-  onFocusHopsChange,
   onLayoutModeChange,
 }: GraphFilterSidebarProps) {
   const [managerQuery, setManagerQuery] = useState("");
@@ -117,20 +109,6 @@ export function GraphFilterSidebar({
     onEventTypesChange(next);
     trackEvent("graph_filter_changed", { filterName: "eventTypes", newValue: next });
   }
-
-  function handleFocusKindChange(value: string) {
-    if (value === "none") {
-      onFocusChange(null);
-      return;
-    }
-    if (value === "manager" && managers.length > 0) {
-      const next: GraphFocus = { kind: "manager", userId: managers[0].userId };
-      onFocusChange(next);
-      trackEvent("graph_focus_set", { focusType: "manager", hops: focusHops });
-    }
-  }
-
-  const focusKind = focus?.kind ?? "none";
 
   return (
     <aside
@@ -240,62 +218,6 @@ export function GraphFilterSidebar({
             </label>
           </li>
         </ul>
-      </Section>
-
-      <Section title="Focus">
-        <div className="space-y-2">
-          <label className="block text-xs text-muted-foreground">Focus type</label>
-          <select
-            value={focusKind}
-            onChange={(e) => handleFocusKindChange(e.target.value)}
-            className="w-full px-2 py-1 text-xs rounded-md border bg-background"
-          >
-            <option value="none">None</option>
-            <option value="manager">Manager</option>
-          </select>
-
-          {focus?.kind === "manager" && (
-            <div>
-              <label className="block text-xs text-muted-foreground mb-1">Manager</label>
-              <select
-                value={focus.userId}
-                onChange={(e) => {
-                  const next: GraphFocus = { kind: "manager", userId: e.target.value };
-                  onFocusChange(next);
-                  trackEvent("graph_focus_set", { focusType: "manager", hops: focusHops });
-                }}
-                className="w-full px-2 py-1 text-xs rounded-md border bg-background"
-              >
-                {managers.map((m) => (
-                  <option key={m.userId} value={m.userId}>
-                    {m.displayName}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          <div>
-            <label className="block text-xs text-muted-foreground mb-1">
-              Hops: <span className="font-medium text-foreground">{focusHops}</span>
-            </label>
-            <input
-              type="range"
-              min={0}
-              max={4}
-              step={1}
-              value={focusHops}
-              onChange={(e) => {
-                const n = Number.parseInt(e.target.value, 10);
-                onFocusHopsChange(n);
-                if (focus) {
-                  trackEvent("graph_focus_set", { focusType: focus.kind, hops: n });
-                }
-              }}
-              className="w-full"
-            />
-          </div>
-        </div>
       </Section>
 
       <Section title="Layout" defaultOpen={false}>

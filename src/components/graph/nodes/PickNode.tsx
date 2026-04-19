@@ -4,6 +4,7 @@ import { memo } from "react";
 import { Handle, Position, type NodeProps } from "reactflow";
 
 import { cn } from "@/lib/utils";
+import { RemoveButton } from "./RemoveButton";
 
 export interface PickNodeData {
   pickSeason: string;
@@ -12,23 +13,26 @@ export interface PickNodeData {
   resolvedPlayerName?: string;
   selected?: boolean;
   dimmed?: boolean;
+  expanded?: boolean;
+  onRemove?: (nodeId: string) => void;
 }
 
-function PickNodeImpl({ data, selected }: NodeProps<PickNodeData>) {
+function PickNodeImpl({ id, data, selected }: NodeProps<PickNodeData>) {
   const isSelected = selected || data.selected;
+  const unexpanded = data.expanded === false;
   return (
     <div
       className={cn(
-        "relative flex flex-col justify-center rounded-md border bg-card px-2 py-1 shadow-sm",
+        "group relative flex flex-col justify-center rounded-md border bg-card px-2 py-1 shadow-sm",
         "text-card-foreground transition-opacity",
         isSelected && "ring-2 ring-primary",
+        unexpanded && !isSelected && "border-dashed",
         data.dimmed && "opacity-30",
       )}
       style={{ width: 112, height: 48 }}
       aria-label={`Draft pick ${data.pickSeason} round ${data.pickRound}`}
     >
       <Handle type="target" position={Position.Top} className="!bg-transparent !border-0" />
-      {/* Diamond accent in the top-right corner. */}
       <span
         className="absolute right-1 top-1 block h-2 w-2 rotate-45 bg-primary/70"
         aria-hidden="true"
@@ -49,6 +53,7 @@ function PickNodeImpl({ data, selected }: NodeProps<PickNodeData>) {
           &rarr; {data.resolvedPlayerName}
         </div>
       ) : null}
+      {data.onRemove && <RemoveButton onRemove={() => data.onRemove?.(id)} />}
       <Handle type="source" position={Position.Bottom} className="!bg-transparent !border-0" />
     </div>
   );

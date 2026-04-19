@@ -5,14 +5,12 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
   applyGraphFilters,
-  pickKey,
   type Graph,
   type GraphEdgeKind,
-  type GraphFocus,
   type GraphResponse,
   type GraphSelection,
 } from "@/lib/assetGraph";
-import type { EnrichedTransaction } from "@/lib/transactionEnrichment";
+import { useGraphVisibility } from "@/lib/useGraphVisibility";
 import { GraphFilterSidebar } from "@/components/graph/GraphFilterSidebar";
 import { GraphDetailDrawer } from "@/components/graph/GraphDetailDrawer";
 import { GraphHeaderStats } from "@/components/graph/GraphHeaderStats";
@@ -76,7 +74,7 @@ export default function GraphPage() {
   const searchParams = useSearchParams();
   const familyId = params.familyId as string;
 
-  // Parse URL params into strongly-typed state.
+  // URL state.
   const selectedSeasons = useMemo(() => parseCsv(searchParams.get("seasons")), [searchParams]);
   const selectedManagers = useMemo(() => parseCsv(searchParams.get("managers")), [searchParams]);
   const selectedEventTypes = useMemo<GraphEdgeKind[]>(() => {
@@ -84,10 +82,13 @@ export default function GraphPage() {
     return parsed.length > 0 ? parsed : DEFAULT_EVENT_TYPES;
   }, [searchParams]);
 
-  const focusPlayerId = searchParams.get("focusPlayerId");
-  const focusPickKey = searchParams.get("focusPickKey");
-  const focusManagerId = searchParams.get("focusManagerId");
-  const focusHops = Number.parseInt(searchParams.get("focusHops") ?? "2", 10) || 2;
+  const seedRaw = searchParams.get("seed");
+  const expandedRaw = searchParams.get("expanded");
+  const removedRaw = searchParams.get("removed");
+  const seed = useMemo(() => parseCsv(seedRaw), [seedRaw]);
+  const expanded = useMemo(() => new Set(parseCsv(expandedRaw)), [expandedRaw]);
+  const removed = useMemo(() => new Set(parseCsv(removedRaw)), [removedRaw]);
+
   const layoutMode: "band" | "dagre" =
     searchParams.get("layout") === "dagre" ? "dagre" : "band";
   const selection = parseSelection(searchParams.get("selection"));
@@ -99,30 +100,6 @@ export default function GraphPage() {
     return "deeplink";
   })();
 
-  const focus: GraphFocus | null = useMemo(() => {
-    if (focusPlayerId) return { kind: "player", playerId: focusPlayerId };
-    if (focusPickKey) {
-      const parts = focusPickKey.split(":");
-      if (parts.length === 4) {
-        const [leagueId, pickSeason, roundStr, originalRosterStr] = parts;
-        const pickRound = Number.parseInt(roundStr, 10);
-        const pickOriginalRosterId = Number.parseInt(originalRosterStr, 10);
-        if (!Number.isNaN(pickRound) && !Number.isNaN(pickOriginalRosterId)) {
-          return {
-            kind: "pick",
-            leagueId,
-            pickSeason,
-            pickRound,
-            pickOriginalRosterId,
-          };
-        }
-      }
-    }
-    if (focusManagerId) return { kind: "manager", userId: focusManagerId };
-    return null;
-  }, [focusPlayerId, focusPickKey, focusManagerId]);
-
-  // URL mutation helper — preserves unspecified params.
   const updateUrl = useCallback(
     (updates: Record<string, string | null>) => {
       const next = new URLSearchParams(searchParams.toString());
@@ -135,7 +112,6 @@ export default function GraphPage() {
     [router, searchParams],
   );
 
-  // Responsive breakpoint detection.
   const [isNarrow, setIsNarrow] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
     return window.innerWidth < 1024;
@@ -148,32 +124,15 @@ export default function GraphPage() {
     return () => window.removeEventListener("resize", onResize);
   }, []);
 
-  // Fetch graph data when filter params change.
   const [response, setResponse] = useState<GraphResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const analyticsFiredRef = useRef(false);
   const seasonsBootstrappedRef = useRef(false);
-  const focusBootstrappedRef = useRef(false);
   const [tooltipDismissed, setTooltipDismissed] = useState<boolean>(() => {
     if (typeof window === "undefined") return true;
     return Boolean(window.localStorage.getItem("graph_tooltip_dismissed"));
   });
-
-  // Only focus / layout changes trigger a refetch — seasons/managers/eventTypes
-  // are applied client-side via applyGraphFilters (see fetched-graph useMemo
-  // below). This keeps filter toggles instant and avoids DB round-trips.
-  const fetchKey = useMemo(
-    () =>
-      JSON.stringify({
-        focusPlayerId,
-        focusPickKey,
-        focusManagerId,
-        focusHops,
-        layout: layoutMode,
-      }),
-    [focusPlayerId, focusPickKey, focusManagerId, focusHops, layoutMode],
-  );
 
   useEffect(() => {
     let cancelled = false;
@@ -181,13 +140,7 @@ export default function GraphPage() {
       setLoading(true);
       setError(null);
       try {
-        const qs = new URLSearchParams();
-        if (focusPlayerId) qs.set("focusPlayerId", focusPlayerId);
-        if (focusPickKey) qs.set("focusPickKey", focusPickKey);
-        if (focusManagerId) qs.set("focusManagerId", focusManagerId);
-        qs.set("focusHops", String(focusHops));
-        qs.set("layout", layoutMode);
-        const res = await fetch(`/api/leagues/${familyId}/graph?${qs.toString()}`);
+        const res = await fetch(`/api/leagues/${familyId}/graph`);
         if (!res.ok) {
           throw new Error(`Graph API ${res.status}`);
         }
@@ -205,12 +158,9 @@ export default function GraphPage() {
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [familyId, fetchKey]);
+  }, [familyId]);
 
-  // Apply user filters client-side against the fetched graph. Only seasons /
-  // managers / eventTypes participate here; focus+hops+layout were already
-  // applied server-side (see route.ts `focusSubgraph` + layout()).
+  // Season/manager/eventType filters are client-side on the fetched graph.
   const filteredGraph: Graph | null = useMemo(() => {
     if (!response) return null;
     return applyGraphFilters(
@@ -226,7 +176,19 @@ export default function GraphPage() {
     );
   }, [response, selectedSeasons, selectedManagers, selectedEventTypes, layoutMode]);
 
-  // Bootstrap: default seasons = latest season once first response lands.
+  // Progressive-disclosure visibility: seed + expansions − removed.
+  const visibility = useGraphVisibility(filteredGraph, { seed, expanded, removed });
+
+  const visibleGraph: Graph | null = useMemo(() => {
+    if (!filteredGraph) return null;
+    return {
+      nodes: visibility.visibleNodes,
+      edges: visibility.visibleEdges,
+      stats: filteredGraph.stats,
+    };
+  }, [filteredGraph, visibility]);
+
+  // Bootstrap default seasons once response lands.
   useEffect(() => {
     if (!response || seasonsBootstrappedRef.current) return;
     if (selectedSeasons.length === 0 && response.seasons.length > 0) {
@@ -238,48 +200,6 @@ export default function GraphPage() {
     }
   }, [response, selectedSeasons.length, updateUrl]);
 
-  // Bootstrap: auto-focus on highest-hop transaction on first load (if no focus set).
-  useEffect(() => {
-    if (!response || focusBootstrappedRef.current) return;
-    if (focus) {
-      focusBootstrappedRef.current = true;
-      return;
-    }
-    const trades = Object.values(response.transactions).filter((t) => t.type === "trade");
-    if (trades.length === 0) {
-      focusBootstrappedRef.current = true;
-      return;
-    }
-    const top = trades.reduce<EnrichedTransaction | null>((best, tx) => {
-      const hops = (tx.adds?.length ?? 0) + (tx.draftPicks?.length ?? 0);
-      if (!best) return tx;
-      const bestHops = (best.adds?.length ?? 0) + (best.draftPicks?.length ?? 0);
-      return hops > bestHops ? tx : best;
-    }, null);
-    if (!top) {
-      focusBootstrappedRef.current = true;
-      return;
-    }
-    focusBootstrappedRef.current = true;
-    // Manager userId is stable across leagues but EnrichedTransaction only
-    // carries per-league rosterId/name — match by display name against the
-    // graph's manager nodes to recover the userId.
-    const managerName = top.managers[0]?.name;
-    const managerNode = managerName
-      ? response.nodes.find((n) => n.kind === "manager" && n.displayName === managerName)
-      : undefined;
-    if (managerNode && managerNode.kind === "manager") {
-      updateUrl({ focusManagerId: managerNode.userId });
-      trackEvent("graph_focus_set", { focusType: "manager", hops: focusHops });
-      return;
-    }
-    if (top.adds.length > 0) {
-      updateUrl({ focusPlayerId: top.adds[0].playerId });
-      trackEvent("graph_focus_set", { focusType: "player", hops: focusHops });
-    }
-  }, [response, focus, focusHops, updateUrl]);
-
-  // Analytics: fire graph_view_opened once per response.
   useEffect(() => {
     if (!response || analyticsFiredRef.current) return;
     analyticsFiredRef.current = true;
@@ -292,9 +212,8 @@ export default function GraphPage() {
     });
   }, [response, familyId, from, selectedSeasons]);
 
-  // Dismissable onboarding toast.
   const showOnboarding =
-    !tooltipDismissed && response !== null && response.nodes.length > 0;
+    !tooltipDismissed && visibility.visibleNodes.length > 0;
   const dismissOnboarding = useCallback(() => {
     if (typeof window !== "undefined") {
       window.localStorage.setItem("graph_tooltip_dismissed", "1");
@@ -302,7 +221,6 @@ export default function GraphPage() {
     setTooltipDismissed(true);
   }, []);
 
-  // Filter change handlers.
   const handleSeasonsChange = useCallback(
     (seasons: string[]) => updateUrl({ seasons: seasons.join(",") || null }),
     [updateUrl],
@@ -315,25 +233,6 @@ export default function GraphPage() {
     (e: GraphEdgeKind[]) => updateUrl({ eventTypes: e.join(",") || null }),
     [updateUrl],
   );
-  const handleFocusChange = useCallback(
-    (f: GraphFocus | null) => {
-      const updates: Record<string, string | null> = {
-        focusPlayerId: null,
-        focusPickKey: null,
-        focusManagerId: null,
-      };
-      if (f?.kind === "player") updates.focusPlayerId = f.playerId;
-      else if (f?.kind === "pick") updates.focusPickKey = pickKey(f);
-      else if (f?.kind === "manager") updates.focusManagerId = f.userId;
-      updateUrl(updates);
-      if (f) trackEvent("graph_focus_set", { focusType: f.kind, hops: focusHops });
-    },
-    [updateUrl, focusHops],
-  );
-  const handleFocusHopsChange = useCallback(
-    (n: number) => updateUrl({ focusHops: String(n) }),
-    [updateUrl],
-  );
   const handleLayoutModeChange = useCallback(
     (m: "band" | "dagre") => updateUrl({ layout: m }),
     [updateUrl],
@@ -344,15 +243,50 @@ export default function GraphPage() {
     [updateUrl],
   );
 
+  const handleExpand = useCallback(
+    (nodeId: string) => {
+      if (expanded.has(nodeId)) return;
+      const next = Array.from(expanded);
+      next.push(nodeId);
+      updateUrl({
+        expanded: next.join(","),
+        selection: `node:${nodeId}`,
+      });
+      trackEvent("graph_node_expanded", { nodeId });
+    },
+    [expanded, updateUrl],
+  );
+
+  const handleRemove = useCallback(
+    (nodeId: string) => {
+      const nextRemoved = new Set(removed);
+      nextRemoved.add(nodeId);
+      const nextExpanded = new Set(expanded);
+      nextExpanded.delete(nodeId);
+      const nextSeed = seed.filter((id) => id !== nodeId);
+      const updates: Record<string, string | null> = {
+        removed: Array.from(nextRemoved).join(",") || null,
+        expanded: Array.from(nextExpanded).join(",") || null,
+        seed: nextSeed.join(",") || null,
+      };
+      if (selection?.type === "node" && selection.nodeId === nodeId) {
+        updates.selection = null;
+      }
+      updateUrl(updates);
+      trackEvent("graph_node_removed", { nodeId });
+    },
+    [expanded, removed, seed, selection, updateUrl],
+  );
+
   const filterCount = useMemo(() => {
     let n = 0;
     if (selectedSeasons.length > 0) n += 1;
     if (selectedManagers.length > 0) n += 1;
     if (selectedEventTypes.length !== DEFAULT_EVENT_TYPES.length) n += 1;
-    if (focus) n += 1;
+    if (seed.length > 0) n += 1;
     if (layoutMode !== "band") n += 1;
     return n;
-  }, [selectedSeasons, selectedManagers, selectedEventTypes, focus, layoutMode]);
+  }, [selectedSeasons, selectedManagers, selectedEventTypes, seed, layoutMode]);
 
   const seasonLabel = useMemo(() => {
     if (selectedSeasons.length === 1) return selectedSeasons[0];
@@ -364,14 +298,14 @@ export default function GraphPage() {
     return "";
   }, [selectedSeasons, response]);
 
-  // Mobile digest for narrow viewports.
   if (isNarrow) {
     return <MobileDigest familyId={familyId} response={response} loading={loading} />;
   }
 
+  const hasSeed = seed.length > 0;
+
   return (
     <div className="flex flex-col flex-1 min-h-0">
-      {/* Top header */}
       <div className="border-b">
         <div className="px-6 py-3 flex items-center gap-4">
           <Link
@@ -385,13 +319,11 @@ export default function GraphPage() {
           {filteredGraph && (
             <GraphHeaderStats stats={filteredGraph.stats} seasonLabel={seasonLabel} />
           )}
-          <CopyLinkButton hasFocus={Boolean(focus)} filterCount={filterCount} />
+          <CopyLinkButton hasFocus={hasSeed} filterCount={filterCount} />
         </div>
       </div>
 
-      {/* Main three-column area */}
       <div className="flex-1 flex min-h-0 relative">
-        {/* Sidebar */}
         <div className="w-72 border-r overflow-y-auto p-4 shrink-0">
           {response ? (
             <GraphFilterSidebar
@@ -400,14 +332,10 @@ export default function GraphPage() {
               selectedSeasons={selectedSeasons}
               selectedManagers={selectedManagers}
               selectedEventTypes={selectedEventTypes}
-              focus={focus}
-              focusHops={focusHops}
               layoutMode={layoutMode}
               onSeasonsChange={handleSeasonsChange}
               onManagersChange={handleManagersChange}
               onEventTypesChange={handleEventTypesChange}
-              onFocusChange={handleFocusChange}
-              onFocusHopsChange={handleFocusHopsChange}
               onLayoutModeChange={handleLayoutModeChange}
             />
           ) : (
@@ -415,7 +343,6 @@ export default function GraphPage() {
           )}
         </div>
 
-        {/* Center canvas */}
         <div className="flex-1 relative min-w-0">
           {loading && !response && <CanvasSkeleton />}
           {error && !loading && (
@@ -432,24 +359,27 @@ export default function GraphPage() {
               </div>
             </div>
           )}
-          {filteredGraph && !error && (
+          {!hasSeed && response && !error && <EmptyState familyId={familyId} />}
+          {hasSeed && visibleGraph && !error && (
             <AssetGraph
-              nodes={filteredGraph.nodes}
-              edges={filteredGraph.edges}
+              nodes={visibleGraph.nodes}
+              edges={visibleGraph.edges}
               layoutMode={layoutMode}
               selection={selection}
               onSelect={handleSelectionChange}
+              expandedNodeIds={expanded}
+              onExpand={handleExpand}
+              onRemove={handleRemove}
             />
           )}
 
-          {/* Onboarding toast */}
           {showOnboarding && (
             <div
               role="status"
               className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 max-w-md px-4 py-2.5 rounded-md bg-foreground text-background shadow-lg flex items-center gap-3"
             >
               <span className="text-xs">
-                Click a manager to see their assets. Click an edge to see the trade.
+                Click a node to expand its trade partners. Click again to see details. Hover for the × to remove.
               </span>
               <button
                 type="button"
@@ -462,17 +392,45 @@ export default function GraphPage() {
           )}
         </div>
 
-        {/* Right drawer (conditional) */}
-        {selection && filteredGraph && response && (
+        {selection && visibleGraph && response && (
           <GraphDetailDrawer
             selection={selection}
-            nodes={filteredGraph.nodes}
-            edges={filteredGraph.edges}
+            nodes={visibleGraph.nodes}
+            edges={visibleGraph.edges}
             transactions={response.transactions}
             familyId={familyId}
             onClose={handleCloseSelection}
           />
         )}
+      </div>
+    </div>
+  );
+}
+
+function EmptyState({ familyId }: { familyId: string }) {
+  return (
+    <div className="flex items-center justify-center h-full p-8">
+      <div className="max-w-md text-center space-y-4">
+        <h2 className="text-lg font-semibold">Start with an asset</h2>
+        <p className="text-sm text-muted-foreground leading-relaxed">
+          The trade network grows around whatever you seed it with. Open a player,
+          manager, or transaction to start — then click nodes to pull in their
+          partners one hop at a time.
+        </p>
+        <div className="flex items-center justify-center gap-3 pt-2">
+          <Link
+            href={`/league/${familyId}`}
+            className="px-3 py-1.5 text-sm rounded-md border bg-card hover:bg-accent hover:text-accent-foreground"
+          >
+            Back to league
+          </Link>
+          <Link
+            href={`/league/${familyId}/transactions`}
+            className="px-3 py-1.5 text-sm rounded-md bg-primary text-primary-foreground hover:bg-primary/90"
+          >
+            Browse transactions
+          </Link>
+        </div>
       </div>
     </div>
   );

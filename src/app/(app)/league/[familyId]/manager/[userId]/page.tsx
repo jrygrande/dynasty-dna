@@ -111,7 +111,7 @@ export default function ManagerPage() {
           </div>
           {graphEnabled && (
             <Link
-              href={`/league/${familyId}/graph?focusManagerId=${userId}&focusHops=2&from=manager`}
+              href={`/league/${familyId}/graph?seed=manager:${userId}&from=manager`}
               className="text-sm text-muted-foreground hover:text-foreground"
             >
               Trade network for this manager &rarr;

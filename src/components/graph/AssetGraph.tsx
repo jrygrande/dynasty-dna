@@ -24,7 +24,6 @@ import "reactflow/dist/style.css";
 
 import type {
   GraphEdge,
-  GraphFocus,
   GraphNode,
   GraphSelection,
 } from "@/lib/assetGraph";
@@ -40,8 +39,10 @@ export interface AssetGraphProps {
   edges: GraphEdge[];
   selection: GraphSelection | null;
   onSelect: (s: GraphSelection | null) => void;
-  onFocus?: (focus: GraphFocus) => void;
   layoutMode?: LayoutMode;
+  expandedNodeIds?: Set<string>;
+  onExpand?: (nodeId: string) => void;
+  onRemove?: (nodeId: string) => void;
 }
 
 type FlowNodeData = ManagerNodeData | PlayerNodeData | PickNodeData;
@@ -72,6 +73,9 @@ function AssetGraphInner({
   selection,
   onSelect,
   layoutMode = "band",
+  expandedNodeIds,
+  onExpand,
+  onRemove,
 }: AssetGraphProps) {
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
   const [hoveredEdgeId, setHoveredEdgeId] = useState<string | null>(null);
@@ -155,6 +159,8 @@ function AssetGraphInner({
             (e.target === hoveredNodeId && e.source === n.id),
         );
 
+      const isExpanded = expandedNodeIds?.has(n.id) ?? false;
+
       if (n.kind === "manager") {
         return {
           id: n.id,
@@ -167,6 +173,8 @@ function AssetGraphInner({
             tradeCount: n.tradeCount,
             selected: isSelected,
             dimmed: isDimmed,
+            expanded: isExpanded,
+            onRemove,
           },
         };
       }
@@ -183,6 +191,8 @@ function AssetGraphInner({
             team: n.team,
             selected: isSelected,
             dimmed: isDimmed,
+            expanded: isExpanded,
+            onRemove,
           },
         };
       }
@@ -199,14 +209,22 @@ function AssetGraphInner({
           resolvedPlayerName: n.resolvedPlayerName,
           selected: isSelected,
           dimmed: isDimmed,
+          expanded: isExpanded,
+          onRemove,
         },
       };
     });
-  }, [nodes, edges, positions, selection, hoveredNodeId]);
+  }, [nodes, edges, positions, selection, hoveredNodeId, expandedNodeIds, onRemove]);
 
   const onNodeClick = useCallback<NodeMouseHandler>(
-    (_, node) => onSelect({ type: "node", nodeId: node.id }),
-    [onSelect],
+    (_, node) => {
+      if (expandedNodeIds && !expandedNodeIds.has(node.id) && onExpand) {
+        onExpand(node.id);
+        return;
+      }
+      onSelect({ type: "node", nodeId: node.id });
+    },
+    [expandedNodeIds, onExpand, onSelect],
   );
 
   const onEdgeClick = useCallback<EdgeMouseHandler>(
@@ -242,7 +260,6 @@ function AssetGraphInner({
         onNodeMouseLeave={onNodeMouseLeave}
         onEdgeMouseEnter={onEdgeMouseEnter}
         onEdgeMouseLeave={onEdgeMouseLeave}
-        onlyRenderVisibleElements
         fitView
         proOptions={{ hideAttribution: true }}
       >

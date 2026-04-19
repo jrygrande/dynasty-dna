@@ -23,16 +23,11 @@ import { resolveFamily } from "@/lib/familyResolution";
 import { resolveDraftPicks, findOriginalSlot, calculatePickNumber } from "@/lib/draft";
 import {
   buildGraphFromEvents,
-  focusSubgraph,
   pickKey,
   type BuildGraphInput,
   type GraphEdgeKind,
-  type GraphFocus,
-  type GraphNode,
   type GraphResponse,
-  type Graph,
 } from "@/lib/assetGraph";
-import { layout } from "@/components/graph/layout";
 
 const ALLOWED_EVENT_TYPES: ReadonlyArray<string> = [
   "trade",
@@ -70,9 +65,6 @@ function parseEdgeKinds(value: string | null): GraphEdgeKind[] {
 function parsePickKey(key: string):
   | { leagueId: string; pickSeason: string; pickRound: number; pickOriginalRosterId: number }
   | null {
-  // Format: "{leagueId}:{season}:{round}:{origRosterId}"
-  // leagueId can contain no colons (Sleeper ids are numeric), so split on last
-  // 3 colons.
   const parts = key.split(":");
   if (parts.length < 4) return null;
   const pickOriginalRosterId = parseInt(parts[parts.length - 1], 10);
@@ -83,13 +75,6 @@ function parsePickKey(key: string):
   return { leagueId, pickSeason, pickRound, pickOriginalRosterId };
 }
 
-function applyLayout(graph: Graph, mode: "band" | "dagre"): void {
-  const positions = layout(graph, mode);
-  for (const n of graph.nodes) {
-    const pos = positions.get(n.id);
-    if (pos) (n as GraphNode & { layout?: { x: number; y: number } }).layout = pos;
-  }
-}
 
 export async function GET(
   req: NextRequest,
@@ -105,13 +90,6 @@ export async function GET(
   const seasonsParam = parseCsvParam(url.searchParams.get("seasons"));
   const managersParam = parseCsvParam(url.searchParams.get("managers"));
   const eventTypesParam = parseEdgeKinds(url.searchParams.get("eventTypes"));
-  const focusPlayerId = url.searchParams.get("focusPlayerId") || undefined;
-  const focusPickKey = url.searchParams.get("focusPickKey") || undefined;
-  const focusManagerId = url.searchParams.get("focusManagerId") || undefined;
-  const focusHopsRaw = url.searchParams.get("focusHops");
-  const focusHops = focusHopsRaw ? Math.max(0, parseInt(focusHopsRaw, 10) || 0) : 2;
-  const layoutRaw = url.searchParams.get("layout");
-  const layoutMode: "band" | "dagre" = layoutRaw === "dagre" ? "dagre" : "band";
 
   // ---------------------------------------------------------------
   // 2. Resolve family
@@ -355,7 +333,7 @@ export async function GET(
   // ---------------------------------------------------------------
   // 12. Build the graph
   // ---------------------------------------------------------------
-  let graph: Graph = buildGraphFromEvents({
+  const graph = buildGraphFromEvents({
     assetEvents: events.map((e) => ({
       id: e.id,
       leagueId: e.leagueId,
@@ -382,36 +360,14 @@ export async function GET(
     rosterToUser,
   });
 
-  // ---------------------------------------------------------------
-  // 13. Apply focus subgraph if requested
-  // ---------------------------------------------------------------
-  const focus: GraphFocus | null = (() => {
-    if (focusPlayerId) return { kind: "player", playerId: focusPlayerId };
-    if (focusManagerId) return { kind: "manager", userId: focusManagerId };
-    if (focusPickKey) {
-      const parsed = parsePickKey(focusPickKey);
-      if (parsed) return { kind: "pick", ...parsed };
-    }
-    return null;
-  })();
-  if (focus) {
-    graph = focusSubgraph(graph, focus, focusHops);
-  }
-
-  // ---------------------------------------------------------------
-  // 14. Apply server-side layout
-  // ---------------------------------------------------------------
-  applyLayout(graph, layoutMode);
-
-  // Noop-touch of filter params (for future in-query filtering). The current
-  // MVP applies filters client-side via applyGraphFilters(); we simply echo
-  // unused params here to keep the route contract consistent.
+  // Seasons/managers/eventTypes are applied client-side via applyGraphFilters;
+  // layout + visibility are derived client-side from seed/expanded/removed URL state.
   void seasonsParam;
   void managersParam;
   void eventTypesParam;
 
   // ---------------------------------------------------------------
-  // 15. Build response
+  // 13. Build response
   // ---------------------------------------------------------------
   const distinctSeasons = Array.from(new Set(members.map((m) => m.season))).sort(
     (a, b) => Number(a) - Number(b),
