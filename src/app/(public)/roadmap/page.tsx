@@ -63,10 +63,10 @@ function groupByPhase(
 
 function ExperimentCard({ flag }: { flag: FeatureFlag }) {
   return (
-    <div className="border border-dashed border-purple-300 dark:border-purple-700 rounded-lg p-4 bg-purple-50/50 dark:bg-purple-950/20">
+    <div className="border border-dashed border-chart-4/40 rounded-lg p-4 bg-chart-4/5">
       <div className="flex items-start justify-between gap-3 mb-2">
         <h3 className="text-sm font-semibold">{flag.title}</h3>
-        <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400 whitespace-nowrap">
+        <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-chart-4/15 text-chart-4 whitespace-nowrap">
           {flag.rolloutPercent}% rollout
         </span>
       </div>
@@ -126,7 +126,7 @@ export default function RoadmapPage() {
       <main className="container mx-auto px-6 py-12 max-w-3xl">
         {/* Header */}
         <div className="mb-10">
-          <h1 className="text-3xl font-bold tracking-tight mb-2">Roadmap</h1>
+          <h1 className="font-serif text-4xl font-medium tracking-tight mb-2">Roadmap</h1>
           <p className="text-muted-foreground">
             How we think about building Dynasty DNA. Every feature starts with a
             hypothesis and measurable success criteria.

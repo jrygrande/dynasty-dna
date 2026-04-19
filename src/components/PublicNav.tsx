@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { useEffect, useState } from "react";
 import { Menu, X } from "lucide-react";
+import { BrandLockup } from "./BrandMark";
 
 const navLinks = [
   { href: "/roadmap", label: "Roadmap" },
@@ -59,10 +60,8 @@ export function PublicNav() {
   return (
     <header className="border-b">
       <div className="container mx-auto px-6 py-4 flex items-center justify-between">
-        <Link href="/" className="flex items-center gap-2">
-          <span className="text-lg font-bold tracking-tight">
-            Dynasty <span className="text-primary">DNA</span>
-          </span>
+        <Link href="/" aria-label="Dynasty DNA home">
+          <BrandLockup />
         </Link>
 
         {/* Desktop nav */}

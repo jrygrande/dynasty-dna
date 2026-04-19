@@ -59,7 +59,7 @@ export default function ChangelogPage() {
     <div className="min-h-screen bg-background">
       <main className="container mx-auto px-6 py-12 max-w-3xl">
         <div className="mb-10">
-          <h1 className="text-3xl font-bold tracking-tight mb-2">Changelog</h1>
+          <h1 className="font-serif text-4xl font-medium tracking-tight mb-2">Changelog</h1>
           <p className="text-muted-foreground">
             What we&apos;ve shipped and why. Every feature starts with a
             hypothesis — here&apos;s what made it to production.
@@ -105,7 +105,7 @@ export default function ChangelogPage() {
                       <div className="flex items-start gap-4">
                         {/* Timeline dot */}
                         <div className="flex flex-col items-center pt-1.5">
-                          <div className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
+                          <div className="w-2.5 h-2.5 rounded-full bg-primary" />
                           <div className="w-px h-full bg-border mt-1" />
                         </div>
 
