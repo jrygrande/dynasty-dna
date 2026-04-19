@@ -118,10 +118,10 @@ function RosterRow({ roster }: { roster: RosterGrade }) {
                       <td className="px-2 py-1 text-right font-mono">
                         {w.slotBreakdown.followedBad}
                       </td>
-                      <td className="px-2 py-1 text-right font-mono text-emerald-400">
+                      <td className="px-2 py-1 text-right font-mono text-grade-a">
                         {w.slotBreakdown.brokeGood}
                       </td>
-                      <td className="px-2 py-1 text-right font-mono text-red-400">
+                      <td className="px-2 py-1 text-right font-mono text-grade-f">
                         {w.slotBreakdown.brokeBad}
                       </td>
                     </tr>

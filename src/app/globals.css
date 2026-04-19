@@ -55,18 +55,20 @@
     --sage-800: #38462D;
     --sage-900: #2B3623;
 
-    --grade-a: #4F7A3E;  /* deeper sage */
-    --grade-b: #3B6EA5;  /* dusty blue */
-    --grade-c: #C69B3C;  /* warm ochre */
-    --grade-d: #C27237;  /* terracotta */
-    --grade-f: #B2493F;  /* muted red */
+    /* Grade + chart tokens stored as RGB triplets so Tailwind's
+       `<alpha-value>` substitution works (e.g. `bg-grade-a/12`). */
+    --grade-a:  79 122  62;  /* #4F7A3E  deeper sage */
+    --grade-b:  59 110 165;  /* #3B6EA5  dusty blue */
+    --grade-c: 198 155  60;  /* #C69B3C  warm ochre */
+    --grade-d: 194 114  55;  /* #C27237  terracotta */
+    --grade-f: 178  73  63;  /* #B2493F  muted red */
 
-    --chart-1: var(--sage-500);
-    --chart-2: #3B6EA5;
-    --chart-3: #C27237;
-    --chart-4: #8A6DAD;
-    --chart-5: #C69B3C;
-    --chart-6: #5E8A8A;
+    --chart-1: 111 138  96;  /* #6F8A60  sage-500 */
+    --chart-2:  59 110 165;  /* #3B6EA5 */
+    --chart-3: 194 114  55;  /* #C27237 */
+    --chart-4: 138 109 173;  /* #8A6DAD */
+    --chart-5: 198 155  60;  /* #C69B3C */
+    --chart-6:  94 138 138;  /* #5E8A8A */
 
     /* Soft warm-shadowed elevation — never blue-tinted */
     --shadow-xs: 0 1px 2px rgba(31, 30, 27, 0.04);
