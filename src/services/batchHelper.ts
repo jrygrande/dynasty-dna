@@ -9,10 +9,8 @@ export const BATCH_SIZE = 200;
  * (with .onConflictDoUpdate/DoNothing/etc applied).
  */
 export async function batchInsert<T extends Record<string, unknown>>(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   table: any,
   values: T[],
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   onConflict: (query: any) => any,
   chunkSize = BATCH_SIZE
 ): Promise<void> {
