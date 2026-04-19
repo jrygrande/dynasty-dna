@@ -4,48 +4,101 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    /* ------------------------------------------------------------
+       Dynasty DNA — Claude-inspired: cream canvas, warm slate ink,
+       sage accent. All tokens in HSL-triplet form for shadcn/Tailwind.
+       ------------------------------------------------------------ */
+
+    /* shadcn semantic tokens */
+    --background: 48 28% 97%;          /* cream-50 #FAF9F5 */
+    --foreground: 40 7% 11%;           /* slate-900 #1F1E1B */
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card-foreground: 40 7% 11%;
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 221.2 83.2% 53.3%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 221.2 83.2% 53.3%;
+    --popover-foreground: 40 7% 11%;
+    --primary: 95 18% 46%;             /* sage-500 #6F8A60 */
+    --primary-foreground: 48 28% 97%;
+    --secondary: 47 19% 92%;           /* cream-100 */
+    --secondary-foreground: 40 7% 17%;
+    --muted: 47 19% 92%;
+    --muted-foreground: 40 4% 40%;
+    --accent: 95 18% 88%;              /* sage-100 */
+    --accent-foreground: 95 28% 22%;
+    --destructive: 5 47% 47%;          /* muted red */
+    --destructive-foreground: 48 28% 97%;
+    --border: 44 14% 82%;              /* cream-300 */
+    --input: 44 14% 82%;
+    --ring: 95 18% 46%;
     --radius: 0.5rem;
+
+    /* Raw scale tokens (hex — for charts, badges, marketing) */
+    --cream-50:  #FAF9F5;
+    --cream-100: #F5F4EE;
+    --cream-200: #EDEBE2;
+    --cream-300: #DAD7CB;
+
+    --slate-900: #1F1E1B;
+    --slate-800: #2B2A26;
+    --slate-700: #3D3B35;
+    --slate-500: #6B6A62;
+    --slate-400: #8F8E85;
+    --slate-300: #B5B3A8;
+
+    --sage-50:  #F1F4EF;
+    --sage-100: #E2E8DD;
+    --sage-200: #C6D1BE;
+    --sage-300: #A8B99C;
+    --sage-400: #8AA07B;
+    --sage-500: #6F8A60;
+    --sage-600: #597048;
+    --sage-700: #465938;
+    --sage-800: #38462D;
+    --sage-900: #2B3623;
+
+    --grade-a: #4F7A3E;  /* deeper sage */
+    --grade-b: #3B6EA5;  /* dusty blue */
+    --grade-c: #C69B3C;  /* warm ochre */
+    --grade-d: #C27237;  /* terracotta */
+    --grade-f: #B2493F;  /* muted red */
+
+    --chart-1: var(--sage-500);
+    --chart-2: #3B6EA5;
+    --chart-3: #C27237;
+    --chart-4: #8A6DAD;
+    --chart-5: #C69B3C;
+    --chart-6: #5E8A8A;
+
+    /* Soft warm-shadowed elevation — never blue-tinted */
+    --shadow-xs: 0 1px 2px rgba(31, 30, 27, 0.04);
+    --shadow-sm: 0 1px 3px rgba(31, 30, 27, 0.06), 0 1px 2px rgba(31, 30, 27, 0.04);
+    --shadow-md: 0 4px 12px rgba(31, 30, 27, 0.06), 0 2px 4px rgba(31, 30, 27, 0.04);
+    --shadow-lg: 0 12px 32px rgba(31, 30, 27, 0.08), 0 4px 8px rgba(31, 30, 27, 0.04);
   }
 
   .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 217.2 91.2% 59.8%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 224.3 76.3% 48%;
+    /* Dark mode is not currently wired anywhere in the app. The brand
+       direction is light-first (cream canvas), so this block exists only
+       to keep shadcn primitives rendering if someone toggles .dark.
+       Revisit with design when we actually ship a dark theme. */
+    --background: 40 7% 11%;
+    --foreground: 48 28% 97%;
+    --card: 40 7% 13%;
+    --card-foreground: 48 28% 97%;
+    --popover: 40 7% 13%;
+    --popover-foreground: 48 28% 97%;
+    --primary: 95 18% 52%;
+    --primary-foreground: 40 7% 11%;
+    --secondary: 40 7% 17%;
+    --secondary-foreground: 48 28% 97%;
+    --muted: 40 7% 17%;
+    --muted-foreground: 40 7% 65%;
+    --accent: 95 18% 22%;
+    --accent-foreground: 48 28% 97%;
+    --destructive: 5 47% 47%;
+    --destructive-foreground: 48 28% 97%;
+    --border: 40 7% 22%;
+    --input: 40 7% 22%;
+    --ring: 95 18% 52%;
   }
 }
 
@@ -54,6 +107,13 @@
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground font-sans;
+    font-feature-settings: "cv11", "ss01";
+  }
+  /* Every number in this product is tabular — fantasy stats, grades,
+     percentiles, timestamps. Apply globally to mono by default; authors
+     can also use Tailwind's `tabular-nums` utility anywhere. */
+  code, kbd, pre, samp, .font-mono {
+    font-variant-numeric: tabular-nums;
   }
 }

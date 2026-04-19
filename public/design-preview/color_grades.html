@@ -1,0 +1,41 @@
+<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="_card.css"></head>
+<body><div class="card">
+<style>
+  .title { font-family: var(--font-serif); font-size: 20px; font-weight: 500; letter-spacing:-0.01em; }
+  .sub { color: var(--slate-500); font-size: 12.5px; margin-top: 4px; margin-bottom: 18px; }
+  .grid { display:grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
+  .g { border-radius: 10px; padding: 14px; display:flex; flex-direction:column; gap:6px; border: 1px solid var(--cream-300); background: #fff; }
+  .badge { display:inline-block; padding: 3px 9px; border-radius:4px; font-size: 12px; font-weight: 700; border: 1px solid; align-self:flex-start; font-family: var(--font-sans); }
+  .hex { font-family: var(--font-mono); font-size: 10px; color: var(--slate-500); }
+  .use { font-size: 12px; color: var(--slate-700); }
+</style>
+<div class="title">Grade palette</div>
+<div class="sub">Five stops, earned not decorative. Used in <code style="font-family:var(--font-mono)">GradeBadge</code> and grade-specific chart segments only.</div>
+<div class="grid">
+  <div class="g">
+    <span class="badge" style="color:#4F7A3E;background:rgba(79,122,62,0.12);border-color:rgba(79,122,62,0.3)">A+</span>
+    <span class="hex">#4F7A3E</span>
+    <span class="use">grade-a · 90th+ pct</span>
+  </div>
+  <div class="g">
+    <span class="badge" style="color:#3B6EA5;background:rgba(59,110,165,0.12);border-color:rgba(59,110,165,0.3)">B+</span>
+    <span class="hex">#3B6EA5</span>
+    <span class="use">grade-b · 70–89</span>
+  </div>
+  <div class="g">
+    <span class="badge" style="color:#C69B3C;background:rgba(198,155,60,0.15);border-color:rgba(198,155,60,0.3)">C</span>
+    <span class="hex">#C69B3C</span>
+    <span class="use">grade-c · 40–69</span>
+  </div>
+  <div class="g">
+    <span class="badge" style="color:#C27237;background:rgba(194,114,55,0.15);border-color:rgba(194,114,55,0.3)">D</span>
+    <span class="hex">#C27237</span>
+    <span class="use">grade-d · 20–39</span>
+  </div>
+  <div class="g">
+    <span class="badge" style="color:#B2493F;background:rgba(178,73,63,0.12);border-color:rgba(178,73,63,0.3)">F</span>
+    <span class="hex">#B2493F</span>
+    <span class="use">grade-f · &lt;20</span>
+  </div>
+</div>
+</div></body></html>
