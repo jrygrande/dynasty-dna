@@ -6,6 +6,7 @@ import Link from "next/link";
 import { GradeBadge } from "@/components/GradeBadge";
 import { ManagerRadarChart } from "@/components/ManagerRadarChart";
 import { ManagerGradeCard } from "@/components/ManagerGradeCard";
+import { TypeBadge } from "@/components/TransactionCard";
 import { PILLAR_LABELS } from "@/lib/pillars";
 
 interface SeasonRow {
@@ -195,22 +196,14 @@ export default function ManagerPage() {
                 >
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
-                      <span
-                        className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-                          tx.type === "trade"
-                            ? "bg-purple-500/15 text-purple-400"
-                            : "bg-amber-500/15 text-amber-400"
-                        }`}
-                      >
-                        {tx.type === "free_agent" ? "FA" : tx.type}
-                      </span>
+                      <TypeBadge type={tx.type} />
                       <span className="text-xs text-muted-foreground">
                         {tx.season} W{tx.week}
                       </span>
                     </div>
                     <div className="text-sm">
                       {tx.adds.length > 0 && (
-                        <span className="text-emerald-400">
+                        <span className="text-primary">
                           +{tx.adds.map((p) => p.name).join(", ")}
                         </span>
                       )}
@@ -218,8 +211,8 @@ export default function ManagerPage() {
                         <span className="text-muted-foreground mx-1">/</span>
                       )}
                       {tx.drops.length > 0 && (
-                        <span className="text-red-400">
-                          -{tx.drops.map((p) => p.name).join(", ")}
+                        <span className="text-muted-foreground">
+                          −{tx.drops.map((p) => p.name).join(", ")}
                         </span>
                       )}
                     </div>

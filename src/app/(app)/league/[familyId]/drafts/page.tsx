@@ -47,12 +47,12 @@ interface DraftsResponse {
 }
 
 const POSITION_COLORS: Record<string, string> = {
-  QB: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400",
-  RB: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400",
-  WR: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
-  TE: "bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400",
-  K: "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-400",
-  DEF: "bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400",
+  QB: "bg-grade-f/12 text-grade-f",
+  RB: "bg-grade-b/12 text-grade-b",
+  WR: "bg-grade-a/12 text-grade-a",
+  TE: "bg-grade-d/12 text-grade-d",
+  K: "bg-chart-4/15 text-chart-4",
+  DEF: "bg-muted text-muted-foreground",
 };
 
 import { GradeBadge } from "@/components/GradeBadge";
@@ -141,7 +141,7 @@ export default function DraftsPage() {
         )}
 
         {error && (
-          <div className="text-center py-8 text-red-500">{error}</div>
+          <div className="text-center py-8 text-grade-f">{error}</div>
         )}
 
         {!loading && !error && data && (
@@ -247,7 +247,7 @@ function DraftBoard({ draft, familyId }: { draft: DraftData; familyId: string })
                         <div className="flex items-center gap-1.5">
                           {pick.position && (
                             <span
-                              className={`px-1.5 py-0.5 text-[10px] font-semibold rounded ${POSITION_COLORS[pick.position] || ""}`}
+                              className={`px-1.5 py-0 text-[10px] font-mono font-medium tracking-wide uppercase rounded-full ${POSITION_COLORS[pick.position] || ""}`}
                             >
                               {pick.position}
                             </span>
@@ -271,7 +271,7 @@ function DraftBoard({ draft, familyId }: { draft: DraftData; familyId: string })
                         <p className="text-xs text-muted-foreground truncate">
                           {pick.managerName}
                           {pick.isKeeper && (
-                            <span className="ml-1 text-amber-600 dark:text-amber-400">
+                            <span className="ml-1 text-primary">
                               (K)
                             </span>
                           )}

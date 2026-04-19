@@ -51,14 +51,14 @@ function nflStatusLabel(status: string | null, isByeWeek: boolean): string {
 }
 
 function nflStatusColor(status: string | null, isByeWeek: boolean): string {
-  if (isByeWeek) return "text-sky-600 dark:text-sky-400";
+  if (isByeWeek) return "text-grade-b";
   if (!status) return "text-muted-foreground";
   switch (status) {
-    case "ACT": return "text-green-600 dark:text-green-400";
-    case "RES": return "text-red-600 dark:text-red-400";
-    case "INA": return "text-amber-600 dark:text-amber-400";
-    case "DEV": return "text-blue-600 dark:text-blue-400";
-    case "CUT": return "text-red-600 dark:text-red-400";
+    case "ACT": return "text-grade-a";
+    case "RES": return "text-grade-d";
+    case "INA": return "text-muted-foreground";
+    case "DEV": return "text-grade-b";
+    case "CUT": return "text-grade-f";
     default: return "text-muted-foreground";
   }
 }
@@ -66,15 +66,13 @@ function nflStatusColor(status: string | null, isByeWeek: boolean): string {
 function fantasyStatusBadge(entry: WeekEntry): { label: string; className: string } {
   if (entry.fantasyStatus === "starter") {
     const slot = entry.lineupSlot || "Starter";
-    // Color based on whether they actually played
     if (entry.nflStatus === "RES" || entry.nflStatus === "INA") {
-      return { label: slot, className: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300" };
+      return { label: slot, className: "bg-grade-f/12 text-grade-f" };
     }
-    return { label: slot, className: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300" };
+    return { label: slot, className: "bg-grade-a/12 text-grade-a" };
   }
-  // Bench — highlight if they scored well (wasted points)
   if (entry.points >= 15) {
-    return { label: "Bench", className: "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300" };
+    return { label: "Bench", className: "bg-grade-c/15 text-grade-c" };
   }
   return { label: "Bench", className: "bg-secondary text-secondary-foreground" };
 }
