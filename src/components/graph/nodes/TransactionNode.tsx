@@ -199,13 +199,13 @@ function AssetRow({
             type="target"
             position={Position.Left}
             id={`asset-target-${asset.assetKey}`}
-            className="!w-0 !h-0 !bg-transparent !border-0 !min-w-0 !min-h-0"
+            className="!w-px !h-px !opacity-0 !border-0 !min-w-0 !min-h-0"
           />
           <Handle
             type="source"
             position={Position.Right}
             id={`asset-source-${asset.assetKey}`}
-            className="!w-0 !h-0 !bg-transparent !border-0 !min-w-0 !min-h-0"
+            className="!w-px !h-px !opacity-0 !border-0 !min-w-0 !min-h-0"
           />
         </>
       )}

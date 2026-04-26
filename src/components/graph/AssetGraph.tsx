@@ -7,6 +7,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useState,
 } from "react";
@@ -15,6 +16,7 @@ import ReactFlow, {
   Controls,
   MiniMap,
   ReactFlowProvider,
+  useUpdateNodeInternals,
   type Edge,
   type Node,
   type NodeMouseHandler,
@@ -158,6 +160,25 @@ function AssetGraphInner({
     }
     return m;
   }, [assetExpansionsByNode, expandedAssetKeys, edges]);
+
+  // When handles are added/removed dynamically (asset expansion toggled),
+  // tell React Flow to re-measure handle positions on affected nodes.
+  // Double-RAF ensures the DOM has painted before we measure.
+  const updateNodeInternals = useUpdateNodeInternals();
+  useEffect(() => {
+    const nodeIds = Array.from(nodeExpandedAssets.keys());
+    if (nodeIds.length === 0) return;
+    let cancelled = false;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (cancelled) return;
+        for (const nodeId of nodeIds) {
+          updateNodeInternals(nodeId);
+        }
+      });
+    });
+    return () => { cancelled = true; };
+  }, [nodeExpandedAssets, updateNodeInternals]);
 
   // Set of current_roster node IDs — don't route per-asset handles to these.
   const rosterNodeIds = useMemo(
