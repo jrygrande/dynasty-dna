@@ -268,13 +268,28 @@ function isExit(ev: Ev): boolean {
   );
 }
 
+/** Event type priority: draft_selected sorts AFTER pick_trade so that the
+ *  tenure walk sees the trade that delivered the pick before the draft
+ *  that resolves it (they may share the same season/week/createdAt). */
+const EVENT_ORDER: Record<string, number> = {
+  pick_trade: 0,
+  trade: 1,
+  waiver_add: 2,
+  waiver_drop: 2,
+  free_agent_add: 2,
+  free_agent_drop: 2,
+  commissioner: 3,
+  draft_selected: 4,
+};
+
 function compareEvents(a: Ev, b: Ev): number {
   const seasonCmp = a.season.localeCompare(b.season);
   if (seasonCmp !== 0) return seasonCmp;
   if (a.week !== b.week) return a.week - b.week;
   const ac = a.createdAt ?? 0;
   const bc = b.createdAt ?? 0;
-  return ac - bc;
+  if (ac !== bc) return ac - bc;
+  return (EVENT_ORDER[a.eventType] ?? 5) - (EVENT_ORDER[b.eventType] ?? 5);
 }
 
 // ---------------------------------------------------------------------------

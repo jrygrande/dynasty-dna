@@ -60,6 +60,8 @@ export function useGraphVisibility(
 
     // Index edges by node id for fast incidence lookup.
     const edgesByNode = new Map<string, GraphEdge[]>();
+    // Index edges by asset key for full-thread expansion.
+    const edgesByAsset = new Map<string, GraphEdge[]>();
     for (const e of graph.edges) {
       let s = edgesByNode.get(e.source);
       if (!s) {
@@ -74,6 +76,15 @@ export function useGraphVisibility(
           edgesByNode.set(e.target, t);
         }
         t.push(e);
+      }
+      const aKey = edgeAssetKey(e);
+      if (aKey) {
+        let a = edgesByAsset.get(aKey);
+        if (!a) {
+          a = [];
+          edgesByAsset.set(aKey, a);
+        }
+        a.push(e);
       }
     }
 
@@ -106,11 +117,10 @@ export function useGraphVisibility(
         continue;
       }
       // Per-asset expansion: nodeId ~ assetKey
-      const nodeId = entry.slice(0, sepIdx);
+      // Reveal ALL edges for this asset across the entire graph (full thread).
       const assetKey = entry.slice(sepIdx + 1);
-      const incident = edgesByNode.get(nodeId) ?? [];
-      for (const e of incident) {
-        if (edgeAssetKey(e) !== assetKey) continue;
+      const matching = edgesByAsset.get(assetKey) ?? [];
+      for (const e of matching) {
         visible.add(e.source);
         visible.add(e.target);
         visibleEdgeIds.add(e.id);
