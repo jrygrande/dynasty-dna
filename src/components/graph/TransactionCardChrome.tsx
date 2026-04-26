@@ -137,7 +137,7 @@ export function TransactionCardChrome({
         data.dimmed && "opacity-30",
       )}
       style={{ width: 260 }}
-      aria-label={`${KIND_LABEL[data.txKind]} transaction`}
+      aria-label={data.header.title}
       onClick={handleNodeClick}
     >
       {handles}

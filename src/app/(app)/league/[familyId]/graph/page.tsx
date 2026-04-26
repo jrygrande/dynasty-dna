@@ -397,7 +397,7 @@ export default function GraphPage() {
               className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 max-w-md px-4 py-2.5 rounded-md bg-foreground text-background shadow-lg flex items-center gap-3"
             >
               <span className="text-xs">
-                Click a card header to expand it. Click an asset to follow its thread.
+                Click a card header to expand it. Click an asset to follow its thread across stints between managers.
               </span>
               <button
                 type="button"
