@@ -6,16 +6,18 @@ import Link from "next/link";
 import {
   applyGraphFilters,
   type Graph,
+  type GraphFocus,
   type GraphResponse,
   type GraphSelection,
   type TransactionKind,
 } from "@/lib/assetGraph";
-import { useGraphVisibility } from "@/lib/useGraphVisibility";
+import { useGraphVisibility, edgeAssetKey } from "@/lib/useGraphVisibility";
 import { GraphFilterSidebar } from "@/components/graph/GraphFilterSidebar";
 import { GraphDetailDrawer } from "@/components/graph/GraphDetailDrawer";
 import { GraphHeaderStats } from "@/components/graph/GraphHeaderStats";
 import { CopyLinkButton } from "@/components/graph/CopyLinkButton";
 import { MobileDigest } from "@/components/graph/MobileDigest";
+import { AssetPicker } from "@/components/graph/AssetPicker";
 import { trackEvent } from "@/lib/analytics";
 import { AssetGraph } from "@/components/graph/AssetGraph";
 
@@ -203,6 +205,38 @@ export default function GraphPage() {
     });
   }, [seedPlayerId, response, seed.length, updateUrl]);
 
+  // Resolve seedPickKey → concrete seed node ids (same pattern as seedPlayerId).
+  const seedPickKey = searchParams.get("seedPickKey");
+  useEffect(() => {
+    if (!seedPickKey || !response || seed.length > 0) return;
+    // seedPickKey format: "season:round:origRosterId"
+    const targetAssetKey = `pick:${seedPickKey}`;
+    const pickEdges = response.edges.filter(
+      (e) => e.assetKind === "pick" && edgeAssetKey(e) === targetAssetKey,
+    );
+    if (pickEdges.length === 0) {
+      updateUrl({ seedPickKey: null });
+      return;
+    }
+    const latest = pickEdges.reduce((best, e) => {
+      if (!best) return e;
+      if (e.isOpen && !best.isOpen) return e;
+      if (!e.isOpen && best.isOpen) return best;
+      const bestSeason = best.endSeason ?? best.startSeason;
+      const eSeason = e.endSeason ?? e.startSeason;
+      if (eSeason !== bestSeason) return eSeason > bestSeason ? e : best;
+      const bestWeek = best.endWeek ?? best.startWeek;
+      const eWeek = e.endWeek ?? e.startWeek;
+      return eWeek > bestWeek ? e : best;
+    });
+    const seedIds = Array.from(new Set([latest.source, latest.target]));
+    updateUrl({
+      seed: seedIds.join(","),
+      seedPickKey: null,
+      seasons: null,
+    });
+  }, [seedPickKey, response, seed.length, updateUrl]);
+
   useEffect(() => {
     if (!response || analyticsFiredRef.current) return;
     analyticsFiredRef.current = true;
@@ -277,6 +311,48 @@ export default function GraphPage() {
     [expanded, removed, seed, selection, updateUrl],
   );
 
+  const handlePickerSelect = useCallback(
+    (focus: GraphFocus) => {
+      if (focus.kind === "player") {
+        updateUrl({
+          seedPlayerId: focus.playerId,
+          seed: null,
+          expanded: null,
+          removed: null,
+          selection: null,
+          seasons: null,
+        });
+      } else {
+        // Pick seed — encode as "season:round:origRosterId" (matches edgeAssetKey format without the "pick:" prefix).
+        const key = `${focus.pickSeason}:${focus.pickRound}:${focus.pickOriginalRosterId}`;
+        updateUrl({
+          seedPickKey: key,
+          seed: null,
+          expanded: null,
+          removed: null,
+          selection: null,
+          seasons: null,
+        });
+      }
+      trackEvent("graph_picker_select", { kind: focus.kind });
+    },
+    [updateUrl],
+  );
+
+  const handleReset = useCallback(() => {
+    updateUrl({
+      seed: null,
+      seedPlayerId: null,
+      seedPickKey: null,
+      expanded: null,
+      removed: null,
+      selection: null,
+      seasons: null,
+      managers: null,
+      txKinds: null,
+    });
+  }, [updateUrl]);
+
   const filterCount = useMemo(() => {
     let n = 0;
     if (selectedSeasons.length > 0) n += 1;
@@ -299,7 +375,7 @@ export default function GraphPage() {
   const hasSeed = seed.length > 0;
 
   return (
-    <div className="flex flex-col flex-1 min-h-0">
+    <div className="flex flex-col h-[calc(100vh-3.5rem)] min-h-0">
       <div className="border-b">
         <div className="px-6 py-3 flex items-center gap-4">
           <Link
@@ -309,6 +385,15 @@ export default function GraphPage() {
             &larr; League
           </Link>
           <h1 className="text-lg font-semibold whitespace-nowrap">Trade network</h1>
+          {hasSeed && (
+            <button
+              type="button"
+              onClick={handleReset}
+              className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+            >
+              Reset
+            </button>
+          )}
           <div className="flex-1" />
           {filteredGraph && (
             <GraphHeaderStats stats={filteredGraph.stats} seasonLabel={seasonLabel} />
@@ -351,7 +436,11 @@ export default function GraphPage() {
               </div>
             </div>
           )}
-          {!hasSeed && response && !error && <EmptyState familyId={familyId} />}
+          {!hasSeed && response && !error && (
+            <div className="flex items-center justify-center h-full">
+              <AssetPicker familyId={familyId} onPick={handlePickerSelect} />
+            </div>
+          )}
           {hasSeed && visibleGraph && !error && (
             <AssetGraph
               nodes={visibleGraph.nodes}
@@ -393,35 +482,6 @@ export default function GraphPage() {
             onClose={handleCloseSelection}
           />
         )}
-      </div>
-    </div>
-  );
-}
-
-function EmptyState({ familyId }: { familyId: string }) {
-  return (
-    <div className="flex items-center justify-center h-full p-8">
-      <div className="max-w-md text-center space-y-4">
-        <h2 className="text-lg font-semibold">Start with an asset</h2>
-        <p className="text-sm text-muted-foreground leading-relaxed">
-          The trade network grows around whatever you seed it with. Open a player
-          page to trace their movement, or open a transaction to see the
-          tenures that flowed through it.
-        </p>
-        <div className="flex items-center justify-center gap-3 pt-2">
-          <Link
-            href={`/league/${familyId}`}
-            className="px-3 py-1.5 text-sm rounded-md border bg-card hover:bg-accent hover:text-accent-foreground"
-          >
-            Back to league
-          </Link>
-          <Link
-            href={`/league/${familyId}/transactions`}
-            className="px-3 py-1.5 text-sm rounded-md bg-primary text-primary-foreground hover:bg-primary/90"
-          >
-            Browse transactions
-          </Link>
-        </div>
       </div>
     </div>
   );

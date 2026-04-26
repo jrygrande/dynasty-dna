@@ -157,6 +157,11 @@ export type GraphSelection =
   | { type: "node"; nodeId: string }
   | { type: "edge"; edgeId: string };
 
+/** Seed focus for the graph — which asset to anchor the view on. */
+export type GraphFocus =
+  | { kind: "player"; playerId: string }
+  | { kind: "pick"; leagueId: string; pickSeason: string; pickRound: number; pickOriginalRosterId: number };
+
 export interface GraphFilters {
   seasons: string[];
   managers: string[]; // userIds
