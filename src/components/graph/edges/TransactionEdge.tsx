@@ -1,9 +1,10 @@
 "use client";
 
 import { memo } from "react";
-import { BaseEdge, EdgeLabelRenderer, getBezierPath, getSmoothStepPath, type EdgeProps } from "reactflow";
+import { BaseEdge, EdgeLabelRenderer, getBezierPath, type EdgeProps } from "reactflow";
 
 import { useGraphHover } from "../AssetGraph";
+import { routeEdgePath } from "@/lib/graph/routeEdgePath";
 
 export interface TransactionEdgeData {
   assetKind: "player" | "pick";
@@ -12,6 +13,8 @@ export interface TransactionEdgeData {
   managerName: string;
   /** Tenure is still active (target is a current-roster anchor). */
   isOpen?: boolean;
+  /** Y-offset in gutters to separate overlapping edge paths. */
+  gutterOffset?: number;
 }
 
 function TransactionEdgeImpl(props: EdgeProps<TransactionEdgeData>) {
@@ -29,25 +32,27 @@ function TransactionEdgeImpl(props: EdgeProps<TransactionEdgeData>) {
   } = props;
 
   const isAssetRouted = !!props.sourceHandleId?.startsWith("asset-");
+  const gutterOffset = data?.gutterOffset ?? 0;
 
-  const [edgePath, labelX, labelY] = isAssetRouted
-    ? getSmoothStepPath({
-        sourceX,
-        sourceY,
-        sourcePosition,
-        targetX,
-        targetY,
-        targetPosition,
-        borderRadius: 8,
-      })
-    : getBezierPath({
-        sourceX,
-        sourceY,
-        sourcePosition,
-        targetX,
-        targetY,
-        targetPosition,
-      });
+  let edgePath: string;
+  let labelX: number;
+  let labelY: number;
+
+  if (isAssetRouted) {
+    const result = routeEdgePath(sourceX, sourceY, targetX, targetY, gutterOffset);
+    edgePath = result.path;
+    labelX = result.labelX;
+    labelY = result.labelY;
+  } else {
+    [edgePath, labelX, labelY] = getBezierPath({
+      sourceX,
+      sourceY,
+      sourcePosition,
+      targetX,
+      targetY,
+      targetPosition,
+    });
+  }
 
   const { hoveredAssetKey, hoveredNodeId } = useGraphHover();
   const matchesHovered = !!hoveredAssetKey && data?.assetKey === hoveredAssetKey;

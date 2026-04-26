@@ -186,6 +186,26 @@ function AssetGraphInner({
     [nodes],
   );
 
+  // Compute gutter offsets: for expanded edges sharing the same source→target
+  // column pair, spread them vertically so they don't overlap.
+  const gutterOffsets = useMemo(() => {
+    const offsets = new Map<string, number>();
+    // Group expanded edges by source→target pair
+    const pairCounts = new Map<string, number>();
+    for (const e of edges) {
+      const aKey = edgeAssetKey(e);
+      if (!expandedAssetKeys.has(aKey)) continue;
+      const pair = `${e.source}→${e.target}`;
+      const idx = pairCounts.get(pair) ?? 0;
+      pairCounts.set(pair, idx + 1);
+      // Alternate above/below: 0, 12, -12, 24, -24, ...
+      const half = Math.floor(idx / 2) + 1;
+      const offset = idx === 0 ? 0 : idx % 2 === 1 ? half * 12 : -half * 12;
+      offsets.set(e.id, offset);
+    }
+    return offsets;
+  }, [edges, expandedAssetKeys]);
+
   const flowEdges = useMemo<Edge<TransactionEdgeData>[]>(() => {
     return edges.map((e): Edge<TransactionEdgeData> => {
       const aKey = edgeAssetKey(e);
@@ -207,6 +227,7 @@ function AssetGraphInner({
           assetLabel,
           managerName: e.managerName,
           isOpen: e.isOpen,
+          gutterOffset: gutterOffsets.get(e.id),
         },
       };
     });
