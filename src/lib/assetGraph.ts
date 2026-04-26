@@ -168,12 +168,6 @@ export type GraphFocus =
   | { kind: "player"; playerId: string }
   | { kind: "pick"; leagueId: string; pickSeason: string; pickRound: number; pickOriginalRosterId: number };
 
-export interface GraphFilters {
-  seasons: string[];
-  managers: string[]; // userIds
-  txKinds: TransactionKind[];
-}
-
 export interface GraphResponse {
   nodes: GraphNode[];
   edges: GraphEdge[];
@@ -670,61 +664,4 @@ export function buildGraphFromEvents(input: BuildGraphInput): Graph {
   };
 
   return { nodes: allNodes, edges, stats };
-}
-
-// ---------------------------------------------------------------------------
-// applyGraphFilters — filter visible subset by season / manager / txKind.
-// ---------------------------------------------------------------------------
-
-export function applyGraphFilters(graph: Graph, filters: GraphFilters): Graph {
-  const seasonSet = new Set(filters.seasons);
-  const managerSet = new Set(filters.managers);
-  const txKindSet = new Set(filters.txKinds);
-
-  const keepNode = (n: GraphNode): boolean => {
-    if (n.kind === "current_roster") {
-      if (managerSet.size > 0 && !managerSet.has(n.userId)) return false;
-      return true;
-    }
-    // transaction node
-    if (seasonSet.size > 0 && !seasonSet.has(n.season)) return false;
-    if (txKindSet.size > 0 && !txKindSet.has(n.txKind)) return false;
-    if (managerSet.size > 0) {
-      const hits = n.managers.some((m) => managerSet.has(m.userId));
-      if (!hits) return false;
-    }
-    return true;
-  };
-
-  const keptIds = new Set<string>();
-  const filteredNodes = graph.nodes.filter((n) => {
-    if (keepNode(n)) {
-      keptIds.add(n.id);
-      return true;
-    }
-    return false;
-  });
-
-  const filteredEdges = graph.edges.filter(
-    (e) => keptIds.has(e.source) && keptIds.has(e.target),
-  );
-
-  const stats: GraphStats = {
-    totalTransactions: filteredNodes.filter((n) => n.kind === "transaction").length,
-    totalTenures: filteredEdges.length,
-    openTenures: filteredEdges.filter((e) => e.isOpen).length,
-    playersInvolved: new Set(
-      filteredEdges.filter((e) => e.assetKind === "player").map((e) => e.playerId),
-    ).size,
-    picksInvolved: new Set(
-      filteredEdges.filter((e) => e.assetKind === "pick").map((e) => {
-        if (e.pickSeason === null || e.pickRound === null || e.pickOriginalRosterId === null) {
-          return null;
-        }
-        return `${e.pickSeason}:${e.pickRound}:${e.pickOriginalRosterId}`;
-      }).filter((k): k is string => k !== null),
-    ).size,
-  };
-
-  return { nodes: filteredNodes, edges: filteredEdges, stats };
 }
