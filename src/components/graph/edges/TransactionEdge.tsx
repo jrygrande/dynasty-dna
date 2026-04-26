@@ -3,14 +3,13 @@
 import { memo } from "react";
 import { BaseEdge, EdgeLabelRenderer, getBezierPath, type EdgeProps } from "reactflow";
 
+import { useGraphHover } from "../AssetGraph";
+
 export interface TransactionEdgeData {
   assetKind: "player" | "pick";
+  assetKey: string;
   assetLabel: string;
   managerName: string;
-  /** Edge faded because another node/asset is currently highlighted. */
-  dimmed?: boolean;
-  /** Edge bolded because its asset is currently hovered. */
-  highlighted?: boolean;
   /** Tenure is still active (target is a current-roster anchor). */
   isOpen?: boolean;
 }
@@ -38,8 +37,13 @@ function TransactionEdgeImpl(props: EdgeProps<TransactionEdgeData>) {
     targetPosition,
   });
 
-  const dimmed = !!data?.dimmed;
-  const highlighted = !!data?.highlighted;
+  const { hoveredAssetKey, hoveredNodeId } = useGraphHover();
+  const matchesHovered = !!hoveredAssetKey && data?.assetKey === hoveredAssetKey;
+  const nodeIncident = !!hoveredNodeId && (props.source === hoveredNodeId || props.target === hoveredNodeId);
+  const dimmed =
+    (!!hoveredAssetKey && !matchesHovered) ||
+    (!hoveredAssetKey && !!hoveredNodeId && !nodeIncident);
+  const highlighted = matchesHovered;
   const opacity = dimmed ? 0.18 : 1;
   const isOpen = !!data?.isOpen;
   const isPick = data?.assetKind === "pick";

@@ -5,6 +5,7 @@ import { Handle, Position, type NodeProps } from "reactflow";
 
 import { cn } from "@/lib/utils";
 import type { TransactionKind } from "@/lib/assetGraph";
+import { useGraphHover } from "../AssetGraph";
 import { RemoveButton } from "./RemoveButton";
 
 export interface TransactionNodeAsset {
@@ -25,13 +26,10 @@ export interface TransactionNodeData {
   managers: Array<{ userId: string; displayName: string }>;
   assets: TransactionNodeAsset[];
   expandedAssets: Set<string>;
-  /** Asset key currently hovered anywhere in the graph — matching rows highlight. */
-  hoveredAssetKey?: string | null;
   selected?: boolean;
   dimmed?: boolean;
   onRemove?: (nodeId: string) => void;
   onAssetClick?: (nodeId: string, assetKey: string) => void;
-  onAssetHover?: (assetKey: string | null) => void;
   onSelect?: (nodeId: string) => void;
 }
 
@@ -81,6 +79,7 @@ function formatDate(createdAt: number, season: string, week: number): string {
 }
 
 function TransactionNodeImpl({ id, data, selected }: NodeProps<TransactionNodeData>) {
+  const { hoveredAssetKey, setHoveredAssetKey } = useGraphHover();
   const isSelected = selected || data.selected;
 
   const managerLine =
@@ -153,9 +152,9 @@ function TransactionNodeImpl({ id, data, selected }: NodeProps<TransactionNodeDa
                 key={asset.assetKey}
                 asset={asset}
                 isExpanded={data.expandedAssets.has(asset.assetKey)}
-                isHovered={data.hoveredAssetKey === asset.assetKey}
+                isHovered={hoveredAssetKey === asset.assetKey}
                 onClick={() => data.onAssetClick?.(id, asset.assetKey)}
-                onHover={(hovered) => data.onAssetHover?.(hovered ? asset.assetKey : null)}
+                onHover={(hovered) => setHoveredAssetKey(hovered ? asset.assetKey : null)}
               />
             ))}
           </div>

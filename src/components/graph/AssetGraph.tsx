@@ -4,7 +4,9 @@ import {
   Component,
   type ErrorInfo,
   type ReactNode,
+  createContext,
   useCallback,
+  useContext,
   useMemo,
   useState,
 } from "react";
@@ -42,6 +44,23 @@ export interface AssetGraphProps {
 }
 
 type FlowNodeData = TransactionNodeData | CurrentRosterNodeData;
+
+/** Hover state shared via context to avoid recomputing all node/edge data on every hover. */
+interface HoverState {
+  hoveredNodeId: string | null;
+  hoveredAssetKey: string | null;
+  setHoveredAssetKey: (key: string | null) => void;
+}
+
+export const GraphHoverContext = createContext<HoverState>({
+  hoveredNodeId: null,
+  hoveredAssetKey: null,
+  setHoveredAssetKey: () => {},
+});
+
+export function useGraphHover() {
+  return useContext(GraphHoverContext);
+}
 
 const nodeTypes: NodeTypes = {
   transaction: TransactionNode,
@@ -107,13 +126,6 @@ function AssetGraphInner({
 
   const flowEdges = useMemo<Edge<TransactionEdgeData>[]>(() => {
     return edges.map((e): Edge<TransactionEdgeData> => {
-      const eKey = edgeAssetKey(e);
-      const matchesHoveredAsset = !!hoveredAssetKey && eKey === hoveredAssetKey;
-      const nodeIncident = !!hoveredNodeId && (e.source === hoveredNodeId || e.target === hoveredNodeId);
-      const dimmed =
-        (!!hoveredAssetKey && !matchesHoveredAsset) ||
-        (!hoveredAssetKey && !!hoveredNodeId && !nodeIncident);
-      const highlighted = matchesHoveredAsset;
       const assetLabel =
         e.assetKind === "player" ? e.playerName ?? "" : e.pickLabel ?? "";
       return {
@@ -124,28 +136,19 @@ function AssetGraphInner({
         selected: selection?.type === "edge" && selection.edgeId === e.id,
         data: {
           assetKind: e.assetKind,
+          assetKey: edgeAssetKey(e),
           assetLabel,
           managerName: e.managerName,
-          dimmed,
-          highlighted,
           isOpen: e.isOpen,
         },
       };
     });
-  }, [edges, hoveredNodeId, hoveredAssetKey, selection]);
+  }, [edges, selection]);
 
   const flowNodes = useMemo<Node<FlowNodeData>[]>(() => {
     return nodes.map((n): Node<FlowNodeData> => {
       const pos = positions.get(n.id) ?? { x: 0, y: 0 };
       const isSelected = selection?.type === "node" && selection.nodeId === n.id;
-      const isDimmed =
-        !!hoveredNodeId &&
-        hoveredNodeId !== n.id &&
-        !edges.some(
-          (e) =>
-            (e.source === hoveredNodeId && e.target === n.id) ||
-            (e.target === hoveredNodeId && e.source === n.id),
-        );
 
       if (n.kind === "current_roster") {
         return {
@@ -157,7 +160,7 @@ function AssetGraphInner({
             displayName: n.displayName,
             avatar: n.avatar,
             selected: isSelected,
-            dimmed: isDimmed,
+            dimmed: false,
             onRemove,
           },
         };
@@ -203,17 +206,15 @@ function AssetGraphInner({
           managers: n.managers,
           assets: transactionAssets,
           expandedAssets: assetExpansionsByNode.get(n.id) ?? new Set(),
-          hoveredAssetKey,
           selected: isSelected,
-          dimmed: isDimmed,
+          dimmed: false,
           onRemove,
           onAssetClick: onAssetExpand,
-          onAssetHover: setHoveredAssetKey,
           onSelect: (nodeId) => onSelect({ type: "node", nodeId }),
         },
       };
     });
-  }, [nodes, edges, positions, selection, hoveredNodeId, hoveredAssetKey, assetExpansionsByNode, onRemove, onAssetExpand, onSelect]);
+  }, [nodes, positions, selection, assetExpansionsByNode, onRemove, onAssetExpand, onSelect]);
 
   const onNodeClick = useCallback<NodeMouseHandler>(
     (_, node) => onSelect({ type: "node", nodeId: node.id }),
@@ -233,26 +234,33 @@ function AssetGraphInner({
   );
   const onNodeMouseLeave = useCallback(() => setHoveredNodeId(null), []);
 
+  const hoverState = useMemo<HoverState>(
+    () => ({ hoveredNodeId, hoveredAssetKey, setHoveredAssetKey }),
+    [hoveredNodeId, hoveredAssetKey],
+  );
+
   return (
-    <div className="h-full w-full">
-      <ReactFlow
-        nodes={flowNodes}
-        edges={flowEdges}
-        nodeTypes={nodeTypes}
-        edgeTypes={edgeTypes}
-        onNodeClick={onNodeClick}
-        onEdgeClick={onEdgeClick}
-        onPaneClick={onPaneClick}
-        onNodeMouseEnter={onNodeMouseEnter}
-        onNodeMouseLeave={onNodeMouseLeave}
-        fitView
-        proOptions={{ hideAttribution: true }}
-      >
-        <Background />
-        <Controls />
-        <MiniMap pannable zoomable />
-      </ReactFlow>
-    </div>
+    <GraphHoverContext.Provider value={hoverState}>
+      <div className="h-full w-full">
+        <ReactFlow
+          nodes={flowNodes}
+          edges={flowEdges}
+          nodeTypes={nodeTypes}
+          edgeTypes={edgeTypes}
+          onNodeClick={onNodeClick}
+          onEdgeClick={onEdgeClick}
+          onPaneClick={onPaneClick}
+          onNodeMouseEnter={onNodeMouseEnter}
+          onNodeMouseLeave={onNodeMouseLeave}
+          fitView
+          proOptions={{ hideAttribution: true }}
+        >
+          <Background />
+          <Controls />
+          <MiniMap pannable zoomable />
+        </ReactFlow>
+      </div>
+    </GraphHoverContext.Provider>
   );
 }
 
