@@ -372,7 +372,8 @@ export default function GraphPage() {
           >
             &larr; League
           </Link>
-          <h1 className="text-lg font-semibold whitespace-nowrap inline-flex items-center gap-2">
+          {/* Allowed per design: graph headers may use Source Serif 4 (relaxes marketing-only rule). */}
+          <h1 className="font-serif text-xl font-medium text-sage-800 whitespace-nowrap inline-flex items-center gap-2">
             <Dna className="h-5 w-5 text-primary" aria-hidden="true" />
             Lineage Tracer
           </h1>

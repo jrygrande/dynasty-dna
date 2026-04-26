@@ -52,10 +52,11 @@ function TransactionEdgeImpl(props: EdgeProps<TransactionEdgeData>) {
   const isPick = data?.assetKind === "pick";
 
   // Edges routed to per-asset handles (expanded threads) get thicker, solid lines
-  // with higher contrast colors.
+  // with higher contrast colors. Pick edges keep chart-4 (orange); player/trade
+  // edges use sage strokes — darker for the expanded asset-routed variant.
   const stroke = isAssetRouted
-    ? (isPick ? "hsl(var(--foreground) / 0.5)" : "hsl(var(--primary))")
-    : (isPick ? "hsl(var(--chart-4))" : "hsl(var(--primary))");
+    ? (isPick ? "hsl(var(--foreground) / 0.5)" : "var(--sage-600)")
+    : (isPick ? "hsl(var(--chart-4))" : "var(--sage-400)");
   const strokeWidth = selected || highlighted ? 3 : isAssetRouted ? 2.5 : 1.25;
   const dashArray = isAssetRouted ? undefined : (isOpen ? "4 3" : isPick ? "2 3" : undefined);
 
@@ -69,6 +70,7 @@ function TransactionEdgeImpl(props: EdgeProps<TransactionEdgeData>) {
           stroke,
           strokeWidth,
           strokeDasharray: dashArray,
+          strokeLinecap: "round",
           opacity,
           transition: "opacity 120ms linear",
         }}

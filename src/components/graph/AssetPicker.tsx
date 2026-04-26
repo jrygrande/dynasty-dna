@@ -72,16 +72,17 @@ export function AssetPicker({ familyId, onPick }: AssetPickerProps) {
 
   return (
     <div className="flex h-full w-full items-center justify-center p-6">
-      <div className="w-full max-w-xl rounded-lg border bg-card shadow-sm">
-        <div className="border-b px-5 py-4">
-          <h2 className="text-base font-semibold">Pick an asset to start</h2>
+      <div className="w-full max-w-xl rounded-xl border border-border/60 bg-card shadow-sm">
+        <div className="border-b border-border/60 px-5 py-4">
+          {/* Allowed per design: graph headers may use Source Serif 4 (relaxes marketing-only rule). */}
+          <h2 className="font-serif text-base text-sage-800">Pick an asset to start</h2>
           <p className="mt-1 text-xs text-muted-foreground">
             Choose a player or draft pick. Each click on a neighbor expands the
             graph one hop at a time.
           </p>
         </div>
 
-        <div className="flex border-b text-sm">
+        <div className="flex border-b border-border/60 text-sm">
           <TabButton active={tab === "players"} onClick={() => setTab("players")}>
             Players
           </TabButton>
@@ -156,11 +157,12 @@ function TabButton({
     <button
       type="button"
       onClick={onClick}
+      // Allowed per design: graph headers may use Source Serif 4 (relaxes marketing-only rule).
       className={
-        "flex-1 px-4 py-2.5 font-medium transition-colors " +
+        "flex-1 px-4 py-2.5 font-serif text-sage-800 transition-colors hover:bg-sage-50 " +
         (active
-          ? "border-b-2 border-foreground text-foreground"
-          : "text-muted-foreground hover:text-foreground")
+          ? "border-b-2 border-sage-500"
+          : "text-muted-foreground hover:text-sage-800")
       }
     >
       {children}
@@ -187,7 +189,7 @@ function PlayerList({
           <button
             type="button"
             onClick={() => onPick(p)}
-            className="flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-sm hover:bg-accent hover:text-accent-foreground"
+            className="flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-sm hover:bg-sage-50"
           >
             <span className="font-medium">{p.name}</span>
             <span className="text-xs text-muted-foreground">
@@ -219,7 +221,7 @@ function PickList({
           <button
             type="button"
             onClick={() => onPick(p)}
-            className="flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-sm hover:bg-accent hover:text-accent-foreground"
+            className="flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-sm hover:bg-sage-50"
           >
             <span className="font-medium">
               {p.season} · {p.round}
