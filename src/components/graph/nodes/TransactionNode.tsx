@@ -192,44 +192,62 @@ function AssetRow({
       : "bg-muted text-muted-foreground";
 
   return (
-    <button
-      type="button"
-      data-asset-row
-      onClick={handleClick}
-      onMouseDown={(e) => e.stopPropagation()}
-      onMouseEnter={() => onHover(true)}
-      onMouseLeave={() => onHover(false)}
-      className={cn(
-        "w-full flex items-center gap-2 px-3 py-1 text-left transition-colors border-t border-border/50 first:border-t-0",
-        "hover:bg-accent/40",
-        isExpanded && "bg-primary/5",
-        isHovered && !isExpanded && "bg-accent/30",
+    <div className="relative">
+      {isExpanded && (
+        <>
+          <Handle
+            type="target"
+            position={Position.Left}
+            id={`asset-target-${asset.assetKey}`}
+            className="!w-0 !h-0 !bg-transparent !border-0 !min-w-0 !min-h-0"
+          />
+          <Handle
+            type="source"
+            position={Position.Right}
+            id={`asset-source-${asset.assetKey}`}
+            className="!w-0 !h-0 !bg-transparent !border-0 !min-w-0 !min-h-0"
+          />
+        </>
       )}
-      aria-label={`${isExpanded ? "Collapse" : "Expand"} ${asset.label}`}
-    >
-      <span
+      <button
+        type="button"
+        data-asset-row
+        onClick={handleClick}
+        onMouseDown={(e) => e.stopPropagation()}
+        onMouseEnter={() => onHover(true)}
+        onMouseLeave={() => onHover(false)}
         className={cn(
-          "inline-flex items-center justify-center rounded-full px-1.5 py-0 font-mono text-[9px] font-medium uppercase tracking-wide",
-          pillClass,
+          "w-full flex items-center gap-2 px-3 py-1 text-left transition-colors border-t border-border/50 first:border-t-0",
+          "hover:bg-accent/40",
+          isExpanded && "bg-primary/5",
+          isHovered && !isExpanded && "bg-accent/30",
         )}
+        aria-label={`${isExpanded ? "Collapse" : "Expand"} ${asset.label}`}
       >
-        {asset.kind === "player" ? asset.position ?? "?" : "PICK"}
-      </span>
-      <span className="flex-1 truncate text-[11px] leading-tight" title={asset.label}>
-        {asset.label}
-      </span>
-      <span
-        aria-hidden
-        className={cn(
-          "inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border text-[9px] leading-none",
-          isExpanded
-            ? "border-primary bg-primary text-primary-foreground"
-            : "border-border border-dashed text-muted-foreground",
-        )}
-      >
-        {isExpanded ? "✓" : "+"}
-      </span>
-    </button>
+        <span
+          className={cn(
+            "inline-flex items-center justify-center rounded-full px-1.5 py-0 font-mono text-[9px] font-medium uppercase tracking-wide",
+            pillClass,
+          )}
+        >
+          {asset.kind === "player" ? asset.position ?? "?" : "PICK"}
+        </span>
+        <span className="flex-1 truncate text-[11px] leading-tight" title={asset.label}>
+          {asset.label}
+        </span>
+        <span
+          aria-hidden
+          className={cn(
+            "inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border text-[9px] leading-none",
+            isExpanded
+              ? "border-primary bg-primary text-primary-foreground"
+              : "border-border border-dashed text-muted-foreground",
+          )}
+        >
+          {isExpanded ? "✓" : "+"}
+        </span>
+      </button>
+    </div>
   );
 }
 

@@ -115,6 +115,18 @@ function AssetGraphInner({
     return m;
   }, [expandedEntries]);
 
+  // Set of asset keys that have been expanded — used to route edges to
+  // per-asset-row handles instead of the card-level handles.
+  const expandedAssetKeys = useMemo(() => {
+    const keys = new Set<string>();
+    if (!expandedEntries) return keys;
+    for (const entry of expandedEntries) {
+      const sep = entry.indexOf("~");
+      if (sep !== -1) keys.add(entry.slice(sep + 1));
+    }
+    return keys;
+  }, [expandedEntries]);
+
   const lanes = useMemo(
     () => assignLanes(seedIds ?? [], expandedEntries ?? new Set(), edges),
     [seedIds, expandedEntries, edges],
@@ -124,26 +136,59 @@ function AssetGraphInner({
     return layout({ nodes, edges }, layoutMode, lanes);
   }, [nodes, edges, layoutMode, lanes]);
 
+  // For each node, compute which asset keys are expanded (including downstream
+  // nodes in the thread, not just the node where the user clicked +).
+  const nodeExpandedAssets = useMemo(() => {
+    const m = new Map<string, Set<string>>();
+    // Start with the directly-expanded entries.
+    for (const [nodeId, keys] of assetExpansionsByNode) {
+      m.set(nodeId, new Set(keys));
+    }
+    // For each expanded asset key, find all edges with that key and mark
+    // both endpoints as having that asset expanded (for handle rendering).
+    for (const aKey of expandedAssetKeys) {
+      for (const e of edges) {
+        if (edgeAssetKey(e) !== aKey) continue;
+        for (const nid of [e.source, e.target]) {
+          let set = m.get(nid);
+          if (!set) { set = new Set(); m.set(nid, set); }
+          set.add(aKey);
+        }
+      }
+    }
+    return m;
+  }, [assetExpansionsByNode, expandedAssetKeys, edges]);
+
+  // Set of current_roster node IDs — don't route per-asset handles to these.
+  const rosterNodeIds = useMemo(
+    () => new Set(nodes.filter((n) => n.kind === "current_roster").map((n) => n.id)),
+    [nodes],
+  );
+
   const flowEdges = useMemo<Edge<TransactionEdgeData>[]>(() => {
     return edges.map((e): Edge<TransactionEdgeData> => {
+      const aKey = edgeAssetKey(e);
+      const isExpanded = expandedAssetKeys.has(aKey);
       const assetLabel =
         e.assetKind === "player" ? e.playerName ?? "" : e.pickLabel ?? "";
       return {
         id: e.id,
         source: e.source,
         target: e.target,
+        sourceHandle: isExpanded && !rosterNodeIds.has(e.source) ? `asset-source-${aKey}` : undefined,
+        targetHandle: isExpanded && !rosterNodeIds.has(e.target) ? `asset-target-${aKey}` : undefined,
         type: "transaction",
         selected: selection?.type === "edge" && selection.edgeId === e.id,
         data: {
           assetKind: e.assetKind,
-          assetKey: edgeAssetKey(e),
+          assetKey: aKey,
           assetLabel,
           managerName: e.managerName,
           isOpen: e.isOpen,
         },
       };
     });
-  }, [edges, selection]);
+  }, [edges, selection, expandedAssetKeys, rosterNodeIds]);
 
   const flowNodes = useMemo<Node<FlowNodeData>[]>(() => {
     return nodes.map((n): Node<FlowNodeData> => {
@@ -205,7 +250,7 @@ function AssetGraphInner({
           createdAt: n.createdAt,
           managers: n.managers,
           assets: transactionAssets,
-          expandedAssets: assetExpansionsByNode.get(n.id) ?? new Set(),
+          expandedAssets: nodeExpandedAssets.get(n.id) ?? new Set(),
           selected: isSelected,
           dimmed: false,
           onRemove,
@@ -214,7 +259,7 @@ function AssetGraphInner({
         },
       };
     });
-  }, [nodes, positions, selection, assetExpansionsByNode, onRemove, onAssetExpand, onSelect]);
+  }, [nodes, positions, selection, nodeExpandedAssets, onRemove, onAssetExpand, onSelect]);
 
   const onNodeClick = useCallback<NodeMouseHandler>(
     (_, node) => onSelect({ type: "node", nodeId: node.id }),
