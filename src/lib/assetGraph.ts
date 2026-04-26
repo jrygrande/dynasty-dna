@@ -285,6 +285,11 @@ const EVENT_ORDER: Record<string, number> = {
 function compareEvents(a: Ev, b: Ev): number {
   const seasonCmp = a.season.localeCompare(b.season);
   if (seasonCmp !== 0) return seasonCmp;
+  // draft_selected always sorts last within a season — it resolves a pick
+  // after all trades for that pick season are done, regardless of week.
+  const aIsDraft = a.eventType === "draft_selected" ? 1 : 0;
+  const bIsDraft = b.eventType === "draft_selected" ? 1 : 0;
+  if (aIsDraft !== bIsDraft) return aIsDraft - bIsDraft;
   if (a.week !== b.week) return a.week - b.week;
   const ac = a.createdAt ?? 0;
   const bc = b.createdAt ?? 0;
