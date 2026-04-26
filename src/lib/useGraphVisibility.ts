@@ -15,6 +15,9 @@ export interface VisibilityState {
   seed: string[];
   expanded: Set<string>;
   removed: Set<string>;
+  /** Asset key (e.g. "player:1234") of the originally-seeded asset, used to
+   * compute which assets are "in-chain" at the seed node. */
+  seedAssetKey?: string;
 }
 
 export interface Visibility {
@@ -23,6 +26,10 @@ export interface Visibility {
   isExpanded: (nodeId: string) => boolean;
   isAssetExpanded: (nodeId: string, assetKey: string) => boolean;
   isSeed: (nodeId: string) => boolean;
+  /** For each visible transaction node, the set of asset keys that are in
+   * the active chain (either the seed asset at the seed node, or assets on
+   * incident expanded edges). */
+  chainAssetsByNode: Map<string, Set<string>>;
 }
 
 const EMPTY: Visibility = {
@@ -31,6 +38,7 @@ const EMPTY: Visibility = {
   isExpanded: () => false,
   isAssetExpanded: () => false,
   isSeed: () => false,
+  chainAssetsByNode: new Map(),
 };
 
 /** Compute the asset key for an edge (matches URL encoding used by asset-row clicks). */
@@ -51,7 +59,7 @@ export function edgeAssetKey(edge: GraphEdge): string {
 
 export function useGraphVisibility(
   graph: Graph | null,
-  { seed, expanded, removed }: VisibilityState,
+  { seed, expanded, removed, seedAssetKey }: VisibilityState,
 ): Visibility {
   return useMemo<Visibility>(() => {
     if (!graph) return EMPTY;
@@ -103,6 +111,10 @@ export function useGraphVisibility(
       }
     }
 
+    // Track the set of asset keys that are "expanded" (full-thread) for chain
+    // computation. Whole-node expansion entries don't contribute here.
+    const expandedAssetKeySet = new Set<string>();
+
     for (const entry of expanded) {
       const sepIdx = entry.indexOf("~");
       if (sepIdx === -1) {
@@ -119,6 +131,7 @@ export function useGraphVisibility(
       // Per-asset expansion: nodeId ~ assetKey
       // Reveal ALL edges for this asset across the entire graph (full thread).
       const assetKey = entry.slice(sepIdx + 1);
+      expandedAssetKeySet.add(assetKey);
       const matching = edgesByAsset.get(assetKey) ?? [];
       for (const e of matching) {
         visible.add(e.source);
@@ -140,12 +153,33 @@ export function useGraphVisibility(
         visible.has(e.target),
     );
 
+    // Compute chain-relevant asset keys per visible transaction node.
+    // - Seed node: include the seed asset key (if defined).
+    // - Any node: include each incident visible-edge's asset key whose
+    //   thread is currently expanded.
+    const chainAssetsByNode = new Map<string, Set<string>>();
+    for (const n of visibleNodes) {
+      if (n.kind !== "transaction") continue;
+      const set = new Set<string>();
+      if (seedSet.has(n.id) && seedAssetKey) set.add(seedAssetKey);
+      chainAssetsByNode.set(n.id, set);
+    }
+    for (const e of visibleEdges) {
+      const aKey = edgeAssetKey(e);
+      if (!aKey || !expandedAssetKeySet.has(aKey)) continue;
+      for (const nid of [e.source, e.target]) {
+        const set = chainAssetsByNode.get(nid);
+        if (set) set.add(aKey);
+      }
+    }
+
     return {
       visibleNodes,
       visibleEdges,
       isExpanded: (id) => expanded.has(id),
       isAssetExpanded: (nodeId, assetKey) => expanded.has(`${nodeId}~${assetKey}`),
       isSeed: (id) => seedSet.has(id),
+      chainAssetsByNode,
     };
-  }, [graph, seed, expanded, removed]);
+  }, [graph, seed, expanded, removed, seedAssetKey]);
 }

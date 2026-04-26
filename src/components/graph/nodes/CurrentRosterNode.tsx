@@ -4,14 +4,12 @@ import { memo } from "react";
 import { Handle, Position, type NodeProps } from "reactflow";
 
 import { cn } from "@/lib/utils";
-import { RemoveButton } from "./RemoveButton";
 
 export interface CurrentRosterNodeData {
   displayName: string;
   avatar: string | null;
   selected?: boolean;
   dimmed?: boolean;
-  onRemove?: (nodeId: string) => void;
 }
 
 function initials(name: string): string {
@@ -21,7 +19,7 @@ function initials(name: string): string {
   return (parts[0]![0]! + parts[parts.length - 1]![0]!).toUpperCase();
 }
 
-function CurrentRosterNodeImpl({ id, data, selected }: NodeProps<CurrentRosterNodeData>) {
+function CurrentRosterNodeImpl({ data, selected }: NodeProps<CurrentRosterNodeData>) {
   const isSelected = selected || data.selected;
 
   return (
@@ -54,7 +52,6 @@ function CurrentRosterNodeImpl({ id, data, selected }: NodeProps<CurrentRosterNo
           Current roster
         </div>
       </div>
-      {data.onRemove && <RemoveButton onRemove={() => data.onRemove?.(id)} />}
       <Handle type="source" position={Position.Right} id="card-source" className="!bg-transparent !border-0" />
     </div>
   );
