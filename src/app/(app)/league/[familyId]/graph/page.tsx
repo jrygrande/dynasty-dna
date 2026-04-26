@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { Dna } from "lucide-react";
 import {
   pickKey,
   type Graph,
@@ -338,7 +339,10 @@ export default function GraphPage() {
           >
             &larr; League
           </Link>
-          <h1 className="text-lg font-semibold whitespace-nowrap">Trade network</h1>
+          <h1 className="text-lg font-semibold whitespace-nowrap inline-flex items-center gap-2">
+            <Dna className="h-5 w-5 text-primary" aria-hidden="true" />
+            Lineage Tracer
+          </h1>
           {hasSeed && (
             <button
               type="button"
