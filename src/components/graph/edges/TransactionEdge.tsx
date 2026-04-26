@@ -3,7 +3,7 @@
 import { memo } from "react";
 import { BaseEdge, EdgeLabelRenderer, type EdgeProps } from "reactflow";
 
-import { useGraphHover } from "../AssetGraph";
+import { useGraphHover, useObstacles } from "../AssetGraph";
 import { routeEdgePath } from "@/lib/graph/routeEdgePath";
 
 export interface TransactionEdgeData {
@@ -32,9 +32,10 @@ function TransactionEdgeImpl(props: EdgeProps<TransactionEdgeData>) {
   } = props;
 
   const isAssetRouted = !!props.sourceHandleId?.startsWith("asset-");
+  const obstacles = useObstacles();
   const gutterOffset = data?.gutterOffset ?? 0;
 
-  const result = routeEdgePath(sourceX, sourceY, targetX, targetY, gutterOffset);
+  const result = routeEdgePath(sourceX, sourceY, targetX, targetY, obstacles, gutterOffset);
   const edgePath = result.path;
   const labelX = result.labelX;
   const labelY = result.labelY;

@@ -66,6 +66,15 @@ export function useGraphHover() {
   return useContext(GraphHoverContext);
 }
 
+/** Obstacle rects for edge routing — shared via context to avoid per-edge data bloat. */
+import type { Obstacle } from "@/lib/graph/routeEdgePath";
+
+const ObstaclesContext = createContext<Obstacle[]>([]);
+
+export function useObstacles() {
+  return useContext(ObstaclesContext);
+}
+
 const nodeTypes: NodeTypes = {
   transaction: TransactionNode,
   current_roster: CurrentRosterNode,
@@ -138,6 +147,23 @@ function AssetGraphInner({
     return layout({ nodes, edges }, layoutMode, lanes);
   }, [nodes, edges, layoutMode, lanes]);
 
+  // Compute obstacle rectangles from node positions for edge routing.
+  // Transaction cards are 260px wide; height estimated from asset count.
+  // Current roster cards are 152x56.
+  const obstacleRects = useMemo<Obstacle[]>(() => {
+    return nodes.map((n) => {
+      const pos = positions.get(n.id);
+      if (!pos) return null;
+      if (n.kind === "current_roster") {
+        return { x: pos.x, y: pos.y, width: 152, height: 56 };
+      }
+      // Estimate transaction card height: header ~50px + assets * 22px + padding
+      const assetCount = n.kind === "transaction" ? n.assets.length : 0;
+      const height = 50 + Math.max(assetCount, 1) * 22 + 20;
+      return { x: pos.x, y: pos.y, width: 260, height };
+    }).filter((r): r is Obstacle => r !== null);
+  }, [nodes, positions]);
+
   // For each node, compute which asset keys are expanded (including downstream
   // nodes in the thread, not just the node where the user clicked +).
   const nodeExpandedAssets = useMemo(() => {
@@ -162,23 +188,22 @@ function AssetGraphInner({
   }, [assetExpansionsByNode, expandedAssetKeys, edges]);
 
   // When handles are added/removed dynamically (asset expansion toggled),
-  // tell React Flow to re-measure handle positions on affected nodes.
+  // tell React Flow to re-measure handle positions on ALL visible nodes.
   // Double-RAF ensures the DOM has painted before we measure.
   const updateNodeInternals = useUpdateNodeInternals();
   useEffect(() => {
-    const nodeIds = Array.from(nodeExpandedAssets.keys());
-    if (nodeIds.length === 0) return;
+    if (nodeExpandedAssets.size === 0) return;
     let cancelled = false;
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         if (cancelled) return;
-        for (const nodeId of nodeIds) {
-          updateNodeInternals(nodeId);
+        for (const n of nodes) {
+          updateNodeInternals(n.id);
         }
       });
     });
     return () => { cancelled = true; };
-  }, [nodeExpandedAssets, updateNodeInternals]);
+  }, [nodeExpandedAssets, nodes, updateNodeInternals]);
 
   // Set of current_roster node IDs — don't route per-asset handles to these.
   const rosterNodeIds = useMemo(
@@ -329,6 +354,7 @@ function AssetGraphInner({
 
   return (
     <GraphHoverContext.Provider value={hoverState}>
+    <ObstaclesContext.Provider value={obstacleRects}>
       <div className="h-full w-full">
         <ReactFlow
           nodes={flowNodes}
@@ -348,6 +374,7 @@ function AssetGraphInner({
           <MiniMap pannable zoomable />
         </ReactFlow>
       </div>
+    </ObstaclesContext.Provider>
     </GraphHoverContext.Provider>
   );
 }

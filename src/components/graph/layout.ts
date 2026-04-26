@@ -19,7 +19,7 @@ import type { Graph, GraphNode } from "@/lib/assetGraph";
 export type LayoutMode = "band" | "dagre";
 
 const COLUMN_WIDTH = 320;
-const ROW_HEIGHT = 280;
+const ROW_HEIGHT = 200;
 const LANE_GAP = 300;
 const COLUMN_X0 = 80;
 const ROW_Y0 = 40;
