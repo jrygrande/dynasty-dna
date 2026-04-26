@@ -11,7 +11,7 @@ export interface TransactionEdgeData {
   assetKey: string;
   assetLabel: string;
   managerName: string;
-  /** Tenure is still active (target is a current-roster anchor). */
+  /** Stint is still active (target is a current-roster anchor). */
   isOpen?: boolean;
   /** Y-offset in gutters to separate overlapping edge paths. */
   gutterOffset?: number;

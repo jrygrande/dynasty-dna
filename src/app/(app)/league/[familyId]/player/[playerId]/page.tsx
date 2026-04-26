@@ -201,7 +201,7 @@ export default function PlayerDetailPage() {
                   href={`/league/${familyId}/graph?seedPlayerId=${playerId}&from=player`}
                   className="text-sm text-muted-foreground hover:text-foreground"
                 >
-                  See trade network &rarr;
+                  Trace lineage &rarr;
                 </Link>
               )}
             </div>

@@ -11,7 +11,7 @@ export function GraphHeaderStats({ stats }: GraphHeaderStatsProps) {
     <div className="text-sm text-muted-foreground">
       <span className="font-mono font-medium text-foreground">{stats.totalTransactions}</span> transactions
       <span className="mx-1.5">·</span>
-      <span className="font-mono font-medium text-foreground">{stats.totalTenures}</span> tenures
+      <span className="font-mono font-medium text-foreground">{stats.totalTenures}</span> stints
       <span className="mx-1.5">·</span>
       <span className="font-mono font-medium text-foreground">{stats.playersInvolved}</span> players
     </div>

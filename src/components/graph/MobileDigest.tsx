@@ -49,7 +49,7 @@ export function MobileDigest({ familyId, response, loading }: MobileDigestProps)
         >
           &larr; League
         </Link>
-        <h1 className="text-lg font-semibold mt-2">Trade network digest</h1>
+        <h1 className="text-lg font-semibold mt-2">Lineage Tracer</h1>
         <p className="text-xs text-muted-foreground mt-1">
           Open on desktop for the full interactive graph.
         </p>

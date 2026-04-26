@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { Dna } from "lucide-react";
 import {
   pickKey,
   type Graph,
@@ -338,7 +339,10 @@ export default function GraphPage() {
           >
             &larr; League
           </Link>
-          <h1 className="text-lg font-semibold whitespace-nowrap">Trade network</h1>
+          <h1 className="text-lg font-semibold whitespace-nowrap inline-flex items-center gap-2">
+            <Dna className="h-5 w-5 text-primary" aria-hidden="true" />
+            Lineage Tracer
+          </h1>
           {hasSeed && (
             <button
               type="button"
@@ -397,7 +401,7 @@ export default function GraphPage() {
               className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 max-w-md px-4 py-2.5 rounded-md bg-foreground text-background shadow-lg flex items-center gap-3"
             >
               <span className="text-xs">
-                Click a card header to expand it. Click an asset to follow its thread.
+                Click a card header to expand it. Click an asset to follow its thread across stints between managers.
               </span>
               <button
                 type="button"

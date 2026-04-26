@@ -153,8 +153,8 @@ function NodeDetail({
           <p className="text-sm font-semibold">{node.displayName}</p>
         </div>
         <p className="text-xs text-muted-foreground">
-          Assets currently held by this manager. Every incoming edge represents a
-          player or pick still on the roster.
+          Assets currently held by this manager. Each incoming stint is a player
+          or pick still on this manager&apos;s roster.
         </p>
       </div>
     );
@@ -222,7 +222,7 @@ function EdgeDetail({ edge, familyId }: { edge: GraphEdge | null; familyId: stri
   return (
     <div className="space-y-3 border rounded-lg p-3">
       <p className="font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
-        Tenure{edge.isOpen ? " · Open" : ""}
+        {edge.isOpen ? "Active stint" : "Stint"}
       </p>
       {edge.assetKind === "player" ? (
         <div>
