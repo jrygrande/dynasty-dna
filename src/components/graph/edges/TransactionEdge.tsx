@@ -1,7 +1,7 @@
 "use client";
 
 import { memo } from "react";
-import { BaseEdge, EdgeLabelRenderer, getBezierPath, type EdgeProps } from "reactflow";
+import { BaseEdge, EdgeLabelRenderer, getBezierPath, getSmoothStepPath, type EdgeProps } from "reactflow";
 
 import { useGraphHover } from "../AssetGraph";
 
@@ -28,14 +28,26 @@ function TransactionEdgeImpl(props: EdgeProps<TransactionEdgeData>) {
     markerEnd,
   } = props;
 
-  const [edgePath, labelX, labelY] = getBezierPath({
-    sourceX,
-    sourceY,
-    sourcePosition,
-    targetX,
-    targetY,
-    targetPosition,
-  });
+  const isAssetRouted = !!props.sourceHandleId?.startsWith("asset-");
+
+  const [edgePath, labelX, labelY] = isAssetRouted
+    ? getSmoothStepPath({
+        sourceX,
+        sourceY,
+        sourcePosition,
+        targetX,
+        targetY,
+        targetPosition,
+        borderRadius: 8,
+      })
+    : getBezierPath({
+        sourceX,
+        sourceY,
+        sourcePosition,
+        targetX,
+        targetY,
+        targetPosition,
+      });
 
   const { hoveredAssetKey, hoveredNodeId } = useGraphHover();
   const matchesHovered = !!hoveredAssetKey && data?.assetKey === hoveredAssetKey;
@@ -50,7 +62,6 @@ function TransactionEdgeImpl(props: EdgeProps<TransactionEdgeData>) {
 
   // Edges routed to per-asset handles (expanded threads) get thicker, solid lines
   // with higher contrast colors.
-  const isAssetRouted = !!props.sourceHandleId?.startsWith("asset-");
   const stroke = isAssetRouted
     ? (isPick ? "hsl(var(--foreground) / 0.5)" : "hsl(var(--primary))")
     : (isPick ? "hsl(var(--chart-4))" : "hsl(var(--primary))");
