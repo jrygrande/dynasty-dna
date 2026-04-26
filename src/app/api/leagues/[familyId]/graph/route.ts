@@ -149,6 +149,71 @@ export async function GET(
       sql`${schema.assetEvents.createdAt} ASC`,
     );
 
+  // Remap draft_selected events' pickOriginalRosterId using draft_slot +
+  // slot_to_roster_id. Sleeper records draft_selected with the drafter's own
+  // roster ID, not the pick's original owner. For traded picks these differ.
+  //
+  // For each draft_selected event we find the draft_picks row (by draftId +
+  // playerId) to get draft_slot, then look up slot_to_roster_id[draft_slot]
+  // to get the true original roster owner.
+  const draftSelectedEvents = events.filter((e) => e.eventType === "draft_selected");
+  if (draftSelectedEvents.length > 0) {
+    // Get leagueId → season mapping to find the right draft
+    const draftRows = await db
+      .select({
+        id: schema.drafts.id,
+        leagueId: schema.drafts.leagueId,
+        season: schema.drafts.season,
+        slotToRosterId: schema.drafts.slotToRosterId,
+      })
+      .from(schema.drafts)
+      .where(inArray(schema.drafts.leagueId, allLeagueIds));
+
+    // leagueId:season → draft info
+    const draftByLeagueSeason = new Map<string, { id: string; slotToRosterId: Record<string, number> | null }>();
+    for (const d of draftRows) {
+      draftByLeagueSeason.set(`${d.leagueId}:${d.season}`, {
+        id: d.id,
+        slotToRosterId: d.slotToRosterId as Record<string, number> | null,
+      });
+    }
+
+    // Fetch draft_picks for relevant drafts to get draft_slot per player
+    const relevantDraftIds = draftRows.map((d) => d.id);
+    const draftPickRows = relevantDraftIds.length > 0
+      ? await db
+          .select({
+            draftId: schema.draftPicks.draftId,
+            playerId: schema.draftPicks.playerId,
+            draftSlot: schema.draftPicks.draftSlot,
+          })
+          .from(schema.draftPicks)
+          .where(inArray(schema.draftPicks.draftId, relevantDraftIds))
+      : [];
+
+    // "draftId:playerId" → draft_slot
+    const draftSlotLookup = new Map<string, number>();
+    for (const dp of draftPickRows) {
+      if (dp.playerId && dp.draftSlot != null) {
+        draftSlotLookup.set(`${dp.draftId}:${dp.playerId}`, dp.draftSlot);
+      }
+    }
+
+    for (const ev of draftSelectedEvents) {
+      if (!ev.playerId || ev.pickSeason === null) continue;
+      const draftInfo = draftByLeagueSeason.get(`${ev.leagueId}:${ev.pickSeason}`);
+      if (!draftInfo?.slotToRosterId) continue;
+
+      const slot = draftSlotLookup.get(`${draftInfo.id}:${ev.playerId}`);
+      if (slot == null) continue;
+
+      const trueOriginal = draftInfo.slotToRosterId[String(slot)];
+      if (trueOriginal != null && trueOriginal !== ev.pickOriginalRosterId) {
+        ev.pickOriginalRosterId = trueOriginal;
+      }
+    }
+  }
+
   // Fetch referenced transactions for enrichment (drawer rendering).
   const transactionIds = Array.from(
     new Set(events.filter((e) => e.transactionId).map((e) => e.transactionId!)),

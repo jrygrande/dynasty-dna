@@ -64,6 +64,13 @@
       "when": 1774538784264,
       "tag": "0008_bouncy_luminals",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1777226373692,
+      "tag": "0009_whole_firestar",
+      "breakpoints": true
     }
   ]
 }

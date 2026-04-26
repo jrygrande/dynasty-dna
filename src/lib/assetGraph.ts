@@ -20,14 +20,20 @@ import type { EnrichedTransaction } from "./transactionEnrichment";
 // Id helpers
 // ---------------------------------------------------------------------------
 
-/** Stable id for a pick (league-scoped). */
+/**
+ * Stable id for a pick within a league family.
+ *
+ * Pick trades may happen in one season's league while the draft resolution
+ * happens in another, so leagueId is intentionally omitted — within a
+ * family, (pickSeason, pickRound, pickOriginalRosterId) is unique.
+ */
 export function pickKey(p: {
-  leagueId: string;
+  leagueId?: string;
   pickSeason: string;
   pickRound: number;
   pickOriginalRosterId: number;
 }): string {
-  return `${p.leagueId}:${p.pickSeason}:${p.pickRound}:${p.pickOriginalRosterId}`;
+  return `${p.pickSeason}:${p.pickRound}:${p.pickOriginalRosterId}`;
 }
 
 /** Node id for a transaction with a real transactionId (trade, waiver, FA). */

@@ -207,6 +207,7 @@ export async function syncLeague(
         draftId: draft.draft_id,
         pickNo: pick.pick_no,
         round: pick.round,
+        draftSlot: pick.draft_slot ?? null,
         rosterId: pick.roster_id,
         playerId: pick.player_id,
         isKeeper: pick.is_keeper || false,

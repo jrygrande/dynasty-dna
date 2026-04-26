@@ -154,6 +154,7 @@ export interface SleeperDraft {
 export interface SleeperDraftPick {
   round: number;
   pick_no: number;
+  draft_slot: number;
   roster_id: number;
   player_id: string;
   is_keeper: boolean | null;
