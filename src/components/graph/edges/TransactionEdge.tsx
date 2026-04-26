@@ -48,9 +48,14 @@ function TransactionEdgeImpl(props: EdgeProps<TransactionEdgeData>) {
   const isOpen = !!data?.isOpen;
   const isPick = data?.assetKind === "pick";
 
-  const stroke = isPick ? "hsl(var(--chart-4))" : "hsl(var(--primary))";
-  const strokeWidth = selected || highlighted ? 2.25 : 1.25;
-  const dashArray = isOpen ? "4 3" : isPick ? "2 3" : undefined;
+  // Edges routed to per-asset handles (expanded threads) get thicker, solid lines
+  // with higher contrast colors.
+  const isAssetRouted = !!props.sourceHandleId?.startsWith("asset-");
+  const stroke = isAssetRouted
+    ? (isPick ? "hsl(var(--foreground) / 0.5)" : "hsl(var(--primary))")
+    : (isPick ? "hsl(var(--chart-4))" : "hsl(var(--primary))");
+  const strokeWidth = selected || highlighted ? 3 : isAssetRouted ? 2.5 : 1.25;
+  const dashArray = isAssetRouted ? undefined : (isOpen ? "4 3" : isPick ? "2 3" : undefined);
 
   return (
     <>

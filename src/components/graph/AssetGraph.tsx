@@ -178,6 +178,7 @@ function AssetGraphInner({
         sourceHandle: isExpanded && !rosterNodeIds.has(e.source) ? `asset-source-${aKey}` : undefined,
         targetHandle: isExpanded && !rosterNodeIds.has(e.target) ? `asset-target-${aKey}` : undefined,
         type: "transaction",
+        zIndex: isExpanded ? 10 : undefined,
         selected: selection?.type === "edge" && selection.edgeId === e.id,
         data: {
           assetKind: e.assetKind,
