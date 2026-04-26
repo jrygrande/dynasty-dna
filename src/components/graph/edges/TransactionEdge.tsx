@@ -1,7 +1,7 @@
 "use client";
 
 import { memo } from "react";
-import { BaseEdge, EdgeLabelRenderer, getBezierPath, type EdgeProps } from "reactflow";
+import { BaseEdge, EdgeLabelRenderer, type EdgeProps } from "reactflow";
 
 import { useGraphHover } from "../AssetGraph";
 import { routeEdgePath } from "@/lib/graph/routeEdgePath";
@@ -34,25 +34,10 @@ function TransactionEdgeImpl(props: EdgeProps<TransactionEdgeData>) {
   const isAssetRouted = !!props.sourceHandleId?.startsWith("asset-");
   const gutterOffset = data?.gutterOffset ?? 0;
 
-  let edgePath: string;
-  let labelX: number;
-  let labelY: number;
-
-  if (isAssetRouted) {
-    const result = routeEdgePath(sourceX, sourceY, targetX, targetY, gutterOffset);
-    edgePath = result.path;
-    labelX = result.labelX;
-    labelY = result.labelY;
-  } else {
-    [edgePath, labelX, labelY] = getBezierPath({
-      sourceX,
-      sourceY,
-      sourcePosition,
-      targetX,
-      targetY,
-      targetPosition,
-    });
-  }
+  const result = routeEdgePath(sourceX, sourceY, targetX, targetY, gutterOffset);
+  const edgePath = result.path;
+  const labelX = result.labelX;
+  const labelY = result.labelY;
 
   const { hoveredAssetKey, hoveredNodeId } = useGraphHover();
   const matchesHovered = !!hoveredAssetKey && data?.assetKey === hoveredAssetKey;
