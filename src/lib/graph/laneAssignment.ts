@@ -2,9 +2,8 @@
  * Lane assignment for thread-aware layout.
  *
  * Each expanded asset thread gets its own horizontal "lane" (y-band).
- * Seed nodes sit in lane 0. Nodes revealed by expanding an asset row
- * are assigned to that asset's lane. If a node belongs to multiple
- * threads (shared transaction), it goes in the lowest-numbered lane.
+ * Seed nodes sit in lane 0. ALL nodes in an expanded asset's thread
+ * are assigned to that asset's lane — the entire chain shares a y-band.
  *
  * Returns a Map<nodeId, laneIndex> where lane 0 is the seed lane
  * and other lanes fan out: 1, -1, 2, -2, ... (alternating above/below).
@@ -35,17 +34,14 @@ export function assignLanes(
 
   if (expanded.size === 0) return lanes;
 
-  // Index edges by node id for fast lookup.
-  const edgesByNode = new Map<string, GraphEdge[]>();
+  // Index edges by asset key for full-thread lookup.
+  const edgesByAsset = new Map<string, GraphEdge[]>();
   for (const e of edges) {
-    let s = edgesByNode.get(e.source);
-    if (!s) { s = []; edgesByNode.set(e.source, s); }
-    s.push(e);
-    if (e.target !== e.source) {
-      let t = edgesByNode.get(e.target);
-      if (!t) { t = []; edgesByNode.set(e.target, t); }
-      t.push(e);
-    }
+    const aKey = edgeAssetKey(e);
+    if (!aKey) continue;
+    let arr = edgesByAsset.get(aKey);
+    if (!arr) { arr = []; edgesByAsset.set(aKey, arr); }
+    arr.push(e);
   }
 
   // Collect unique asset keys from expansion entries, in order.
@@ -70,28 +66,13 @@ export function assignLanes(
     laneByAssetKey.set(key, lane);
   });
 
-  // For each expansion entry, trace which nodes belong to that asset's thread.
-  for (const entry of expanded) {
-    const sep = entry.indexOf("~");
-    if (sep === -1) continue;
-    const nodeId = entry.slice(0, sep);
-    const assetKey = entry.slice(sep + 1);
+  // Assign ALL nodes in each expanded asset's thread to that lane.
+  for (const assetKey of assetKeyOrder) {
     const lane = laneByAssetKey.get(assetKey) ?? 0;
-
-    // Find all edges incident to nodeId matching this asset key.
-    const incident = edgesByNode.get(nodeId) ?? [];
-    for (const e of incident) {
-      if (edgeAssetKey(e) !== assetKey) continue;
-      // The other endpoint of this edge goes into this lane (if not already in a closer-to-center lane).
-      const other = e.source === nodeId ? e.target : e.source;
-      if (!lanes.has(other)) {
-        lanes.set(other, lane);
-      }
-    }
-
-    // The expanded node itself belongs in this lane too (if not a seed).
-    if (!lanes.has(nodeId)) {
-      lanes.set(nodeId, lane);
+    const threadEdges = edgesByAsset.get(assetKey) ?? [];
+    for (const e of threadEdges) {
+      if (!lanes.has(e.source)) lanes.set(e.source, lane);
+      if (!lanes.has(e.target)) lanes.set(e.target, lane);
     }
   }
 

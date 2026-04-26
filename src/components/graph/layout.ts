@@ -1,13 +1,17 @@
 /**
  * Asset Graph Browser — temporal layout with lane-aware vertical positioning.
  *
- * Transaction nodes are placed left-to-right by (season, week, createdAt).
- * When lane assignments are provided, nodes in different lanes get different
- * y-bands so asset threads branch vertically from the seed trade.
+ * Each transaction node gets its own column, placed left-to-right in strict
+ * chronological order (by createdAt). When lane assignments are provided,
+ * nodes in different lanes get different y-bands so asset threads branch
+ * vertically from the seed trade.
+ *
+ * If two nodes share the exact same createdAt (same transaction), they share
+ * a column and stack vertically within their lane.
+ *
  * Current-roster pseudo-nodes sit in a column to the far right.
  *
- * Layout is pure and deterministic: same input → same positions. Safe to run
- * in Node or the browser.
+ * Layout is pure and deterministic: same input → same positions.
  */
 
 import type { Graph, GraphNode } from "@/lib/assetGraph";
@@ -38,60 +42,43 @@ export function layout(
     (n): n is Extract<GraphNode, { kind: "current_roster" }> => n.kind === "current_roster",
   );
 
-  // Sort transactions by time and assign column indices.
+  // Sort transactions strictly by createdAt for chronological column order.
   transactions.sort((a, b) => {
+    if (a.createdAt !== b.createdAt) return a.createdAt - b.createdAt;
     if (a.season !== b.season) return a.season.localeCompare(b.season);
     if (a.week !== b.week) return a.week - b.week;
-    if (a.createdAt !== b.createdAt) return a.createdAt - b.createdAt;
     return a.id.localeCompare(b.id);
   });
 
-  // Group into time-columns keyed by (season, week). Multiple transactions in
-  // the same week stack vertically within their lane.
-  const columnKey = (n: Extract<GraphNode, { kind: "transaction" }>) =>
-    `${n.season}-${String(n.week).padStart(3, "0")}`;
-
-  // Group by (columnKey, lane) for fine-grained stacking.
-  const cellKey = (colKey: string, lane: number) => `${colKey}|${lane}`;
-  const cells = new Map<string, Array<Extract<GraphNode, { kind: "transaction" }>>>();
-  const columnKeys = new Set<string>();
-
+  // Assign column indices: each unique createdAt gets its own column.
+  // Events with the same createdAt share a column (stack vertically).
+  const colByCreatedAt = new Map<number, number>();
+  let nextCol = 0;
   for (const n of transactions) {
-    const col = columnKey(n);
-    columnKeys.add(col);
-    const lane = lanes?.get(n.id) ?? 0;
-    const key = cellKey(col, lane);
-    const arr = cells.get(key) ?? [];
-    arr.push(n);
-    cells.set(key, arr);
+    if (!colByCreatedAt.has(n.createdAt)) {
+      colByCreatedAt.set(n.createdAt, nextCol++);
+    }
   }
 
-  const sortedCols = Array.from(columnKeys).sort();
+  // Place each node: x from column index, y from lane + stacking.
+  // Track per-(column, lane) stacking for nodes sharing a column.
+  const stackCount = new Map<string, number>();
   let maxX = COLUMN_X0;
 
-  sortedCols.forEach((col, colIdx) => {
+  for (const n of transactions) {
+    const colIdx = colByCreatedAt.get(n.createdAt) ?? 0;
+    const lane = lanes?.get(n.id) ?? 0;
+    const stackKey = `${colIdx}|${lane}`;
+    const rowIdx = stackCount.get(stackKey) ?? 0;
+    stackCount.set(stackKey, rowIdx + 1);
+
     const x = COLUMN_X0 + colIdx * COLUMN_WIDTH;
+    const laneY = lane * LANE_GAP;
     maxX = Math.max(maxX, x);
-
-    // Get all lanes used in this column.
-    const lanesInCol = new Set<number>();
-    for (const [key] of cells) {
-      if (key.startsWith(col + "|")) {
-        lanesInCol.add(Number(key.split("|")[1]));
-      }
-    }
-
-    for (const lane of lanesInCol) {
-      const entries = cells.get(cellKey(col, lane)) ?? [];
-      entries.forEach((n, rowIdx) => {
-        const laneY = lane * LANE_GAP;
-        positions.set(n.id, { x, y: ROW_Y0 + laneY + rowIdx * ROW_HEIGHT });
-      });
-    }
-  });
+    positions.set(n.id, { x, y: ROW_Y0 + laneY + rowIdx * ROW_HEIGHT });
+  }
 
   // Current-roster nodes sit one column past the last transaction.
-  // Place them in their lane if assigned, otherwise stack by name.
   const currentX = maxX + COLUMN_WIDTH + CURRENT_ROSTER_GAP;
   const rostersByLane = new Map<number, Array<Extract<GraphNode, { kind: "current_roster" }>>>();
   for (const n of currentRosters) {
