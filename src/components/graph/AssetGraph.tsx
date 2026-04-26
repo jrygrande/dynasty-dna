@@ -168,7 +168,8 @@ function AssetGraphInner({
       // Estimate transaction card height: header ~50px + assets * 22px + padding.
       // When the card is collapsed (header not toggled open), only chain-relevant
       // assets are rendered, so use that count instead of the full asset list.
-      const headerExpanded = fullyExpanded?.has(n.id) ?? false;
+      // Draft cards always render expanded (single-asset, nothing to hide).
+      const headerExpanded = n.txKind === "draft" || (fullyExpanded?.has(n.id) ?? false);
       const chainSize = chainAssetsByNode?.get(n.id)?.size ?? 0;
       const assetCount =
         n.kind === "transaction"
@@ -325,7 +326,9 @@ function AssetGraphInner({
 
       const header = buildTransactionHeader(n);
       const chainAssetKeys = chainAssetsByNode?.get(n.id) ?? new Set<string>();
-      const headerExpanded = fullyExpanded?.has(n.id) ?? false;
+      // Draft cards always render expanded — they only have one asset, so the
+      // collapsed/header-only view shows nothing extra and feels broken.
+      const headerExpanded = n.txKind === "draft" || (fullyExpanded?.has(n.id) ?? false);
 
       return {
         id: n.id,
