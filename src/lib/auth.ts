@@ -1,4 +1,5 @@
 import { type NextAuthOptions } from "next-auth";
+import type { Adapter } from "next-auth/adapters";
 import GoogleProvider from "next-auth/providers/google";
 import GitHubProvider from "next-auth/providers/github";
 import { DrizzleAdapter } from "@auth/drizzle-adapter";
@@ -41,13 +42,39 @@ if (providers.length === 0) {
   console.error("No OAuth providers configured! Users will not be able to sign in.");
 }
 
+/**
+ * Lazy adapter: defers `DrizzleAdapter(getDb(), ...)` until next-auth invokes
+ * its first method (sign-in, link account, etc.). Without this, the adapter —
+ * and therefore `getDb()` — runs at module-load time, which means:
+ *   - any cold start that imports this module pays the DB-init cost even when
+ *     the request never touches auth, and
+ *   - the production build fails outright if `DATABASE_URL` isn't visible to
+ *     Next.js during static analysis (collect page data).
+ */
+function createLazyAdapter(): Adapter {
+  let real: Adapter | null = null;
+  const resolve = (): Adapter => {
+    if (!real) {
+      real = DrizzleAdapter(getDb(), {
+        usersTable: users,
+        accountsTable: accounts,
+        sessionsTable: sessions,
+        verificationTokensTable: verificationTokens,
+      }) as Adapter;
+    }
+    return real;
+  };
+  return new Proxy({} as Adapter, {
+    get(_target, prop) {
+      const target = resolve() as unknown as Record<string | symbol, unknown>;
+      const value = target[prop];
+      return typeof value === "function" ? (value as (...args: unknown[]) => unknown).bind(target) : value;
+    },
+  });
+}
+
 export const authOptions: NextAuthOptions = {
-  adapter: DrizzleAdapter(getDb(), {
-    usersTable: users,
-    accountsTable: accounts,
-    sessionsTable: sessions,
-    verificationTokensTable: verificationTokens,
-  }) as NextAuthOptions["adapter"],
+  adapter: createLazyAdapter(),
   providers,
   session: {
     strategy: "jwt",
