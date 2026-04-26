@@ -34,7 +34,7 @@ function CurrentRosterNodeImpl({ id, data, selected }: NodeProps<CurrentRosterNo
       style={{ width: 152, height: 56 }}
       aria-label={`Current roster of ${data.displayName}`}
     >
-      <Handle type="target" position={Position.Left} className="!bg-transparent !border-0" />
+      <Handle type="target" position={Position.Left} id="card-target" className="!bg-transparent !border-0" />
       <div
         className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-semibold text-muted-foreground ring-1 ring-border"
         aria-hidden="true"
@@ -55,7 +55,7 @@ function CurrentRosterNodeImpl({ id, data, selected }: NodeProps<CurrentRosterNo
         </div>
       </div>
       {data.onRemove && <RemoveButton onRemove={() => data.onRemove?.(id)} />}
-      <Handle type="source" position={Position.Right} className="!bg-transparent !border-0" />
+      <Handle type="source" position={Position.Right} id="card-source" className="!bg-transparent !border-0" />
     </div>
   );
 }

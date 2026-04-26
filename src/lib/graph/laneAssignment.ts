@@ -57,22 +57,14 @@ export function assignLanes(
     }
   }
 
-  // Assign lane indices: alternate above/below the seed lane.
-  // First expansion → lane 1, second → lane -1, third → lane 2, etc.
-  const laneByAssetKey = new Map<string, number>();
-  assetKeyOrder.forEach((key, i) => {
-    const half = Math.floor(i / 2) + 1;
-    const lane = i % 2 === 0 ? half : -half;
-    laneByAssetKey.set(key, lane);
-  });
-
-  // Assign ALL nodes in each expanded asset's thread to that lane.
+  // All expanded thread nodes go to lane 0 (same horizontal level as
+  // the seed). The per-asset-row handles on each card create the visual
+  // thread separation — no vertical lane offset needed.
   for (const assetKey of assetKeyOrder) {
-    const lane = laneByAssetKey.get(assetKey) ?? 0;
     const threadEdges = edgesByAsset.get(assetKey) ?? [];
     for (const e of threadEdges) {
-      if (!lanes.has(e.source)) lanes.set(e.source, lane);
-      if (!lanes.has(e.target)) lanes.set(e.target, lane);
+      if (!lanes.has(e.source)) lanes.set(e.source, 0);
+      if (!lanes.has(e.target)) lanes.set(e.target, 0);
     }
   }
 

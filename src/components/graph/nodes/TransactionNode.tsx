@@ -120,7 +120,7 @@ function TransactionNodeImpl({ id, data, selected }: NodeProps<TransactionNodeDa
       aria-label={`${KIND_LABEL[data.txKind]} transaction`}
       onClick={handleNodeClick}
     >
-      <Handle type="target" position={Position.Left} className="!bg-transparent !border-0" />
+      <Handle type="target" position={Position.Left} id="card-target" className="!bg-transparent !border-0" />
       <span
         className={cn("absolute left-0 top-0 h-full w-1 rounded-l-md", KIND_ACCENT[data.txKind])}
         aria-hidden="true"
@@ -161,7 +161,7 @@ function TransactionNodeImpl({ id, data, selected }: NodeProps<TransactionNodeDa
         ))}
       </div>
       {data.onRemove && <RemoveButton onRemove={() => data.onRemove?.(id)} />}
-      <Handle type="source" position={Position.Right} className="!bg-transparent !border-0" />
+      <Handle type="source" position={Position.Right} id="card-source" className="!bg-transparent !border-0" />
     </div>
   );
 }
