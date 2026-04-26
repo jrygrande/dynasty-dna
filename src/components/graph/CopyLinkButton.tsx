@@ -6,7 +6,6 @@ import { trackEvent } from "@/lib/analytics";
 
 interface CopyLinkButtonProps {
   hasFocus: boolean;
-  filterCount: number;
 }
 
 /**
@@ -14,7 +13,7 @@ interface CopyLinkButtonProps {
  * toast confirmation. Falls back to execCommand when the async Clipboard API
  * is unavailable (e.g. non-secure contexts).
  */
-export function CopyLinkButton({ hasFocus, filterCount }: CopyLinkButtonProps) {
+export function CopyLinkButton({ hasFocus }: CopyLinkButtonProps) {
   const [copied, setCopied] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -40,10 +39,10 @@ export function CopyLinkButton({ hasFocus, filterCount }: CopyLinkButtonProps) {
     }
     if (!ok) return;
     setCopied(true);
-    trackEvent("graph_link_copied", { hasFocus, filterCount });
+    trackEvent("graph_link_copied", { hasFocus });
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => setCopied(false), 2000);
-  }, [hasFocus, filterCount]);
+  }, [hasFocus]);
 
   return (
     <div className="relative inline-flex">

@@ -42,8 +42,7 @@
  *
  *   graph_link_copied
  *     Fires on Copy Link button click (numerator of share rate).
- *     { hasFocus: boolean;
- *       filterCount: number; }
+ *     { hasFocus: boolean; }
  *
  *   graph_mobile_bounce
  *     Fires on mobile (< 1024 px) digest render — signals the interactive

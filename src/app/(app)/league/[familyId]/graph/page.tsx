@@ -4,16 +4,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
-  applyGraphFilters,
   pickKey,
   type Graph,
   type GraphFocus,
   type GraphResponse,
   type GraphSelection,
-  type TransactionKind,
 } from "@/lib/assetGraph";
 import { useGraphVisibility, edgeAssetKey } from "@/lib/useGraphVisibility";
-import { GraphFilterSidebar } from "@/components/graph/GraphFilterSidebar";
 import { GraphDetailDrawer } from "@/components/graph/GraphDetailDrawer";
 import { GraphHeaderStats } from "@/components/graph/GraphHeaderStats";
 import { CopyLinkButton } from "@/components/graph/CopyLinkButton";
@@ -24,23 +21,9 @@ import { AssetGraph } from "@/components/graph/AssetGraph";
 
 type FromSource = "overview" | "player" | "transactions" | "manager" | "deeplink";
 
-const DEFAULT_TX_KINDS: TransactionKind[] = ["draft", "trade", "waiver", "free_agent"];
-const ALL_TX_KINDS: TransactionKind[] = [
-  "draft",
-  "trade",
-  "waiver",
-  "free_agent",
-  "commissioner",
-];
-
 function parseCsv(value: string | null): string[] {
   if (!value) return [];
   return value.split(",").map((s) => s.trim()).filter(Boolean);
-}
-
-function parseTxKinds(value: string | null): TransactionKind[] {
-  const arr = parseCsv(value);
-  return arr.filter((k): k is TransactionKind => ALL_TX_KINDS.includes(k as TransactionKind));
 }
 
 function parseSelection(value: string | null): GraphSelection | null {
@@ -65,13 +48,6 @@ export default function GraphPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const familyId = params.familyId as string;
-
-  const selectedSeasons = useMemo(() => parseCsv(searchParams.get("seasons")), [searchParams]);
-  const selectedManagers = useMemo(() => parseCsv(searchParams.get("managers")), [searchParams]);
-  const selectedTxKinds = useMemo<TransactionKind[]>(() => {
-    const parsed = parseTxKinds(searchParams.get("txKinds"));
-    return parsed.length > 0 ? parsed : DEFAULT_TX_KINDS;
-  }, [searchParams]);
 
   const seedRaw = searchParams.get("seed");
   const expandedRaw = searchParams.get("expanded");
@@ -146,28 +122,24 @@ export default function GraphPage() {
     };
   }, [familyId]);
 
-  const filteredGraph: Graph | null = useMemo(() => {
-    if (!response) return null;
-    return applyGraphFilters(
-      { nodes: response.nodes, edges: response.edges, stats: response.stats },
-      {
-        seasons: selectedSeasons,
-        managers: selectedManagers,
-        txKinds: selectedTxKinds,
-      },
-    );
-  }, [response, selectedSeasons, selectedManagers, selectedTxKinds]);
+  const graph: Graph | null = useMemo(
+    () =>
+      response
+        ? { nodes: response.nodes, edges: response.edges, stats: response.stats }
+        : null,
+    [response],
+  );
 
-  const visibility = useGraphVisibility(filteredGraph, { seed, expanded, removed });
+  const visibility = useGraphVisibility(graph, { seed, expanded, removed });
 
   const visibleGraph: Graph | null = useMemo(() => {
-    if (!filteredGraph) return null;
+    if (!graph) return null;
     return {
       nodes: visibility.visibleNodes,
       edges: visibility.visibleEdges,
-      stats: filteredGraph.stats,
+      stats: graph.stats,
     };
-  }, [filteredGraph, visibility]);
+  }, [graph, visibility]);
 
   // Season bootstrap removed. In the transaction-node model a seed anchors
   // the view regardless of date — defaulting to the latest season would hide
@@ -202,7 +174,6 @@ export default function GraphPage() {
     updateUrl({
       seed: seedIds.join(","),
       seedPlayerId: null,
-      seasons: null,
     });
   }, [seedPlayerId, response, seed.length, updateUrl]);
 
@@ -234,7 +205,6 @@ export default function GraphPage() {
     updateUrl({
       seed: seedIds.join(","),
       seedPickKey: null,
-      seasons: null,
     });
   }, [seedPickKey, response, seed.length, updateUrl]);
 
@@ -246,9 +216,9 @@ export default function GraphPage() {
       from,
       nodeCount: response.nodes.length,
       edgeCount: response.edges.length,
-      season: selectedSeasons.join(",") || response.seasons[0] || "",
+      season: response.seasons[0] || "",
     });
-  }, [response, familyId, from, selectedSeasons]);
+  }, [response, familyId, from]);
 
   const showOnboarding =
     !tooltipDismissed && visibility.visibleNodes.length > 0;
@@ -259,18 +229,6 @@ export default function GraphPage() {
     setTooltipDismissed(true);
   }, []);
 
-  const handleSeasonsChange = useCallback(
-    (seasons: string[]) => updateUrl({ seasons: seasons.join(",") || null }),
-    [updateUrl],
-  );
-  const handleManagersChange = useCallback(
-    (m: string[]) => updateUrl({ managers: m.join(",") || null }),
-    [updateUrl],
-  );
-  const handleTxKindsChange = useCallback(
-    (k: TransactionKind[]) => updateUrl({ txKinds: k.join(",") || null }),
-    [updateUrl],
-  );
   const handleCloseSelection = useCallback(() => updateUrl({ selection: null }), [updateUrl]);
   const handleSelectionChange = useCallback(
     (next: GraphSelection | null) => updateUrl({ selection: serializeSelection(next) }),
@@ -321,7 +279,6 @@ export default function GraphPage() {
           expanded: null,
           removed: null,
           selection: null,
-          seasons: null,
         });
       } else {
         updateUrl({
@@ -334,7 +291,6 @@ export default function GraphPage() {
           expanded: null,
           removed: null,
           selection: null,
-          seasons: null,
         });
       }
       trackEvent("graph_picker_select", { kind: focus.kind });
@@ -350,26 +306,8 @@ export default function GraphPage() {
       expanded: null,
       removed: null,
       selection: null,
-      seasons: null,
-      managers: null,
-      txKinds: null,
     });
   }, [updateUrl]);
-
-  const filterCount = useMemo(() => {
-    let n = 0;
-    if (selectedSeasons.length > 0) n += 1;
-    if (selectedManagers.length > 0) n += 1;
-    if (selectedTxKinds.length !== DEFAULT_TX_KINDS.length) n += 1;
-    if (seed.length > 0) n += 1;
-    return n;
-  }, [selectedSeasons, selectedManagers, selectedTxKinds, seed]);
-
-  const seasonLabel = useMemo(() => {
-    if (selectedSeasons.length === 1) return selectedSeasons[0];
-    if (selectedSeasons.length > 1) return selectedSeasons.join(", ");
-    return "";
-  }, [selectedSeasons]);
 
   if (isNarrow) {
     return <MobileDigest familyId={familyId} response={response} loading={loading} />;
@@ -398,31 +336,12 @@ export default function GraphPage() {
             </button>
           )}
           <div className="flex-1" />
-          {filteredGraph && (
-            <GraphHeaderStats stats={filteredGraph.stats} seasonLabel={seasonLabel} />
-          )}
-          <CopyLinkButton hasFocus={hasSeed} filterCount={filterCount} />
+          {graph && <GraphHeaderStats stats={graph.stats} />}
+          <CopyLinkButton hasFocus={hasSeed} />
         </div>
       </div>
 
       <div className="flex-1 flex min-h-0 relative">
-        <div className="w-72 border-r overflow-y-auto p-4 shrink-0">
-          {response ? (
-            <GraphFilterSidebar
-              seasons={response.seasons}
-              managers={response.managers}
-              selectedSeasons={selectedSeasons}
-              selectedManagers={selectedManagers}
-              selectedTxKinds={selectedTxKinds}
-              onSeasonsChange={handleSeasonsChange}
-              onManagersChange={handleManagersChange}
-              onTxKindsChange={handleTxKindsChange}
-            />
-          ) : (
-            <SidebarSkeleton />
-          )}
-        </div>
-
         <div className="flex-1 relative min-w-0">
           {loading && !response && <CanvasSkeleton />}
           {error && !loading && (
@@ -487,19 +406,6 @@ export default function GraphPage() {
           />
         )}
       </div>
-    </div>
-  );
-}
-
-function SidebarSkeleton() {
-  return (
-    <div className="space-y-3">
-      {Array.from({ length: 5 }).map((_, i) => (
-        <div
-          key={i}
-          className="h-14 rounded-md border bg-muted/30 animate-pulse"
-        />
-      ))}
     </div>
   );
 }
