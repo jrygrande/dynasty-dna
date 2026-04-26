@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { AssetsListResponse } from "@/app/api/leagues/[familyId]/assets/route";
 import type { GraphFocus } from "@/lib/assetGraph";
+import { getRoundSuffix } from "@/lib/utils";
 
 interface AssetPickerProps {
   familyId: string;
@@ -10,13 +11,6 @@ interface AssetPickerProps {
 }
 
 type Tab = "players" | "picks";
-
-function getRoundSuffix(round: number): string {
-  if (round === 1) return "st";
-  if (round === 2) return "nd";
-  if (round === 3) return "rd";
-  return "th";
-}
 
 export function AssetPicker({ familyId, onPick }: AssetPickerProps) {
   const [data, setData] = useState<AssetsListResponse | null>(null);

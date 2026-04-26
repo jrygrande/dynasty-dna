@@ -10,7 +10,7 @@
 
 import { NextResponse } from "next/server";
 import { getDb, schema } from "@/db";
-import { and, eq, inArray, isNotNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull } from "drizzle-orm";
 import { resolveFamily } from "@/lib/familyResolution";
 import { resolveDraftPicks, findOriginalSlot, calculatePickNumber } from "@/lib/draft";
 import { pickKey } from "@/lib/assetGraph";
@@ -165,8 +165,6 @@ export async function GET(
     resolvedPlayerIds.add(playerId);
     draftResolutions.set(
       pickKey({
-
-        leagueId: row.leagueId,
         pickSeason: row.pickSeason,
         pickRound: row.pickRound,
         pickOriginalRosterId: row.pickOriginalRosterId,
@@ -203,8 +201,6 @@ export async function GET(
       const ownerUserId = rosterToUser.get(`${r.leagueId}:${r.pickOriginalRosterId}`);
       const ownerName = ownerUserId ? userIdToName.get(ownerUserId) ?? null : null;
       const key = pickKey({
-
-        leagueId: r.leagueId,
         pickSeason: r.pickSeason,
         pickRound: r.pickRound,
         pickOriginalRosterId: r.pickOriginalRosterId,
@@ -227,9 +223,6 @@ export async function GET(
       if (a.round !== b.round) return a.round - b.round;
       return (a.originalOwnerName ?? "").localeCompare(b.originalOwnerName ?? "");
     });
-
-  // Touch sql to satisfy lint if unused (kept for future filters).
-  void sql;
 
   const response: AssetsListResponse = { players, picks };
   return NextResponse.json(response);

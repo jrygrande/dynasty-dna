@@ -12,14 +12,6 @@
 import type { GraphEdge } from "@/lib/assetGraph";
 import { edgeAssetKey } from "@/lib/useGraphVisibility";
 
-/**
- * Assign each visible node to a lane based on which expansion made it visible.
- *
- * @param seedIds - Node IDs that are seeds (always lane 0)
- * @param expanded - The expansion entries set (e.g. "nodeId~assetKey")
- * @param edges - All visible edges
- * @returns Map from nodeId to lane index (0 = center, positive = below, negative = above)
- */
 export function assignLanes(
   seedIds: string[],
   expanded: Set<string>,

@@ -5,6 +5,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
   applyGraphFilters,
+  pickKey,
   type Graph,
   type GraphFocus,
   type GraphResponse,
@@ -323,10 +324,12 @@ export default function GraphPage() {
           seasons: null,
         });
       } else {
-        // Pick seed — encode as "season:round:origRosterId" (matches edgeAssetKey format without the "pick:" prefix).
-        const key = `${focus.pickSeason}:${focus.pickRound}:${focus.pickOriginalRosterId}`;
         updateUrl({
-          seedPickKey: key,
+          seedPickKey: pickKey({
+            pickSeason: focus.pickSeason,
+            pickRound: focus.pickRound,
+            pickOriginalRosterId: focus.pickOriginalRosterId,
+          }),
           seed: null,
           expanded: null,
           removed: null,

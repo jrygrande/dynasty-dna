@@ -5,6 +5,13 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+export function getRoundSuffix(round: number): string {
+  if (round === 1) return "st";
+  if (round === 2) return "nd";
+  if (round === 3) return "rd";
+  return "th";
+}
+
 export function formatDate(
   input: string | number | null,
   style: "compact" | "short" | "long" = "short"
