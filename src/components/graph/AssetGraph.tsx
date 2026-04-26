@@ -29,7 +29,9 @@ import "reactflow/dist/style.css";
 import type { GraphEdge, GraphNode, GraphSelection } from "@/lib/assetGraph";
 import { edgeAssetKey } from "@/lib/useGraphVisibility";
 
-import { TransactionNode, type TransactionNodeData, type TransactionNodeAsset } from "./nodes/TransactionNode";
+import { TransactionNode, type TransactionNodeData } from "./nodes/TransactionNode";
+import type { TransactionNodeAsset } from "./TransactionCardChrome";
+import { buildTransactionHeader } from "./transactionHeader";
 import { CurrentRosterNode, type CurrentRosterNodeData } from "./nodes/CurrentRosterNode";
 import { TransactionEdge, type TransactionEdgeData } from "./edges/TransactionEdge";
 import { layout, type LayoutMode } from "./layout";
@@ -44,7 +46,11 @@ export interface AssetGraphProps {
   seedIds?: string[];
   expandedEntries?: Set<string>;
   onAssetExpand?: (nodeId: string, assetKey: string) => void;
-  onRemove?: (nodeId: string) => void;
+  /** Per-node set of asset keys that are "in-chain" (visible when collapsed). */
+  chainAssetsByNode?: Map<string, Set<string>>;
+  /** Set of node ids whose card is fully expanded (header was clicked). */
+  fullyExpanded?: Set<string>;
+  onHeaderToggle?: (nodeId: string) => void;
 }
 
 type FlowNodeData = TransactionNodeData | CurrentRosterNodeData;
@@ -103,7 +109,9 @@ function AssetGraphInner({
   seedIds,
   expandedEntries,
   onAssetExpand,
-  onRemove,
+  chainAssetsByNode,
+  fullyExpanded,
+  onHeaderToggle,
 }: AssetGraphProps) {
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
   const [hoveredAssetKey, setHoveredAssetKey] = useState<string | null>(null);
@@ -157,12 +165,22 @@ function AssetGraphInner({
       if (n.kind === "current_roster") {
         return { x: pos.x, y: pos.y, width: 152, height: 56 };
       }
-      // Estimate transaction card height: header ~50px + assets * 22px + padding
-      const assetCount = n.kind === "transaction" ? n.assets.length : 0;
+      // Estimate transaction card height: header ~50px + assets * 22px + padding.
+      // When the card is collapsed (header not toggled open), only chain-relevant
+      // assets are rendered, so use that count instead of the full asset list.
+      // Draft cards always render expanded (single-asset, nothing to hide).
+      const headerExpanded = n.txKind === "draft" || (fullyExpanded?.has(n.id) ?? false);
+      const chainSize = chainAssetsByNode?.get(n.id)?.size ?? 0;
+      const assetCount =
+        n.kind === "transaction"
+          ? headerExpanded
+            ? n.assets.length
+            : chainSize
+          : 0;
       const height = 50 + Math.max(assetCount, 1) * 22 + 20;
       return { x: pos.x, y: pos.y, width: 260, height };
     }).filter((r): r is Obstacle => r !== null);
-  }, [nodes, positions]);
+  }, [nodes, positions, fullyExpanded, chainAssetsByNode]);
 
   // For each node, compute which asset keys are expanded (including downstream
   // nodes in the thread, not just the node where the user clicked +).
@@ -190,9 +208,10 @@ function AssetGraphInner({
   // When handles are added/removed dynamically (asset expansion toggled),
   // tell React Flow to re-measure handle positions on ALL visible nodes.
   // Double-RAF ensures the DOM has painted before we measure.
+  // Re-measure handles when assets expand OR when any card header toggles
+  // open/closed (the body shrinks/grows, shifting handle positions).
   const updateNodeInternals = useUpdateNodeInternals();
   useEffect(() => {
-    if (nodeExpandedAssets.size === 0) return;
     let cancelled = false;
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
@@ -203,7 +222,7 @@ function AssetGraphInner({
       });
     });
     return () => { cancelled = true; };
-  }, [nodeExpandedAssets, nodes, updateNodeInternals]);
+  }, [nodeExpandedAssets, nodes, updateNodeInternals, fullyExpanded]);
 
   // Set of current_roster node IDs — don't route per-asset handles to these.
   const rosterNodeIds = useMemo(
@@ -274,7 +293,6 @@ function AssetGraphInner({
             avatar: n.avatar,
             selected: isSelected,
             dimmed: false,
-            onRemove,
           },
         };
       }
@@ -306,6 +324,12 @@ function AssetGraphInner({
         };
       });
 
+      const header = buildTransactionHeader(n);
+      const chainAssetKeys = chainAssetsByNode?.get(n.id) ?? new Set<string>();
+      // Draft cards always render expanded — they only have one asset, so the
+      // collapsed/header-only view shows nothing extra and feels broken.
+      const headerExpanded = n.txKind === "draft" || (fullyExpanded?.has(n.id) ?? false);
+
       return {
         id: n.id,
         type: "transaction",
@@ -313,21 +337,31 @@ function AssetGraphInner({
         selected: isSelected,
         data: {
           txKind: n.txKind,
-          season: n.season,
-          week: n.week,
-          createdAt: n.createdAt,
+          header,
           managers: n.managers,
           assets: transactionAssets,
           expandedAssets: nodeExpandedAssets.get(n.id) ?? new Set(),
+          chainAssetKeys,
+          headerExpanded,
           selected: isSelected,
           dimmed: false,
-          onRemove,
           onAssetClick: onAssetExpand,
+          onHeaderToggle,
           onSelect: (nodeId) => onSelect({ type: "node", nodeId }),
         },
       };
     });
-  }, [nodes, positions, selection, nodeExpandedAssets, onRemove, onAssetExpand, onSelect]);
+  }, [
+    nodes,
+    positions,
+    selection,
+    nodeExpandedAssets,
+    onAssetExpand,
+    onSelect,
+    chainAssetsByNode,
+    fullyExpanded,
+    onHeaderToggle,
+  ]);
 
   const onNodeClick = useCallback<NodeMouseHandler>(
     (_, node) => onSelect({ type: "node", nodeId: node.id }),

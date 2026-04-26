@@ -21,6 +21,10 @@ import { AssetGraph } from "@/components/graph/AssetGraph";
 
 type FromSource = "overview" | "player" | "transactions" | "manager" | "deeplink";
 
+// `removed` URL state was retired with RemoveButton. Keep an empty set so the
+// VisibilityState shape stays stable; stale `?removed=...` params are ignored.
+const EMPTY_REMOVED: Set<string> = new Set();
+
 function parseCsv(value: string | null): string[] {
   if (!value) return [];
   return value.split(",").map((s) => s.trim()).filter(Boolean);
@@ -51,10 +55,21 @@ export default function GraphPage() {
 
   const seedRaw = searchParams.get("seed");
   const expandedRaw = searchParams.get("expanded");
-  const removedRaw = searchParams.get("removed");
+  const fullyExpandedRaw = searchParams.get("fullyExpanded");
   const seed = useMemo(() => parseCsv(seedRaw), [seedRaw]);
   const expanded = useMemo(() => new Set(parseCsv(expandedRaw)), [expandedRaw]);
-  const removed = useMemo(() => new Set(parseCsv(removedRaw)), [removedRaw]);
+  const fullyExpanded = useMemo(
+    () => new Set(parseCsv(fullyExpandedRaw)),
+    [fullyExpandedRaw],
+  );
+
+  const seedAssetKey = useMemo<string | undefined>(() => {
+    const playerId = searchParams.get("seedPlayerId");
+    if (playerId) return `player:${playerId}`;
+    const pickKeyParam = searchParams.get("seedPickKey");
+    if (pickKeyParam) return `pick:${pickKeyParam}`;
+    return undefined;
+  }, [searchParams]);
 
   const selection = parseSelection(searchParams.get("selection"));
   const from = ((): FromSource => {
@@ -130,7 +145,12 @@ export default function GraphPage() {
     [response],
   );
 
-  const visibility = useGraphVisibility(graph, { seed, expanded, removed });
+  const visibility = useGraphVisibility(graph, {
+    seed,
+    expanded,
+    removed: EMPTY_REMOVED,
+    seedAssetKey,
+  });
 
   const visibleGraph: Graph | null = useMemo(() => {
     if (!graph) return null;
@@ -171,9 +191,10 @@ export default function GraphPage() {
       return eWeek > bestWeek ? e : best;
     });
     const seedIds = Array.from(new Set([latest.source, latest.target]));
+    // Keep seedPlayerId in the URL so seedAssetKey survives reload/share-link.
+    // The `seed.length > 0` guard above prevents re-resolution.
     updateUrl({
       seed: seedIds.join(","),
-      seedPlayerId: null,
     });
   }, [seedPlayerId, response, seed.length, updateUrl]);
 
@@ -202,9 +223,10 @@ export default function GraphPage() {
       return eWeek > bestWeek ? e : best;
     });
     const seedIds = Array.from(new Set([latest.source, latest.target]));
+    // Keep seedPickKey in the URL so seedAssetKey survives reload/share-link.
+    // The `seed.length > 0` guard above prevents re-resolution.
     updateUrl({
       seed: seedIds.join(","),
-      seedPickKey: null,
     });
   }, [seedPickKey, response, seed.length, updateUrl]);
 
@@ -249,25 +271,16 @@ export default function GraphPage() {
     [expanded, updateUrl],
   );
 
-  const handleRemove = useCallback(
+  const handleHeaderToggle = useCallback(
     (nodeId: string) => {
-      const nextRemoved = new Set(removed);
-      nextRemoved.add(nodeId);
-      const nextExpanded = new Set(expanded);
-      nextExpanded.delete(nodeId);
-      const nextSeed = seed.filter((id) => id !== nodeId);
-      const updates: Record<string, string | null> = {
-        removed: Array.from(nextRemoved).join(",") || null,
-        expanded: Array.from(nextExpanded).join(",") || null,
-        seed: nextSeed.join(",") || null,
-      };
-      if (selection?.type === "node" && selection.nodeId === nodeId) {
-        updates.selection = null;
-      }
-      updateUrl(updates);
-      trackEvent("graph_node_removed", { nodeId });
+      const next = new Set(fullyExpanded);
+      const willExpand = !next.has(nodeId);
+      if (next.has(nodeId)) next.delete(nodeId);
+      else next.add(nodeId);
+      updateUrl({ fullyExpanded: Array.from(next).join(",") || null });
+      trackEvent("graph_card_expanded", { nodeId, expanded: willExpand });
     },
-    [expanded, removed, seed, selection, updateUrl],
+    [fullyExpanded, updateUrl],
   );
 
   const handlePickerSelect = useCallback(
@@ -277,7 +290,7 @@ export default function GraphPage() {
           seedPlayerId: focus.playerId,
           seed: null,
           expanded: null,
-          removed: null,
+          fullyExpanded: null,
           selection: null,
         });
       } else {
@@ -289,7 +302,7 @@ export default function GraphPage() {
           }),
           seed: null,
           expanded: null,
-          removed: null,
+          fullyExpanded: null,
           selection: null,
         });
       }
@@ -304,7 +317,7 @@ export default function GraphPage() {
       seedPlayerId: null,
       seedPickKey: null,
       expanded: null,
-      removed: null,
+      fullyExpanded: null,
       selection: null,
     });
   }, [updateUrl]);
@@ -372,7 +385,9 @@ export default function GraphPage() {
               seedIds={seed}
               expandedEntries={expanded}
               onAssetExpand={handleAssetExpand}
-              onRemove={handleRemove}
+              chainAssetsByNode={visibility.chainAssetsByNode}
+              fullyExpanded={fullyExpanded}
+              onHeaderToggle={handleHeaderToggle}
             />
           )}
 
@@ -382,7 +397,7 @@ export default function GraphPage() {
               className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 max-w-md px-4 py-2.5 rounded-md bg-foreground text-background shadow-lg flex items-center gap-3"
             >
               <span className="text-xs">
-                Click an asset row to trace its thread. Each edge is a player or pick tenure — the time they spent on one manager&apos;s roster.
+                Click a card header to expand it. Click an asset to follow its thread.
               </span>
               <button
                 type="button"
