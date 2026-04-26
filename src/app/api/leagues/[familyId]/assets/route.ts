@@ -82,7 +82,14 @@ export async function GET(
           .where(inArray(schema.players.id, playerIds))
       : [];
 
-  const players = playerMeta
+  // Fall back to displaying the player ID for asset-event players that have no
+  // metadata row yet — matches the graph builder's `player?.name ?? playerId`
+  // behavior so the picker never silently hides a valid asset.
+  const metaIds = new Set(playerMeta.map((p) => p.id));
+  const fallback = playerIds
+    .filter((id) => !metaIds.has(id))
+    .map((id) => ({ id, name: id, position: null, team: null }));
+  const players = [...playerMeta, ...fallback]
     .map((p) => ({ id: p.id, name: p.name, position: p.position, team: p.team }))
     .sort((a, b) => a.name.localeCompare(b.name));
 
