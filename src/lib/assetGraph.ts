@@ -285,15 +285,15 @@ const EVENT_ORDER: Record<string, number> = {
 function compareEvents(a: Ev, b: Ev): number {
   const seasonCmp = a.season.localeCompare(b.season);
   if (seasonCmp !== 0) return seasonCmp;
-  // draft_selected always sorts last within a season — it resolves a pick
-  // after all trades for that pick season are done, regardless of week.
-  const aIsDraft = a.eventType === "draft_selected" ? 1 : 0;
-  const bIsDraft = b.eventType === "draft_selected" ? 1 : 0;
-  if (aIsDraft !== bIsDraft) return aIsDraft - bIsDraft;
-  if (a.week !== b.week) return a.week - b.week;
+  // Use createdAt as the primary chronological sort within a season.
+  // Week numbers are unreliable across event types — Sleeper records
+  // draft_selected as week 0 even when offseason pick_trade events
+  // that delivered picks to the drafter are week 1+.
   const ac = a.createdAt ?? 0;
   const bc = b.createdAt ?? 0;
   if (ac !== bc) return ac - bc;
+  if (a.week !== b.week) return a.week - b.week;
+  // Same timestamp tiebreak: draft_selected sorts after pick_trade.
   return (EVENT_ORDER[a.eventType] ?? 5) - (EVENT_ORDER[b.eventType] ?? 5);
 }
 
