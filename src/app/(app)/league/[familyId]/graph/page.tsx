@@ -447,6 +447,7 @@ export default function GraphPage() {
               edges={visibleGraph.edges}
               selection={selection}
               onSelect={handleSelectionChange}
+              seedIds={seed}
               expandedEntries={expanded}
               onAssetExpand={handleAssetExpand}
               onRemove={handleRemove}

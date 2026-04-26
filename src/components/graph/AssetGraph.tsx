@@ -31,6 +31,7 @@ import { TransactionNode, type TransactionNodeData, type TransactionNodeAsset } 
 import { CurrentRosterNode, type CurrentRosterNodeData } from "./nodes/CurrentRosterNode";
 import { TransactionEdge, type TransactionEdgeData } from "./edges/TransactionEdge";
 import { layout, type LayoutMode } from "./layout";
+import { assignLanes } from "@/lib/graph/laneAssignment";
 
 export interface AssetGraphProps {
   nodes: GraphNode[];
@@ -38,6 +39,7 @@ export interface AssetGraphProps {
   selection: GraphSelection | null;
   onSelect: (s: GraphSelection | null) => void;
   layoutMode?: LayoutMode;
+  seedIds?: string[];
   expandedEntries?: Set<string>;
   onAssetExpand?: (nodeId: string, assetKey: string) => void;
   onRemove?: (nodeId: string) => void;
@@ -87,6 +89,7 @@ function AssetGraphInner({
   selection,
   onSelect,
   layoutMode = "band",
+  seedIds,
   expandedEntries,
   onAssetExpand,
   onRemove,
@@ -112,17 +115,14 @@ function AssetGraphInner({
     return m;
   }, [expandedEntries]);
 
+  const lanes = useMemo(
+    () => assignLanes(seedIds ?? [], expandedEntries ?? new Set(), edges),
+    [seedIds, expandedEntries, edges],
+  );
+
   const positions = useMemo(() => {
-    const allHavePositions = nodes.every((n) => !!n.layout);
-    if (allHavePositions) {
-      const m = new Map<string, { x: number; y: number }>();
-      for (const n of nodes) {
-        if (n.layout) m.set(n.id, n.layout);
-      }
-      return m;
-    }
-    return layout({ nodes, edges }, layoutMode);
-  }, [nodes, edges, layoutMode]);
+    return layout({ nodes, edges }, layoutMode, lanes);
+  }, [nodes, edges, layoutMode, lanes]);
 
   const flowEdges = useMemo<Edge<TransactionEdgeData>[]>(() => {
     return edges.map((e): Edge<TransactionEdgeData> => {
