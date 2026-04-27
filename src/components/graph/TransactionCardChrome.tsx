@@ -1,16 +1,27 @@
 "use client";
 
 import { type MouseEvent, type ReactNode } from "react";
+import {
+  ArrowLeftRight,
+  ChevronDown,
+  ChevronUp,
+  Hourglass,
+  Shield,
+  UserPlus,
+  Wrench,
+  type LucideIcon,
+} from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import type { TransactionKind } from "@/lib/assetGraph";
-import { HashFlourish } from "@/components/BrandMark";
 import type { TransactionHeader } from "./transactionHeader";
 
 export interface TransactionNodeAsset {
   kind: "player" | "pick";
   assetKey: string;
   label: string;
+  /** Optional muted suffix shown after the label (e.g. "(jrygrande)" on pick rows). */
+  ownerLabel?: string;
   position?: string | null;
   toUserId: string | null;
   toName: string | null;
@@ -51,20 +62,64 @@ export interface TransactionCardChromeProps {
   renderAssetHandles?: (assetKey: string) => ReactNode;
 }
 
-const KIND_LABEL: Record<TransactionKind, string> = {
-  draft: "Draft",
-  trade: "Trade",
-  waiver: "Waiver",
-  free_agent: "Free agent",
-  commissioner: "Commish",
+interface KindStyle {
+  color: ColorKey;
+  icon: LucideIcon;
+  label: string;
+}
+
+type ColorKey = "primary" | "chart-4" | "chart-5" | "chart-3" | "slate-400";
+
+const KIND_STYLE: Record<TransactionKind, KindStyle> = {
+  trade: { color: "primary", icon: ArrowLeftRight, label: "Trade" },
+  draft: { color: "chart-4", icon: Shield, label: "Draft" },
+  free_agent: { color: "chart-5", icon: UserPlus, label: "Free agent" },
+  waiver: { color: "chart-3", icon: Hourglass, label: "Waiver" },
+  commissioner: { color: "slate-400", icon: Wrench, label: "Commish" },
 };
 
-const KIND_ACCENT: Record<TransactionKind, string> = {
-  draft: "bg-chart-4",
-  trade: "bg-sage-500",
-  waiver: "bg-chart-3",
-  free_agent: "bg-chart-5",
-  commissioner: "bg-slate-400",
+interface ColorClasses {
+  /** Icon container background tint. */
+  iconBg: string;
+  /** Icon container hover background (deeper tint). */
+  iconBgHover: string;
+  /** Icon glyph color. */
+  iconText: string;
+  /** Pinned-right type badge classes (background + text). */
+  pill: string;
+}
+
+const COLOR_CLASSES: Record<ColorKey, ColorClasses> = {
+  primary: {
+    iconBg: "bg-primary/15",
+    iconBgHover: "group-hover:bg-primary/25",
+    iconText: "text-primary",
+    pill: "bg-primary/12 text-primary",
+  },
+  "chart-4": {
+    iconBg: "bg-chart-4/15",
+    iconBgHover: "group-hover:bg-chart-4/25",
+    iconText: "text-chart-4",
+    pill: "bg-chart-4/12 text-chart-4",
+  },
+  "chart-5": {
+    iconBg: "bg-chart-5/15",
+    iconBgHover: "group-hover:bg-chart-5/25",
+    iconText: "text-chart-5",
+    pill: "bg-chart-5/12 text-chart-5",
+  },
+  "chart-3": {
+    iconBg: "bg-chart-3/15",
+    iconBgHover: "group-hover:bg-chart-3/25",
+    iconText: "text-chart-3",
+    pill: "bg-chart-3/12 text-chart-3",
+  },
+  "slate-400": {
+    iconBg: "bg-slate-400/15",
+    iconBgHover: "group-hover:bg-slate-400/25",
+    iconText: "text-slate-500",
+    pill: "bg-slate-400/15 text-slate-500",
+  },
 };
 
 const POSITION_COLOR: Record<string, string> = {
@@ -88,6 +143,8 @@ function sortAssets(a: TransactionNodeAsset, b: TransactionNodeAsset): number {
   }
   return a.label.localeCompare(b.label);
 }
+
+type RowState = "available" | "on-graph" | "traced-elsewhere";
 
 export function TransactionCardChrome({
   nodeId,
@@ -119,16 +176,26 @@ export function TransactionCardChrome({
     bucket.assets.sort(sortAssets);
   }
 
+  const hiddenCount = data.assets.length - visibleAssets.length;
+  const showToggleBar = hiddenCount > 0 || data.headerExpanded;
+  const allHiddenArePicks =
+    hiddenCount > 0 &&
+    data.assets.filter((a) => !data.chainAssetKeys.has(a.assetKey)).every((a) => a.kind === "pick");
+
   function handleNodeClick(e: MouseEvent<HTMLDivElement>) {
     const target = e.target as HTMLElement;
     if (target.closest("[data-asset-row]") || target.closest("button")) return;
     data.onSelect?.(nodeId);
   }
 
-  function handleHeaderClick(e: MouseEvent<HTMLButtonElement>) {
+  function handleHeaderToggle(e: MouseEvent<HTMLButtonElement>) {
     e.stopPropagation();
     data.onHeaderToggle?.(nodeId);
   }
+
+  const style = KIND_STYLE[data.txKind];
+  const colors = COLOR_CLASSES[style.color];
+  const Icon = style.icon;
 
   return (
     <div
@@ -142,82 +209,144 @@ export function TransactionCardChrome({
       onClick={handleNodeClick}
     >
       {handles}
-      <span
-        className={cn(
-          "absolute left-0 top-0 h-full w-1 rounded-l-xl",
-          KIND_ACCENT[data.txKind],
-        )}
-        aria-hidden="true"
-      />
       <button
         type="button"
         aria-expanded={data.headerExpanded}
-        onClick={handleHeaderClick}
+        onClick={handleHeaderToggle}
         onMouseDown={(e) => e.stopPropagation()}
         className={cn(
-          "block w-full text-left pl-3 pr-2.5 py-1.5",
+          "block w-full text-left px-2.5 py-2",
           "hover:bg-accent/30 transition-colors",
         )}
       >
-        <div className="flex items-center justify-between gap-2">
-          {/* Allowed per design: graph headers may use Source Serif 4 (relaxes marketing-only rule). */}
+        <div className="flex items-center gap-2">
           <span
-            className="truncate font-serif text-sm font-medium leading-tight text-sage-800"
-            title={data.header.title}
+            aria-hidden
+            className={cn(
+              "flex h-7 w-7 shrink-0 items-center justify-center rounded-md",
+              colors.iconBg,
+              colors.iconBgHover,
+              "transition-[transform,background-color] [transition-duration:350ms] [transition-timing-function:cubic-bezier(0.34,1.56,0.64,1)]",
+              "motion-reduce:transition-none",
+            )}
           >
-            {data.header.title}
+            <Icon
+              className={cn(
+                "h-3.5 w-3.5",
+                colors.iconText,
+                "transition-transform [transition-duration:350ms] [transition-timing-function:cubic-bezier(0.34,1.56,0.64,1)]",
+                "group-hover:scale-[1.08] group-hover:-rotate-[4deg]",
+                "motion-reduce:transition-none motion-reduce:transform-none",
+              )}
+            />
           </span>
-          <span className="font-mono text-[10px] uppercase tracking-wide text-muted-foreground shrink-0">
-            {KIND_LABEL[data.txKind]}
+          <div className="flex-1 min-w-0 flex flex-col">
+            {/* Allowed per design: graph headers may use Source Serif 4 (relaxes marketing-only rule). */}
+            <span
+              className="truncate font-serif text-[15px] font-medium leading-tight text-sage-800"
+              title={data.header.title}
+            >
+              {data.header.title}
+            </span>
+            <span
+              className="font-mono text-[11px] text-muted-foreground truncate"
+              title={data.header.subtitle}
+            >
+              {data.header.subtitle}
+            </span>
+          </div>
+          <span
+            className={cn(
+              "shrink-0 rounded-full px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide",
+              colors.pill,
+            )}
+          >
+            {style.label}
           </span>
-        </div>
-        <div
-          className="font-mono text-[10px] text-muted-foreground truncate"
-          title={data.header.subtitle}
-        >
-          {data.header.subtitle}
         </div>
       </button>
       {buckets.size > 0 && (
-        <div className="border-t border-border/60">
+        <div className="border-t border-border/40">
           {Array.from(buckets.values()).map((bucket, idx) => (
-            <div key={bucket.userId ?? idx}>
-              {idx > 0 && <HashFlourish className="block mx-auto my-1" />}
-              <div className="flex items-center gap-1 px-3 py-0.5 bg-muted/40">
+            <div key={bucket.userId ?? idx} className={cn(idx > 0 && "border-t border-border/40")}>
+              <div className="flex items-center gap-1 px-3 py-1">
                 <span aria-hidden className="text-muted-foreground text-[10px]">→</span>
-                <span className="font-mono text-[10px] uppercase tracking-wide text-muted-foreground truncate">
+                <span className="font-mono text-[10px] uppercase tracking-wide font-medium text-muted-foreground truncate">
                   {bucket.displayName}
                 </span>
               </div>
-              {bucket.assets.map((asset) => (
-                <AssetRow
-                  key={asset.assetKey}
-                  asset={asset}
-                  isExpanded={data.expandedAssets.has(asset.assetKey)}
-                  isHovered={hoveredAssetKey === asset.assetKey}
-                  onClick={() => data.onAssetClick?.(nodeId, asset.assetKey)}
-                  onHover={(hovered) => onAssetHover(hovered ? asset.assetKey : null)}
-                  handles={renderAssetHandles?.(asset.assetKey) ?? null}
-                />
-              ))}
+              {bucket.assets.map((asset) => {
+                const isOnGraph = data.chainAssetKeys.has(asset.assetKey);
+                const isExpandedElsewhere =
+                  data.expandedAssets.has(asset.assetKey) && !isOnGraph;
+                const rowState: RowState = isOnGraph
+                  ? "on-graph"
+                  : isExpandedElsewhere
+                    ? "traced-elsewhere"
+                    : "available";
+                return (
+                  <AssetRow
+                    key={asset.assetKey}
+                    asset={asset}
+                    rowState={rowState}
+                    isHovered={hoveredAssetKey === asset.assetKey}
+                    onClick={() => data.onAssetClick?.(nodeId, asset.assetKey)}
+                    onHover={(hovered) => onAssetHover(hovered ? asset.assetKey : null)}
+                    handles={renderAssetHandles?.(asset.assetKey) ?? null}
+                  />
+                );
+              })}
             </div>
           ))}
         </div>
+      )}
+      {showToggleBar && (
+        <button
+          type="button"
+          onClick={handleHeaderToggle}
+          onMouseDown={(e) => e.stopPropagation()}
+          aria-expanded={data.headerExpanded}
+          className={cn(
+            "flex w-full items-center justify-center gap-1 border-t border-border/40 bg-muted/30 px-3 py-1.5",
+            "text-[11px] text-muted-foreground hover:bg-muted/50 transition-colors rounded-b-xl",
+          )}
+        >
+          <span>{toggleBarCopy(data.headerExpanded, hiddenCount, data.txKind, data.assets.length, allHiddenArePicks)}</span>
+          {data.headerExpanded ? (
+            <ChevronUp className="size-3 text-muted-foreground" />
+          ) : (
+            <ChevronDown className="size-3 text-muted-foreground" />
+          )}
+        </button>
       )}
     </div>
   );
 }
 
+function toggleBarCopy(
+  expanded: boolean,
+  hiddenCount: number,
+  txKind: TransactionKind,
+  totalCount: number,
+  allHiddenArePicks: boolean,
+): string {
+  if (expanded) return "Collapse";
+  if (txKind === "draft" && allHiddenArePicks) {
+    return `Show full draft (${totalCount} picks)`;
+  }
+  return `Show ${hiddenCount} more ${allHiddenArePicks ? "picks" : "assets"}`;
+}
+
 function AssetRow({
   asset,
-  isExpanded,
+  rowState,
   isHovered,
   onClick,
   onHover,
   handles,
 }: {
   asset: TransactionNodeAsset;
-  isExpanded: boolean;
+  rowState: RowState;
   isHovered: boolean;
   onClick: () => void;
   onHover: (hovered: boolean) => void;
@@ -228,12 +357,19 @@ function AssetRow({
     onClick();
   }
 
-  const pillClass =
-    asset.kind === "player" && asset.position && POSITION_COLOR[asset.position]
+  const isTraced = rowState !== "available";
+  const positionPillClass = isTraced
+    ? "bg-sage-100 text-sage-700"
+    : asset.kind === "player" && asset.position && POSITION_COLOR[asset.position]
       ? POSITION_COLOR[asset.position]
       : asset.kind === "pick"
         ? "bg-chart-4/12 text-chart-4"
         : "bg-muted text-muted-foreground";
+
+  const labelText =
+    rowState === "on-graph"
+      ? `Untrace thread ${asset.label}`
+      : `Trace thread ${asset.label}`;
 
   return (
     <div className="relative">
@@ -246,36 +382,66 @@ function AssetRow({
         onMouseEnter={() => onHover(true)}
         onMouseLeave={() => onHover(false)}
         className={cn(
-          "w-full flex items-center gap-2 px-3 py-1 text-left transition-colors border-t border-border/50 first:border-t-0",
+          "w-full flex items-center gap-2 px-3 py-1 text-left transition-colors",
           "hover:bg-accent/40",
-          isExpanded && "bg-primary/5",
-          isHovered && !isExpanded && "bg-accent/30",
+          isTraced && "bg-sage-50 border-l-2 border-primary rounded-r-md",
+          rowState === "traced-elsewhere" && "opacity-[0.55]",
+          rowState === "available" && isHovered && "bg-accent/30",
         )}
-        aria-label={`${isExpanded ? "Untrace thread" : "Trace thread"} ${asset.label}`}
+        aria-label={labelText}
       >
         <span
           className={cn(
             "inline-flex items-center justify-center rounded-full px-1.5 py-0 font-mono text-[9px] font-medium uppercase tracking-wide",
-            pillClass,
+            positionPillClass,
           )}
         >
           {asset.kind === "player" ? asset.position ?? "?" : "PICK"}
         </span>
-        <span className="flex-1 truncate text-[11px] leading-tight" title={asset.label}>
-          {asset.label}
-        </span>
         <span
-          aria-hidden
           className={cn(
-            "inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border text-[9px] leading-none",
-            isExpanded
-              ? "border-primary bg-primary text-primary-foreground"
-              : "border-border border-dashed text-muted-foreground",
+            "flex-1 truncate text-[11px] leading-tight",
+            isTraced ? "font-medium" : "font-normal",
           )}
+          title={asset.ownerLabel ? `${asset.label} ${asset.ownerLabel}` : asset.label}
         >
-          {isExpanded ? "✓" : "+"}
+          {asset.label}
+          {asset.ownerLabel ? (
+            <span className="ml-1 text-[10px] text-muted-foreground">{asset.ownerLabel}</span>
+          ) : null}
         </span>
+        <RowStateIndicator state={rowState} />
       </button>
     </div>
+  );
+}
+
+const ROW_INDICATOR: Record<RowState, { glyph: string; classes: string }> = {
+  available: {
+    glyph: "+",
+    classes: "border border-dashed border-border text-muted-foreground",
+  },
+  "on-graph": {
+    glyph: "✓",
+    classes: "bg-primary text-primary-foreground",
+  },
+  "traced-elsewhere": {
+    glyph: "✓",
+    classes: "bg-slate-400 text-primary-foreground",
+  },
+};
+
+function RowStateIndicator({ state }: { state: RowState }) {
+  const { glyph, classes } = ROW_INDICATOR[state];
+  return (
+    <span
+      aria-hidden
+      className={cn(
+        "inline-flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full text-[11px] leading-none",
+        classes,
+      )}
+    >
+      {glyph}
+    </span>
   );
 }

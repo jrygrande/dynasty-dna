@@ -312,11 +312,17 @@ function AssetGraphInner({
             fromUserId: a.fromUserId,
           };
         }
-        const label = a.pickLabel ?? `${a.pickSeason} R${a.pickRound}`;
+        const fullLabel = a.pickLabel ?? `${a.pickSeason} R${a.pickRound}`;
+        // pickLabel format from assetGraph.ts: "YYYY RN (ownerName)" — split
+        // so the year/round is primary and the owner suffix renders muted.
+        const parenIdx = fullLabel.indexOf(" (");
+        const label = parenIdx >= 0 ? fullLabel.slice(0, parenIdx) : fullLabel;
+        const ownerLabel = parenIdx >= 0 ? fullLabel.slice(parenIdx + 1) : undefined;
         return {
           kind: "pick",
           assetKey: `pick:${a.pickSeason}:${a.pickRound}:${a.pickOriginalRosterId}`,
           label,
+          ownerLabel,
           toUserId: a.toUserId,
           toName,
           fromUserId: a.fromUserId,
