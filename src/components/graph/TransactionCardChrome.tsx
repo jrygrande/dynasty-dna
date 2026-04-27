@@ -3,6 +3,7 @@
 import { type MouseEvent, type ReactNode } from "react";
 import {
   ArrowLeftRight,
+  ArrowRight,
   ChevronDown,
   ChevronUp,
   Dna,
@@ -283,7 +284,7 @@ export function TransactionCardChrome({
           {Array.from(buckets.values()).map((bucket, idx) => (
             <div key={bucket.userId ?? idx} className={cn(idx > 0 && "border-t border-border/40")}>
               <div className="flex items-center gap-1 px-3 py-1">
-                <span aria-hidden className="text-muted-foreground text-[10px]">→</span>
+                <ArrowRight aria-hidden className="h-2.5 w-2.5 text-muted-foreground shrink-0" />
                 <span className="font-mono text-[10px] uppercase tracking-wide font-medium text-muted-foreground truncate">
                   {bucket.displayName}
                 </span>

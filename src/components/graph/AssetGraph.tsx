@@ -9,17 +9,20 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import ReactFlow, {
   Controls,
   MiniMap,
   ReactFlowProvider,
+  useReactFlow,
   useUpdateNodeInternals,
   type Edge,
   type Node,
   type NodeMouseHandler,
   type EdgeMouseHandler,
+  type NodeDragHandler,
   type NodeTypes,
   type EdgeTypes,
 } from "reactflow";
@@ -33,8 +36,10 @@ import type { TransactionNodeAsset } from "./TransactionCardChrome";
 import { buildTransactionHeader } from "./transactionHeader";
 import { CurrentRosterNode, type CurrentRosterNodeData } from "./nodes/CurrentRosterNode";
 import { TransactionEdge, type TransactionEdgeData } from "./edges/TransactionEdge";
-import { layout, type LayoutMode } from "./layout";
+import { layout, type LayoutMode, type Pos } from "./layout";
 import { assignLanes } from "@/lib/graph/laneAssignment";
+import { deriveSpawnParents } from "@/lib/graph/spawnParents";
+import { useGraphPositionTween } from "@/lib/graph/useGraphPositionTween";
 
 export interface AssetGraphProps {
   nodes: GraphNode[];
@@ -50,6 +55,15 @@ export interface AssetGraphProps {
   /** Set of node ids whose card is fully expanded (header was clicked). */
   fullyExpanded?: Set<string>;
   onHeaderToggle?: (nodeId: string) => void;
+  /** Asset key (e.g. "player:1234") of the originally-seeded asset. Drives
+   *  lane anchoring: the seed asset's thread sits at lane 0, others fan
+   *  above (negative) and below (positive) based on row position on the
+   *  seed card. */
+  seedAssetKey?: string;
+  /** User-dragged positions that override the computed layout. Lifted to the
+   *  page so a Reset-positions button can clear them. */
+  manualPositions?: Map<string, Pos>;
+  onManualPositionChange?: (nodeId: string, pos: Pos) => void;
 }
 
 type FlowNodeData = TransactionNodeData | CurrentRosterNodeData;
@@ -111,6 +125,9 @@ function AssetGraphInner({
   chainAssetsByNode,
   fullyExpanded,
   onHeaderToggle,
+  seedAssetKey,
+  manualPositions,
+  onManualPositionChange,
 }: AssetGraphProps) {
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
   const [hoveredAssetKey, setHoveredAssetKey] = useState<string | null>(null);
@@ -146,13 +163,44 @@ function AssetGraphInner({
   }, [expandedEntries]);
 
   const lanes = useMemo(
-    () => assignLanes(seedIds ?? [], expandedEntries ?? new Set(), edges),
-    [seedIds, expandedEntries, edges],
+    () => assignLanes(seedIds ?? [], expandedEntries ?? new Set(), edges, nodes, seedAssetKey),
+    [seedIds, expandedEntries, edges, nodes, seedAssetKey],
   );
 
-  const positions = useMemo(() => {
-    return layout({ nodes, edges }, layoutMode, lanes);
-  }, [nodes, edges, layoutMode, lanes]);
+  // Anchor-relative layout: prior positions stick, new nodes fan out from
+  // their spawn parent. The ref captures the previous render's targets so the
+  // next layout call can preserve them.
+  const priorPositionsRef = useRef<Map<string, Pos>>(new Map());
+
+  const targetPositions = useMemo(() => {
+    const computed = layout(
+      { nodes, edges },
+      layoutMode,
+      lanes,
+      priorPositionsRef.current,
+      seedIds,
+    );
+    // User-dragged positions override the auto-layout. Layered here so the
+    // tween hook treats a manual position as the new target and settles.
+    if (manualPositions && manualPositions.size > 0) {
+      for (const [id, pos] of manualPositions) {
+        if (computed.has(id)) computed.set(id, pos);
+      }
+    }
+    return computed;
+  }, [nodes, edges, layoutMode, lanes, manualPositions, seedIds]);
+
+  const spawnParents = useMemo(
+    () => deriveSpawnParents(nodes, edges, new Set(priorPositionsRef.current.keys())),
+    [nodes, edges],
+  );
+
+  const positions = useGraphPositionTween(targetPositions, spawnParents);
+
+  // After the layout settles, persist as the new prior baseline.
+  useEffect(() => {
+    priorPositionsRef.current = targetPositions;
+  }, [targetPositions]);
 
   // Compute obstacle rectangles from node positions for edge routing.
   // Transaction cards are 260px wide; height estimated from asset count.
@@ -204,24 +252,51 @@ function AssetGraphInner({
     return m;
   }, [assetExpansionsByNode, expandedAssetKeys, edges]);
 
-  // When handles are added/removed dynamically (asset expansion toggled),
-  // tell React Flow to re-measure handle positions on ALL visible nodes.
-  // Double-RAF ensures the DOM has painted before we measure.
-  // Re-measure handles when assets expand OR when any card header toggles
-  // open/closed (the body shrinks/grows, shifting handle positions).
+  // Controlled viewport: only fit on first-seed transition, never on every
+  // composition change. Pan/zoom adjustments by the user are preserved as
+  // the chain expands.
+  const reactFlow = useReactFlow();
+  const lastSeedKeyRef = useRef<string>("");
+  useEffect(() => {
+    const seedKey = (seedIds ?? []).join(",");
+    if (seedKey === lastSeedKeyRef.current) return;
+    lastSeedKeyRef.current = seedKey;
+    if (seedKey === "") return;
+    // Wait one rAF for the new seed nodes to mount before fitting.
+    const id = requestAnimationFrame(() => {
+      reactFlow.fitView({ padding: 0.2, duration: 400 });
+    });
+    return () => cancelAnimationFrame(id);
+  }, [seedIds, reactFlow]);
+
+  // When handles are added/removed dynamically (asset expansion toggled or
+  // a card header toggles open/closed), tell React Flow to re-measure
+  // handle positions on all visible nodes. Double-RAF ensures the DOM has
+  // painted before we measure.
+  //
+  // CRITICAL: only depend on the *content* triggers (expansion state); do
+  // NOT depend on `nodes`. The `nodes` array reference changes on every
+  // parent render, which during a position tween fires 60×/sec — calling
+  // updateNodeInternals on every node every frame causes visible flashing.
+  // We read `nodes` via a ref so the effect uses the latest list at measure
+  // time without re-firing on each render.
   const updateNodeInternals = useUpdateNodeInternals();
+  const nodesRef = useRef(nodes);
+  useEffect(() => {
+    nodesRef.current = nodes;
+  }, [nodes]);
   useEffect(() => {
     let cancelled = false;
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         if (cancelled) return;
-        for (const n of nodes) {
+        for (const n of nodesRef.current) {
           updateNodeInternals(n.id);
         }
       });
     });
     return () => { cancelled = true; };
-  }, [nodeExpandedAssets, nodes, updateNodeInternals, fullyExpanded]);
+  }, [nodeExpandedAssets, fullyExpanded, updateNodeInternals]);
 
   // Set of current_roster node IDs — don't route per-asset handles to these.
   const rosterNodeIds = useMemo(
@@ -380,6 +455,16 @@ function AssetGraphInner({
 
   const onPaneClick = useCallback(() => onSelect(null), [onSelect]);
 
+  // Capture user drags as manual position overrides. React Flow handles the
+  // visual drag itself (cursor delta against its internal store); we only
+  // persist the final resting position so it survives the next layout pass.
+  const onNodeDragStop = useCallback<NodeDragHandler>(
+    (_, node) => {
+      onManualPositionChange?.(node.id, { x: node.position.x, y: node.position.y });
+    },
+    [onManualPositionChange],
+  );
+
   const onNodeMouseEnter = useCallback<NodeMouseHandler>(
     (_, node) => setHoveredNodeId(node.id),
     [],
@@ -407,7 +492,7 @@ function AssetGraphInner({
           onPaneClick={onPaneClick}
           onNodeMouseEnter={onNodeMouseEnter}
           onNodeMouseLeave={onNodeMouseLeave}
-          fitView
+          onNodeDragStop={onNodeDragStop}
           proOptions={{ hideAttribution: true }}
           style={{ background: "transparent" }}
         >

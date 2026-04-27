@@ -115,6 +115,21 @@ export function useGraphVisibility(
     // computation. Whole-node expansion entries don't contribute here.
     const expandedAssetKeySet = new Set<string>();
 
+    // The seed asset is auto-expanded — its full thread (e.g. a player's
+    // draft → trades → current roster) shows by default without the user
+    // having to click `+` on the seed asset's row. Treat it like an
+    // expansion entry for the purposes of edge/node visibility AND chain
+    // membership.
+    if (seedAssetKey) {
+      expandedAssetKeySet.add(seedAssetKey);
+      const matching = edgesByAsset.get(seedAssetKey) ?? [];
+      for (const e of matching) {
+        visible.add(e.source);
+        visible.add(e.target);
+        visibleEdgeIds.add(e.id);
+      }
+    }
+
     for (const entry of expanded) {
       const sepIdx = entry.indexOf("~");
       if (sepIdx === -1) {
@@ -137,6 +152,29 @@ export function useGraphVisibility(
         visible.add(e.source);
         visible.add(e.target);
         visibleEdgeIds.add(e.id);
+      }
+    }
+
+    // For any draft node reached by an expanded pick thread, auto-expand
+    // the player's thread too — the user's mental model of "this pick
+    // became this player" wants the connection visible without an extra
+    // click. Single-pass: only the immediately-revealed player's edges
+    // are auto-expanded (no recursive cascade).
+    for (const node of graph.nodes) {
+      if (node.kind !== "transaction") continue;
+      if (node.txKind !== "draft") continue;
+      if (!visible.has(node.id)) continue;
+      for (const asset of node.assets) {
+        if (asset.kind !== "player" || !asset.playerId) continue;
+        const playerKey = `player:${asset.playerId}`;
+        if (expandedAssetKeySet.has(playerKey)) continue;
+        expandedAssetKeySet.add(playerKey);
+        const matching = edgesByAsset.get(playerKey) ?? [];
+        for (const e of matching) {
+          visible.add(e.source);
+          visible.add(e.target);
+          visibleEdgeIds.add(e.id);
+        }
       }
     }
 

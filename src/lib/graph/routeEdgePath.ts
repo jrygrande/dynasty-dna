@@ -115,14 +115,16 @@ function directBezier(
   const midY = (sy + ty) / 2 + gutterOffset;
 
   if (Math.abs(ty - sy) < 5) {
-    // Nearly horizontal
-    const cpOffset = Math.min(dx * 0.3, 40);
+    // Nearly horizontal — gentle ease-in/out, control points at 40% of dx.
+    const cpOffset = dx * 0.4;
     const path = `M ${sx},${sy} C ${sx + cpOffset},${sy} ${tx - cpOffset},${ty} ${tx},${ty}`;
     return { path, labelX: midX, labelY: midY };
   }
 
-  // S-curve for different Y positions
-  const cpX = Math.min(dx * 0.4, 60);
+  // S-curve for different Y positions. Control points reach far enough to
+  // keep the curve smooth even for large vertical offsets — capping at 60
+  // (the prior value) made long sweeps kink.
+  const cpX = Math.max(dx * 0.5, Math.abs(ty - sy) * 0.4);
   const path = `M ${sx},${sy} C ${sx + cpX},${sy} ${tx - cpX},${ty} ${tx},${ty}`;
   return { path, labelX: midX, labelY: midY };
 }
@@ -198,10 +200,12 @@ function smoothPathThroughPoints(points: Array<{ x: number; y: number }>): strin
     const p0 = points[i];
     const p1 = points[i + 1];
     const dx = p1.x - p0.x;
+    const dy = p1.y - p0.y;
 
-    // Control points: extend horizontally from each endpoint
-    // This creates smooth transitions that enter/exit each waypoint horizontally
-    const cpLen = Math.min(dx * 0.35, 50);
+    // Control points extend horizontally from each endpoint so segments
+    // join smoothly. Reach scales with both dx and dy — the prior cap of
+    // 50 made long, vertical-offset sweeps look kinked.
+    const cpLen = Math.max(dx * 0.5, Math.abs(dy) * 0.4);
     const cp1x = p0.x + cpLen;
     const cp1y = p0.y;
     const cp2x = p1.x - cpLen;

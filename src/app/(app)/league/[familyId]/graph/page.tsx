@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Dna } from "lucide-react";
+import { ArrowLeft, Dna } from "lucide-react";
 import {
   pickKey,
   type Graph,
@@ -19,6 +19,7 @@ import { MobileTimeline } from "@/components/graph/MobileTimeline";
 import { AssetPicker } from "@/components/graph/AssetPicker";
 import { trackEvent } from "@/lib/analytics";
 import { AssetGraph } from "@/components/graph/AssetGraph";
+import type { Pos } from "@/components/graph/layout";
 
 type FromSource = "overview" | "player" | "transactions" | "manager" | "deeplink";
 
@@ -323,6 +324,26 @@ export default function GraphPage() {
     });
   }, [updateUrl]);
 
+  // User-dragged card overrides for the auto-layout. Session-only — clears
+  // when the seed changes (different graph) or via the Reset-positions button.
+  const [manualPositions, setManualPositions] = useState<Map<string, Pos>>(
+    () => new Map(),
+  );
+  const handleManualPositionChange = useCallback((nodeId: string, pos: Pos) => {
+    setManualPositions((prev) => {
+      const next = new Map(prev);
+      next.set(nodeId, pos);
+      return next;
+    });
+  }, []);
+  const handleResetManualPositions = useCallback(() => {
+    setManualPositions(new Map());
+  }, []);
+  const seedKey = seed.join(",");
+  useEffect(() => {
+    setManualPositions(new Map());
+  }, [seedKey]);
+
   const hasSeed = seed.length > 0;
   const selectedNodeId =
     selection?.type === "node" ? selection.nodeId : null;
@@ -368,9 +389,10 @@ export default function GraphPage() {
         <div className="px-6 py-3 flex items-center gap-4">
           <Link
             href={`/league/${familyId}`}
-            className="text-sm text-muted-foreground hover:text-foreground whitespace-nowrap"
+            className="text-sm text-muted-foreground hover:text-foreground whitespace-nowrap inline-flex items-center gap-1"
           >
-            &larr; League
+            <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
+            League
           </Link>
           {/* Allowed per design: graph headers may use Source Serif 4 (relaxes marketing-only rule). */}
           <h1 className="font-serif text-xl font-medium text-sage-800 whitespace-nowrap inline-flex items-center gap-2">
@@ -384,6 +406,16 @@ export default function GraphPage() {
               className="text-xs text-muted-foreground underline-offset-2 hover:underline"
             >
               Reset
+            </button>
+          )}
+          {manualPositions.size > 0 && (
+            <button
+              type="button"
+              onClick={handleResetManualPositions}
+              className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+              title="Clear dragged-card positions"
+            >
+              Reset positions
             </button>
           )}
           <div className="flex-1" />
@@ -426,6 +458,9 @@ export default function GraphPage() {
               chainAssetsByNode={visibility.chainAssetsByNode}
               fullyExpanded={fullyExpanded}
               onHeaderToggle={handleHeaderToggle}
+              seedAssetKey={seedAssetKey}
+              manualPositions={manualPositions}
+              onManualPositionChange={handleManualPositionChange}
             />
           )}
 
