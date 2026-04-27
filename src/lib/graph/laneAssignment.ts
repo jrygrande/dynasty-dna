@@ -95,6 +95,28 @@ export function assignLanes(
     }
   }
 
+  // Auto-trace: for each draft node that's been lane-assigned via a pick
+  // thread, the player drafted by that pick should continue on the SAME
+  // lane (so the pick → trades → draft → player → roster lineage flows
+  // as one band). Mirrors the auto-trace logic in useGraphVisibility.
+  if (nodes) {
+    for (const node of nodes) {
+      if (node.kind !== "transaction") continue;
+      if (node.txKind !== "draft") continue;
+      const draftLane = lanes.get(node.id);
+      if (draftLane == null) continue;
+      for (const asset of node.assets) {
+        if (asset.kind !== "player" || !asset.playerId) continue;
+        const playerKey = `player:${asset.playerId}`;
+        const playerEdges = edgesByAsset.get(playerKey) ?? [];
+        for (const e of playerEdges) {
+          if (!lanes.has(e.source)) lanes.set(e.source, draftLane);
+          if (!lanes.has(e.target)) lanes.set(e.target, draftLane);
+        }
+      }
+    }
+  }
+
   return lanes;
 }
 
