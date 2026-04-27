@@ -1,21 +1,18 @@
 /**
- * Asset Graph Browser — per-lane chronological columns × thread lanes.
+ * Asset Graph Browser — global chronological columns × thread lanes.
  *
- * Each lane (a horizontal y-band, assigned by `assignLanes`) maintains
- * its own column counter. Cards within a lane are placed chronologically
- * left-to-right with the seed at column 0; cards before the seed
- * chronologically (e.g. a player's draft) get negative column offsets,
- * cards after get positive. Lanes that don't pass through the seed
- * (rare — disconnected islands) are aligned chronologically against the
- * seed's `createdAt` so they slot into the global timeline.
+ * X: each unique transaction `createdAt` across all visible nodes gets a
+ * single shared column. Cards on different lanes that share a `createdAt`
+ * sit at the same x. This guarantees edges between lanes always flow
+ * left→right by time (no "backward" lines).
  *
- * X: per-lane column index (NOT a global chronology). This collapses
- * unused horizontal space when threads have unrelated chronologies.
- * Y: lane * LANE_GAP, with per-(column, lane) stacking for collisions.
+ * Y: derived from the lane index assigned by `assignLanes`. Sequential
+ * lanes (0, +1, −1, +2, −2 …) produce vertical separation per thread.
  *
- * Current-roster pseudo-nodes pin to the column past the rightmost
- * transaction and inherit the lane of the thread that connects to them
- * so each manager's roster aligns with its branch.
+ * Current-roster pseudo-nodes pin to the column AFTER their lane's
+ * rightmost transaction (per-lane, not global) so each manager's roster
+ * sits compactly at the end of its branch instead of being pushed to
+ * the global maxX.
  *
  * Smooth motion across renders is the responsibility of
  * `useGraphPositionTween` — layout itself stays pure and deterministic.
@@ -96,11 +93,13 @@ export function layout(
 type TxNode = Extract<GraphNode, { kind: "transaction" }>;
 
 /**
- * Place transactions per-lane: each lane gets its own chronological
- * column counter anchored on the seed. The seed sits at column 0 of its
- * own lane; lanes that pass through the seed too anchor at the seed's
- * lane index for that lane. Lanes without the seed fall back to the
- * seed's `createdAt` as the column-0 reference.
+ * Place transactions on a GLOBAL chronological column grid: each unique
+ * `createdAt` across all visible transactions gets one column. Cards in
+ * different lanes that share a `createdAt` land at the same x (different
+ * y). This guarantees edges flow left→right by time across lane changes.
+ *
+ * The seed transaction's column anchors x=COLUMN_X0 so older cards get
+ * negative cols (left of seed) and newer get positive (right of seed).
  */
 function placeByLane(
   transactions: TxNode[],
@@ -109,47 +108,34 @@ function placeByLane(
   out: Map<string, Pos>,
 ): void {
   const seedSet = new Set(seedIds);
-  const seedNode = transactions.find((n) => seedSet.has(n.id));
-  const seedCreatedAt = seedNode?.createdAt ?? null;
+  const sorted = [...transactions].sort(compareTx);
 
-  // Group transactions by lane.
-  const byLane = new Map<number, TxNode[]>();
-  for (const n of transactions) {
-    const lane = lanes.get(n.id) ?? 0;
-    let arr = byLane.get(lane);
-    if (!arr) { arr = []; byLane.set(lane, arr); }
-    arr.push(n);
+  // Assign one column per unique createdAt globally.
+  const colByCreatedAt = new Map<number, number>();
+  let nextCol = 0;
+  for (const n of sorted) {
+    if (!colByCreatedAt.has(n.createdAt)) {
+      colByCreatedAt.set(n.createdAt, nextCol++);
+    }
   }
 
-  for (const [lane, nodes] of byLane) {
-    nodes.sort(compareTx);
+  // Anchor x=COLUMN_X0 on the seed transaction's column so older cards
+  // land at negative cols and newer at positive.
+  const seedTx = sorted.find((n) => seedSet.has(n.id));
+  const seedCol = seedTx ? colByCreatedAt.get(seedTx.createdAt) ?? 0 : 0;
 
-    // Find the column-0 anchor for this lane:
-    //  1. If the seed node is in this lane, use its index.
-    //  2. Else, count nodes chronologically before the seed's createdAt
-    //     so this lane slots into the global timeline at the seed's x.
-    let anchorIdx: number;
-    const seedIdxInLane = seedNode ? nodes.findIndex((n) => n.id === seedNode.id) : -1;
-    if (seedIdxInLane >= 0) {
-      anchorIdx = seedIdxInLane;
-    } else if (seedCreatedAt != null) {
-      anchorIdx = nodes.filter((n) => n.createdAt < seedCreatedAt).length;
-    } else {
-      anchorIdx = 0;
-    }
-
-    // Stack within (col, lane) for collisions on identical createdAt.
-    const stackByCol = new Map<number, number>();
-    for (let i = 0; i < nodes.length; i++) {
-      const n = nodes[i];
-      const col = i - anchorIdx;
-      const stackIdx = stackByCol.get(col) ?? 0;
-      stackByCol.set(col, stackIdx + 1);
-      out.set(n.id, {
-        x: COLUMN_X0 + col * COLUMN_WIDTH,
-        y: ROW_Y0 + lane * LANE_GAP + stackIdx * ROW_HEIGHT,
-      });
-    }
+  // Stack collisions within (col, lane) for cards sharing both.
+  const stackByColLane = new Map<string, number>();
+  for (const n of sorted) {
+    const col = (colByCreatedAt.get(n.createdAt) ?? 0) - seedCol;
+    const lane = lanes.get(n.id) ?? 0;
+    const key = `${col}|${lane}`;
+    const stackIdx = stackByColLane.get(key) ?? 0;
+    stackByColLane.set(key, stackIdx + 1);
+    out.set(n.id, {
+      x: COLUMN_X0 + col * COLUMN_WIDTH,
+      y: ROW_Y0 + lane * LANE_GAP + stackIdx * ROW_HEIGHT,
+    });
   }
 }
 
