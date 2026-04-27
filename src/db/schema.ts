@@ -287,6 +287,7 @@ export const draftPicks = pgTable(
       .references(() => drafts.id, { onDelete: "cascade" }),
     pickNo: integer("pick_no").notNull(),
     round: integer("round").notNull(),
+    draftSlot: integer("draft_slot"),
     rosterId: integer("roster_id").notNull(),
     playerId: text("player_id"),
     isKeeper: boolean("is_keeper").default(false),

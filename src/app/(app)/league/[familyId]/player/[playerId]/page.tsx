@@ -3,6 +3,7 @@
 import { Fragment, useEffect, useState, useMemo } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
+import { useFlag } from "@/lib/useFlag";
 
 interface Manager {
   userId: string;
@@ -84,6 +85,7 @@ export default function PlayerDetailPage() {
 
   const [data, setData] = useState<WeeklyLogData | null>(null);
   const [loading, setLoading] = useState(true);
+  const graphEnabled = useFlag("ASSET_GRAPH_BROWSER");
 
   // Filters
   const [selectedSeason, setSelectedSeason] = useState<string | null>(null);
@@ -187,12 +189,22 @@ export default function PlayerDetailPage() {
                 {player.position} {player.team ? `— ${player.team}` : ""}
               </div>
             </div>
-            <Link
-              href={`/league/${familyId}/timeline?playerId=${playerId}`}
-              className="text-sm text-muted-foreground hover:text-foreground ml-auto"
-            >
-              Timeline &rarr;
-            </Link>
+            <div className="flex items-center gap-4 ml-auto">
+              <Link
+                href={`/league/${familyId}/timeline?playerId=${playerId}`}
+                className="text-sm text-muted-foreground hover:text-foreground"
+              >
+                Timeline &rarr;
+              </Link>
+              {graphEnabled && (
+                <Link
+                  href={`/league/${familyId}/graph?seedPlayerId=${playerId}&from=player`}
+                  className="text-sm text-muted-foreground hover:text-foreground"
+                >
+                  Trace lineage &rarr;
+                </Link>
+              )}
+            </div>
           </div>
         </div>
 

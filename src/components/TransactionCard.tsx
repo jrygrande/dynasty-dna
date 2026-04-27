@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { AssetIdentifier } from "./AssetTimeline";
 import { GradeBadge } from "./GradeBadge";
+import { getRoundSuffix } from "@/lib/utils";
 
 interface TransactionAdd {
   playerId: string;
@@ -72,13 +73,6 @@ function PlayerLink({ playerId, playerName, familyId, className }: {
       {playerName}
     </Link>
   );
-}
-
-function getRoundSuffix(round: number): string {
-  if (round === 1) return "st";
-  if (round === 2) return "nd";
-  if (round === 3) return "rd";
-  return "th";
 }
 
 function formatDate(timestamp: number | null): string {

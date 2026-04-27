@@ -1,0 +1,1 @@
+ALTER TABLE "draft_picks" ADD COLUMN "draft_slot" integer;

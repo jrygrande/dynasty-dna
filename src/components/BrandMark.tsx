@@ -1,3 +1,5 @@
+import { cn } from "@/lib/utils";
+
 export function BrandMark({ className }: { className?: string }) {
   return (
     <svg
@@ -27,5 +29,27 @@ export function BrandLockup({ className }: { className?: string }) {
         Dynasty <span className="text-primary">DNA</span>
       </span>
     </span>
+  );
+}
+
+/**
+ * Small horizontal flourish — four short hash marks evenly spaced.
+ * Echoes the helix base-pair rungs in BrandMark; used as a sage divider
+ * between recipient buckets on transaction cards.
+ */
+export function HashFlourish({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 80 6"
+      className={cn("h-1.5 w-20 text-sage-400", className)}
+      aria-hidden="true"
+    >
+      <g stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+        <line x1="8" y1="0" x2="8" y2="6" />
+        <line x1="28" y1="0" x2="28" y2="6" />
+        <line x1="48" y1="0" x2="48" y2="6" />
+        <line x1="68" y1="0" x2="68" y2="6" />
+      </g>
+    </svg>
   );
 }
