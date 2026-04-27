@@ -19,6 +19,7 @@ import { MobileTimeline } from "@/components/graph/MobileTimeline";
 import { AssetPicker } from "@/components/graph/AssetPicker";
 import { trackEvent } from "@/lib/analytics";
 import { AssetGraph } from "@/components/graph/AssetGraph";
+import type { Pos } from "@/components/graph/layout";
 
 type FromSource = "overview" | "player" | "transactions" | "manager" | "deeplink";
 
@@ -323,6 +324,26 @@ export default function GraphPage() {
     });
   }, [updateUrl]);
 
+  // User-dragged card overrides for the auto-layout. Session-only — clears
+  // when the seed changes (different graph) or via the Reset-positions button.
+  const [manualPositions, setManualPositions] = useState<Map<string, Pos>>(
+    () => new Map(),
+  );
+  const handleManualPositionChange = useCallback((nodeId: string, pos: Pos) => {
+    setManualPositions((prev) => {
+      const next = new Map(prev);
+      next.set(nodeId, pos);
+      return next;
+    });
+  }, []);
+  const handleResetManualPositions = useCallback(() => {
+    setManualPositions(new Map());
+  }, []);
+  const seedKey = seed.join(",");
+  useEffect(() => {
+    setManualPositions(new Map());
+  }, [seedKey]);
+
   const hasSeed = seed.length > 0;
   const selectedNodeId =
     selection?.type === "node" ? selection.nodeId : null;
@@ -386,6 +407,16 @@ export default function GraphPage() {
               Reset
             </button>
           )}
+          {manualPositions.size > 0 && (
+            <button
+              type="button"
+              onClick={handleResetManualPositions}
+              className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+              title="Clear dragged-card positions"
+            >
+              Reset positions
+            </button>
+          )}
           <div className="flex-1" />
           {graph && <GraphHeaderStats stats={graph.stats} />}
           <CopyLinkButton hasFocus={hasSeed} />
@@ -426,6 +457,8 @@ export default function GraphPage() {
               chainAssetsByNode={visibility.chainAssetsByNode}
               fullyExpanded={fullyExpanded}
               onHeaderToggle={handleHeaderToggle}
+              manualPositions={manualPositions}
+              onManualPositionChange={handleManualPositionChange}
             />
           )}
 

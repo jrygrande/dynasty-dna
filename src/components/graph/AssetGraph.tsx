@@ -22,6 +22,7 @@ import ReactFlow, {
   type Node,
   type NodeMouseHandler,
   type EdgeMouseHandler,
+  type NodeDragHandler,
   type NodeTypes,
   type EdgeTypes,
 } from "reactflow";
@@ -54,6 +55,10 @@ export interface AssetGraphProps {
   /** Set of node ids whose card is fully expanded (header was clicked). */
   fullyExpanded?: Set<string>;
   onHeaderToggle?: (nodeId: string) => void;
+  /** User-dragged positions that override the computed layout. Lifted to the
+   *  page so a Reset-positions button can clear them. */
+  manualPositions?: Map<string, Pos>;
+  onManualPositionChange?: (nodeId: string, pos: Pos) => void;
 }
 
 type FlowNodeData = TransactionNodeData | CurrentRosterNodeData;
@@ -115,6 +120,8 @@ function AssetGraphInner({
   chainAssetsByNode,
   fullyExpanded,
   onHeaderToggle,
+  manualPositions,
+  onManualPositionChange,
 }: AssetGraphProps) {
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
   const [hoveredAssetKey, setHoveredAssetKey] = useState<string | null>(null);
@@ -160,8 +167,16 @@ function AssetGraphInner({
   const priorPositionsRef = useRef<Map<string, Pos>>(new Map());
 
   const targetPositions = useMemo(() => {
-    return layout({ nodes, edges }, layoutMode, lanes, priorPositionsRef.current);
-  }, [nodes, edges, layoutMode, lanes]);
+    const computed = layout({ nodes, edges }, layoutMode, lanes, priorPositionsRef.current);
+    // User-dragged positions override the auto-layout. Layered here so the
+    // tween hook treats a manual position as the new target and settles.
+    if (manualPositions && manualPositions.size > 0) {
+      for (const [id, pos] of manualPositions) {
+        if (computed.has(id)) computed.set(id, pos);
+      }
+    }
+    return computed;
+  }, [nodes, edges, layoutMode, lanes, manualPositions]);
 
   const spawnParents = useMemo(
     () => deriveSpawnParents(nodes, edges, new Set(priorPositionsRef.current.keys())),
@@ -428,6 +443,16 @@ function AssetGraphInner({
 
   const onPaneClick = useCallback(() => onSelect(null), [onSelect]);
 
+  // Capture user drags as manual position overrides. React Flow handles the
+  // visual drag itself (cursor delta against its internal store); we only
+  // persist the final resting position so it survives the next layout pass.
+  const onNodeDragStop = useCallback<NodeDragHandler>(
+    (_, node) => {
+      onManualPositionChange?.(node.id, { x: node.position.x, y: node.position.y });
+    },
+    [onManualPositionChange],
+  );
+
   const onNodeMouseEnter = useCallback<NodeMouseHandler>(
     (_, node) => setHoveredNodeId(node.id),
     [],
@@ -455,6 +480,7 @@ function AssetGraphInner({
           onPaneClick={onPaneClick}
           onNodeMouseEnter={onNodeMouseEnter}
           onNodeMouseLeave={onNodeMouseLeave}
+          onNodeDragStop={onNodeDragStop}
           proOptions={{ hideAttribution: true }}
           style={{ background: "transparent" }}
         >
