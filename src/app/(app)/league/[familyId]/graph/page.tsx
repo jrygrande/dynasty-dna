@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Dna } from "lucide-react";
+import { ArrowLeft, Dna } from "lucide-react";
 import {
   pickKey,
   type Graph,
@@ -389,9 +389,10 @@ export default function GraphPage() {
         <div className="px-6 py-3 flex items-center gap-4">
           <Link
             href={`/league/${familyId}`}
-            className="text-sm text-muted-foreground hover:text-foreground whitespace-nowrap"
+            className="text-sm text-muted-foreground hover:text-foreground whitespace-nowrap inline-flex items-center gap-1"
           >
-            &larr; League
+            <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
+            League
           </Link>
           {/* Allowed per design: graph headers may use Source Serif 4 (relaxes marketing-only rule). */}
           <h1 className="font-serif text-xl font-medium text-sage-800 whitespace-nowrap inline-flex items-center gap-2">

@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo } from "react";
 import Link from "next/link";
+import { ArrowLeft } from "lucide-react";
 
 import type {
   GraphEdge,
@@ -101,9 +102,10 @@ export function MobileTimeline({
         <div className="flex items-center gap-3">
           <Link
             href={`/league/${familyId}`}
-            className="text-xs text-muted-foreground hover:text-foreground whitespace-nowrap"
+            className="text-xs text-muted-foreground hover:text-foreground whitespace-nowrap inline-flex items-center gap-1"
           >
-            &larr; League
+            <ArrowLeft className="h-3 w-3" aria-hidden="true" />
+            League
           </Link>
           <h1 className="text-base font-semibold flex-1 truncate">
             Trade network digest

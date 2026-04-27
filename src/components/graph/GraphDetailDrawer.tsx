@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import Link from "next/link";
-import { X } from "lucide-react";
+import { ArrowRight, X } from "lucide-react";
 import type { GraphEdge, GraphNode, GraphSelection } from "@/lib/assetGraph";
 import type { EnrichedTransaction } from "@/lib/transactionEnrichment";
 import { TransactionCard, type TransactionData } from "@/components/TransactionCard";
@@ -202,9 +202,10 @@ function NodeDetail({
           {firstAsset.playerId && (
             <Link
               href={`/league/${familyId}/player/${encodeURIComponent(firstAsset.playerId)}`}
-              className="inline-block mt-1 text-xs text-primary hover:underline"
+              className="inline-flex items-center gap-1 mt-1 text-xs text-primary hover:underline"
             >
-              Open player &rarr;
+              Open player
+              <ArrowRight className="h-3 w-3" aria-hidden="true" />
             </Link>
           )}
         </div>
@@ -246,9 +247,10 @@ function EdgeDetail({ edge, familyId }: { edge: GraphEdge | null; familyId: stri
           {edge.playerId && (
             <Link
               href={`/league/${familyId}/player/${encodeURIComponent(edge.playerId)}`}
-              className="inline-block mt-1 text-xs text-primary hover:underline"
+              className="inline-flex items-center gap-1 mt-1 text-xs text-primary hover:underline"
             >
-              Open player &rarr;
+              Open player
+              <ArrowRight className="h-3 w-3" aria-hidden="true" />
             </Link>
           )}
         </div>
