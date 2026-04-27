@@ -167,19 +167,12 @@ function AssetGraphInner({
     [seedIds, expandedEntries, edges, nodes, seedAssetKey],
   );
 
-  // Anchor-relative layout: prior positions stick, new nodes fan out from
-  // their spawn parent. The ref captures the previous render's targets so the
-  // next layout call can preserve them.
+  // Track the previous render's target positions so `deriveSpawnParents`
+  // (below) can identify newly-appearing nodes for the tween launch.
   const priorPositionsRef = useRef<Map<string, Pos>>(new Map());
 
   const targetPositions = useMemo(() => {
-    const computed = layout(
-      { nodes, edges },
-      layoutMode,
-      lanes,
-      priorPositionsRef.current,
-      seedIds,
-    );
+    const computed = layout({ nodes, edges }, lanes, seedIds);
     // User-dragged positions override the auto-layout. Layered here so the
     // tween hook treats a manual position as the new target and settles.
     if (manualPositions && manualPositions.size > 0) {
@@ -188,7 +181,7 @@ function AssetGraphInner({
       }
     }
     return computed;
-  }, [nodes, edges, layoutMode, lanes, manualPositions, seedIds]);
+  }, [nodes, edges, lanes, manualPositions, seedIds]);
 
   const spawnParents = useMemo(
     () => deriveSpawnParents(nodes, edges, new Set(priorPositionsRef.current.keys())),
