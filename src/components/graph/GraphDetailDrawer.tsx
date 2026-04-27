@@ -92,7 +92,7 @@ export function GraphDetailDrawer({
   const containerClass =
     variant === "sheet"
       ? "fixed inset-0 bg-card overflow-y-auto z-50"
-      : "absolute top-0 right-0 bottom-0 w-96 bg-card border-l shadow-lg overflow-y-auto z-10";
+      : "absolute top-0 right-0 bottom-0 w-96 bg-card border-l border-border/60 shadow-lg overflow-y-auto z-10";
 
   return (
     <div
@@ -102,8 +102,9 @@ export function GraphDetailDrawer({
       aria-label="Graph detail"
       className={containerClass}
     >
-      <div className="sticky top-0 flex items-center justify-between px-4 py-3 border-b bg-card">
-        <h2 className="text-sm font-semibold">Details</h2>
+      <div className="sticky top-0 flex items-center justify-between px-4 py-3 border-b border-border/60 bg-card">
+        {/* Allowed per design: graph headers may use Source Serif 4 (relaxes marketing-only rule). */}
+        <h2 className="font-serif text-base text-sage-800">Details</h2>
         <button
           ref={closeBtnRef}
           type="button"

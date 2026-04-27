@@ -25,7 +25,7 @@ function CurrentRosterNodeImpl({ data, selected }: NodeProps<CurrentRosterNodeDa
   return (
     <div
       className={cn(
-        "group relative flex items-center gap-2 rounded-md border-2 border-primary/40 bg-primary/5 px-3 py-2 text-card-foreground shadow-sm transition-opacity",
+        "group relative flex items-center gap-2 rounded-xl border border-sage-300 bg-sage-50 px-3 py-2 text-card-foreground shadow-sm transition-opacity",
         isSelected && "ring-2 ring-primary",
         data.dimmed && "opacity-30",
       )}
@@ -47,7 +47,10 @@ function CurrentRosterNodeImpl({ data, selected }: NodeProps<CurrentRosterNodeDa
         )}
       </div>
       <div className="min-w-0 flex-1">
-        <div className="truncate text-xs font-semibold leading-tight">{data.displayName}</div>
+        {/* Allowed per design: graph headers may use Source Serif 4 (relaxes marketing-only rule). */}
+        <div className="truncate font-serif text-sm font-medium leading-tight text-sage-800">
+          {data.displayName}
+        </div>
         <div className="font-mono text-[9px] uppercase tracking-wide text-muted-foreground">
           Current roster
         </div>

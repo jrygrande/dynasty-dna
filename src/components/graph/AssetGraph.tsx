@@ -12,7 +12,6 @@ import {
   useState,
 } from "react";
 import ReactFlow, {
-  Background,
   Controls,
   MiniMap,
   ReactFlowProvider,
@@ -389,7 +388,9 @@ function AssetGraphInner({
   return (
     <GraphHoverContext.Provider value={hoverState}>
     <ObstaclesContext.Provider value={obstacleRects}>
-      <div className="h-full w-full">
+      <div
+        className="h-full w-full bg-cream-50 bg-[length:24px_24px] bg-[radial-gradient(circle,_var(--cream-200)_1px,_transparent_1px)]"
+      >
         <ReactFlow
           nodes={flowNodes}
           edges={flowEdges}
@@ -402,8 +403,8 @@ function AssetGraphInner({
           onNodeMouseLeave={onNodeMouseLeave}
           fitView
           proOptions={{ hideAttribution: true }}
+          style={{ background: "transparent" }}
         >
-          <Background />
           <Controls />
           <MiniMap pannable zoomable />
         </ReactFlow>

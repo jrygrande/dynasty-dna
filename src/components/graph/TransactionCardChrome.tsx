@@ -4,6 +4,7 @@ import { type MouseEvent, type ReactNode } from "react";
 
 import { cn } from "@/lib/utils";
 import type { TransactionKind } from "@/lib/assetGraph";
+import { HashFlourish } from "@/components/BrandMark";
 import type { TransactionHeader } from "./transactionHeader";
 
 export interface TransactionNodeAsset {
@@ -60,10 +61,10 @@ const KIND_LABEL: Record<TransactionKind, string> = {
 
 const KIND_ACCENT: Record<TransactionKind, string> = {
   draft: "bg-chart-4",
-  trade: "bg-primary",
-  waiver: "bg-grade-c",
-  free_agent: "bg-grade-b",
-  commissioner: "bg-muted-foreground",
+  trade: "bg-sage-500",
+  waiver: "bg-chart-3",
+  free_agent: "bg-chart-5",
+  commissioner: "bg-slate-400",
 };
 
 const POSITION_COLOR: Record<string, string> = {
@@ -132,7 +133,7 @@ export function TransactionCardChrome({
   return (
     <div
       className={cn(
-        "group relative rounded-md border bg-card text-card-foreground shadow-sm transition-opacity",
+        "group relative rounded-xl border border-border/60 bg-card text-card-foreground shadow-sm transition-shadow hover:shadow-md",
         isSelected && "ring-2 ring-primary",
         data.dimmed && "opacity-30",
       )}
@@ -143,7 +144,7 @@ export function TransactionCardChrome({
       {handles}
       <span
         className={cn(
-          "absolute left-0 top-0 h-full w-1 rounded-l-md",
+          "absolute left-0 top-0 h-full w-1 rounded-l-xl",
           KIND_ACCENT[data.txKind],
         )}
         aria-hidden="true"
@@ -159,7 +160,11 @@ export function TransactionCardChrome({
         )}
       >
         <div className="flex items-center justify-between gap-2">
-          <span className="truncate text-xs font-semibold leading-tight" title={data.header.title}>
+          {/* Allowed per design: graph headers may use Source Serif 4 (relaxes marketing-only rule). */}
+          <span
+            className="truncate font-serif text-sm font-medium leading-tight text-sage-800"
+            title={data.header.title}
+          >
             {data.header.title}
           </span>
           <span className="font-mono text-[10px] uppercase tracking-wide text-muted-foreground shrink-0">
@@ -174,9 +179,10 @@ export function TransactionCardChrome({
         </div>
       </button>
       {buckets.size > 0 && (
-        <div className="border-t">
+        <div className="border-t border-border/60">
           {Array.from(buckets.values()).map((bucket, idx) => (
-            <div key={bucket.userId ?? idx} className={cn(idx > 0 && "border-t")}>
+            <div key={bucket.userId ?? idx}>
+              {idx > 0 && <HashFlourish className="block mx-auto my-1" />}
               <div className="flex items-center gap-1 px-3 py-0.5 bg-muted/40">
                 <span aria-hidden className="text-muted-foreground text-[10px]">→</span>
                 <span className="font-mono text-[10px] uppercase tracking-wide text-muted-foreground truncate">
