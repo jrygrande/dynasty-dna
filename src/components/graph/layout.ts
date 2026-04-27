@@ -1,21 +1,16 @@
 /**
- * Asset Graph Browser — temporal layout with anchor-relative placement.
+ * Asset Graph Browser — chronological column layout.
  *
- * Two modes, gated on whether `priorPositions` is provided:
+ * Each unique transaction `createdAt` gets its own column placed strictly
+ * left-to-right. Same-`createdAt` events stack vertically within their
+ * column. Current-roster pseudo-nodes pin to the column past the rightmost
+ * transaction so they always sit as the right-edge anchor.
  *
- *  1. Initial layout (no prior positions): each unique transaction `createdAt`
- *     gets its own column, placed left-to-right. Same-`createdAt` events stack
- *     within the column. Current-roster pseudo-nodes pin to the far-right
- *     column.
- *
- *  2. Subsequent layout (prior positions present): existing nodes stay where
- *     they were. New nodes are placed adjacent to a "spawn parent" — an
- *     existing node they share an edge with — fanning vertically around the
- *     parent for siblings. A collision pass shifts overlapping new nodes down.
- *     Current-roster nodes still pin to the far-right column so they remain
- *     structural anchors.
- *
- * Layout is pure and deterministic: same input → same positions.
+ * Smooth motion across renders is the responsibility of `useGraphPositionTween`,
+ * NOT the layout: when a new card slots into the chronological order between
+ * two existing cards, the tween hook animates the existing cards' shift, and
+ * new cards launch from their spawn parent's current position. Layout itself
+ * stays pure and chronologically deterministic.
  */
 
 import type { Graph, GraphNode } from "@/lib/assetGraph";
@@ -28,21 +23,15 @@ const COLUMN_X0 = 80;
 const ROW_Y0 = 40;
 const CURRENT_ROSTER_GAP = 120;
 
-// Card bounding-box estimate used for the collision pass on newly-placed
-// nodes. Real cards vary (collapsed vs expanded), but this is a conservative
-// rectangle that lines up with `obstacleRects` in AssetGraph.tsx.
-const CARD_WIDTH = 260;
-const CARD_HEIGHT = 200;
-
 export type Pos = { x: number; y: number };
 
 export function layout(
   graph: Pick<Graph, "nodes" | "edges">,
   _mode: LayoutMode = "band",
-  // `lanes` is retained for backwards compatibility but unused by the new
-  // anchor-relative algorithm; the per-asset-row handle routing in
-  // routeEdgePath.ts handles thread separation visually.
   _lanes?: Map<string, number>,
+  // `priorPositions` is retained for API compatibility (and read by the
+  // tween wiring), but the layout itself is purely chronological now —
+  // smooth motion is the tween hook's job.
   priorPositions?: Map<string, Pos>,
 ): Map<string, Pos> {
   const positions = new Map<string, Pos>();
@@ -55,112 +44,7 @@ export function layout(
     (n): n is Extract<GraphNode, { kind: "current_roster" }> => n.kind === "current_roster",
   );
 
-  const hasPrior = priorPositions !== undefined && priorPositions.size > 0;
-
-  if (!hasPrior) {
-    // ---------------------------------------------------------------------
-    // Initial layout: chronological columns.
-    // ---------------------------------------------------------------------
-    placeChronologicalColumns(transactions, positions);
-  } else {
-    // ---------------------------------------------------------------------
-    // Subsequent layout: anchor-relative.
-    // ---------------------------------------------------------------------
-
-    // 1. Carry over prior positions for nodes still present.
-    const priorIds = new Set<string>();
-    for (const n of transactions) {
-      const prior = priorPositions.get(n.id);
-      if (prior) {
-        positions.set(n.id, { x: prior.x, y: prior.y });
-        priorIds.add(n.id);
-      }
-    }
-
-    // 2. Identify new transaction nodes.
-    const newNodes = transactions.filter((n) => !priorIds.has(n.id));
-    const nodeById = new Map(transactions.map((n) => [n.id, n] as const));
-
-    // 3. Iteratively resolve spawn parents and place. Each round picks new
-    //    nodes whose edge connects to an already-placed node (priors OR
-    //    earlier-round placements). This is what lets a chain expansion
-    //    walk outward from the prior subgraph instead of dumping the
-    //    deeper hops into the chronological fallback (where they'd
-    //    overlap with existing cards).
-    const placedIds = new Set(priorIds);
-    const remaining = [...newNodes];
-    const placedRects = Array.from(positions, ([id, p]) => ({ id, x: p.x, y: p.y }));
-
-    while (remaining.length > 0) {
-      // Round candidates: new nodes with at least one already-placed neighbor.
-      const round: Array<{ node: TxNode; parentId: string }> = [];
-      for (const n of remaining) {
-        let parentId: string | undefined;
-        for (const e of graph.edges) {
-          if (e.source === n.id && placedIds.has(e.target)) { parentId = e.target; break; }
-          if (e.target === n.id && placedIds.has(e.source)) { parentId = e.source; break; }
-        }
-        if (parentId) round.push({ node: n, parentId });
-      }
-      if (round.length === 0) break; // no progress; rest are unanchored islands
-
-      // Group by parent + direction (createdAt-relative left/right).
-      type Bucket = { right: TxNode[]; left: TxNode[] };
-      const buckets = new Map<string, Bucket>();
-      for (const { node, parentId } of round) {
-        const parent = nodeById.get(parentId);
-        if (!parent) continue;
-        let bucket = buckets.get(parentId);
-        if (!bucket) { bucket = { right: [], left: [] }; buckets.set(parentId, bucket); }
-        if (node.createdAt > parent.createdAt) bucket.right.push(node);
-        else bucket.left.push(node);
-      }
-
-      // Place each bucket's children fanned vertically around the parent.
-      for (const [parentId, bucket] of buckets) {
-        const parentPos = positions.get(parentId);
-        if (!parentPos) continue;
-        bucket.right.sort(compareTransactionNodes);
-        bucket.left.sort(compareTransactionNodes);
-        placeFan(bucket.right, parentPos, COLUMN_WIDTH, positions);
-        placeFan(bucket.left, parentPos, -COLUMN_WIDTH, positions);
-      }
-
-      // Collision pass for nodes placed this round only.
-      const roundOrder = round
-        .map(({ node }) => node)
-        .sort(compareTransactionNodes);
-      for (const n of roundOrder) {
-        let pos = positions.get(n.id);
-        if (!pos) continue;
-        let safety = 0;
-        while (collides(pos, placedRects, n.id) && safety < 50) {
-          pos = { x: pos.x, y: pos.y + ROW_HEIGHT };
-          safety++;
-        }
-        positions.set(n.id, pos);
-        placedRects.push({ id: n.id, x: pos.x, y: pos.y });
-        placedIds.add(n.id);
-      }
-
-      // Strip placed nodes out of the remaining set.
-      const placedThisRound = new Set(round.map(({ node }) => node.id));
-      for (let i = remaining.length - 1; i >= 0; i--) {
-        if (placedThisRound.has(remaining[i].id)) remaining.splice(i, 1);
-      }
-    }
-
-    // 4. Unanchored islands (no edge to any placed node) → chronological
-    //    fallback. Rare in practice; only happens if the visibility layer
-    //    surfaces a disconnected component.
-    if (remaining.length > 0) {
-      const fallback = new Map<string, Pos>();
-      placeChronologicalColumns(remaining, fallback);
-      for (const [id, p] of fallback) {
-        if (!positions.has(id)) positions.set(id, p);
-      }
-    }
-  }
+  placeChronologicalColumns(transactions, positions);
 
   // -------------------------------------------------------------------------
   // Current-roster nodes: pin to one column past the rightmost transaction.
@@ -205,16 +89,7 @@ export function layout(
   return positions;
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
 type TxNode = Extract<GraphNode, { kind: "transaction" }>;
-
-function compareTransactionNodes(a: TxNode, b: TxNode): number {
-  if (a.createdAt !== b.createdAt) return a.createdAt - b.createdAt;
-  return a.id.localeCompare(b.id);
-}
 
 function placeChronologicalColumns(
   transactions: TxNode[],
@@ -245,40 +120,4 @@ function placeChronologicalColumns(
       y: ROW_Y0 + rowIdx * ROW_HEIGHT,
     });
   }
-}
-
-/**
- * Place children fanned vertically around `parentPos`, all sharing the same
- * x-offset. Order: 0, +1, -1, +2, -2, ... (centered on the parent).
- */
-function placeFan(
-  children: TxNode[],
-  parentPos: Pos,
-  dx: number,
-  out: Map<string, Pos>,
-): void {
-  for (let i = 0; i < children.length; i++) {
-    const sign = i === 0 ? 0 : i % 2 === 1 ? 1 : -1;
-    const magnitude = Math.ceil(i / 2);
-    const yOffset = sign * magnitude * ROW_HEIGHT;
-    out.set(children[i].id, {
-      x: parentPos.x + dx,
-      y: parentPos.y + yOffset,
-    });
-  }
-}
-
-/** True if `pos` overlaps any rect in `rects` (excluding the rect with `selfId`). */
-function collides(
-  pos: Pos,
-  rects: Array<{ id: string; x: number; y: number }>,
-  selfId: string,
-): boolean {
-  for (const r of rects) {
-    if (r.id === selfId) continue;
-    const overlapsX = pos.x < r.x + CARD_WIDTH && pos.x + CARD_WIDTH > r.x;
-    const overlapsY = pos.y < r.y + CARD_HEIGHT && pos.y + CARD_HEIGHT > r.y;
-    if (overlapsX && overlapsY) return true;
-  }
-  return false;
 }

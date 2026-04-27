@@ -242,24 +242,34 @@ function AssetGraphInner({
     return () => cancelAnimationFrame(id);
   }, [seedIds, reactFlow]);
 
-  // When handles are added/removed dynamically (asset expansion toggled),
-  // tell React Flow to re-measure handle positions on ALL visible nodes.
-  // Double-RAF ensures the DOM has painted before we measure.
-  // Re-measure handles when assets expand OR when any card header toggles
-  // open/closed (the body shrinks/grows, shifting handle positions).
+  // When handles are added/removed dynamically (asset expansion toggled or
+  // a card header toggles open/closed), tell React Flow to re-measure
+  // handle positions on all visible nodes. Double-RAF ensures the DOM has
+  // painted before we measure.
+  //
+  // CRITICAL: only depend on the *content* triggers (expansion state); do
+  // NOT depend on `nodes`. The `nodes` array reference changes on every
+  // parent render, which during a position tween fires 60×/sec — calling
+  // updateNodeInternals on every node every frame causes visible flashing.
+  // We read `nodes` via a ref so the effect uses the latest list at measure
+  // time without re-firing on each render.
   const updateNodeInternals = useUpdateNodeInternals();
+  const nodesRef = useRef(nodes);
+  useEffect(() => {
+    nodesRef.current = nodes;
+  }, [nodes]);
   useEffect(() => {
     let cancelled = false;
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
         if (cancelled) return;
-        for (const n of nodes) {
+        for (const n of nodesRef.current) {
           updateNodeInternals(n.id);
         }
       });
     });
     return () => { cancelled = true; };
-  }, [nodeExpandedAssets, nodes, updateNodeInternals, fullyExpanded]);
+  }, [nodeExpandedAssets, fullyExpanded, updateNodeInternals]);
 
   // Set of current_roster node IDs — don't route per-asset handles to these.
   const rosterNodeIds = useMemo(
