@@ -9,12 +9,14 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import ReactFlow, {
   Controls,
   MiniMap,
   ReactFlowProvider,
+  useReactFlow,
   useUpdateNodeInternals,
   type Edge,
   type Node,
@@ -33,8 +35,10 @@ import type { TransactionNodeAsset } from "./TransactionCardChrome";
 import { buildTransactionHeader } from "./transactionHeader";
 import { CurrentRosterNode, type CurrentRosterNodeData } from "./nodes/CurrentRosterNode";
 import { TransactionEdge, type TransactionEdgeData } from "./edges/TransactionEdge";
-import { layout, type LayoutMode } from "./layout";
+import { layout, type LayoutMode, type Pos } from "./layout";
 import { assignLanes } from "@/lib/graph/laneAssignment";
+import { deriveSpawnParents } from "@/lib/graph/spawnParents";
+import { useGraphPositionTween } from "@/lib/graph/useGraphPositionTween";
 
 export interface AssetGraphProps {
   nodes: GraphNode[];
@@ -150,9 +154,26 @@ function AssetGraphInner({
     [seedIds, expandedEntries, edges],
   );
 
-  const positions = useMemo(() => {
-    return layout({ nodes, edges }, layoutMode, lanes);
+  // Anchor-relative layout: prior positions stick, new nodes fan out from
+  // their spawn parent. The ref captures the previous render's targets so the
+  // next layout call can preserve them.
+  const priorPositionsRef = useRef<Map<string, Pos>>(new Map());
+
+  const targetPositions = useMemo(() => {
+    return layout({ nodes, edges }, layoutMode, lanes, priorPositionsRef.current);
   }, [nodes, edges, layoutMode, lanes]);
+
+  const spawnParents = useMemo(
+    () => deriveSpawnParents(nodes, edges, new Set(priorPositionsRef.current.keys())),
+    [nodes, edges],
+  );
+
+  const positions = useGraphPositionTween(targetPositions, spawnParents);
+
+  // After the layout settles, persist as the new prior baseline.
+  useEffect(() => {
+    priorPositionsRef.current = targetPositions;
+  }, [targetPositions]);
 
   // Compute obstacle rectangles from node positions for edge routing.
   // Transaction cards are 260px wide; height estimated from asset count.
@@ -203,6 +224,23 @@ function AssetGraphInner({
     }
     return m;
   }, [assetExpansionsByNode, expandedAssetKeys, edges]);
+
+  // Controlled viewport: only fit on first-seed transition, never on every
+  // composition change. Pan/zoom adjustments by the user are preserved as
+  // the chain expands.
+  const reactFlow = useReactFlow();
+  const lastSeedKeyRef = useRef<string>("");
+  useEffect(() => {
+    const seedKey = (seedIds ?? []).join(",");
+    if (seedKey === lastSeedKeyRef.current) return;
+    lastSeedKeyRef.current = seedKey;
+    if (seedKey === "") return;
+    // Wait one rAF for the new seed nodes to mount before fitting.
+    const id = requestAnimationFrame(() => {
+      reactFlow.fitView({ padding: 0.2, duration: 400 });
+    });
+    return () => cancelAnimationFrame(id);
+  }, [seedIds, reactFlow]);
 
   // When handles are added/removed dynamically (asset expansion toggled),
   // tell React Flow to re-measure handle positions on ALL visible nodes.
@@ -407,7 +445,6 @@ function AssetGraphInner({
           onPaneClick={onPaneClick}
           onNodeMouseEnter={onNodeMouseEnter}
           onNodeMouseLeave={onNodeMouseLeave}
-          fitView
           proOptions={{ hideAttribution: true }}
           style={{ background: "transparent" }}
         >
