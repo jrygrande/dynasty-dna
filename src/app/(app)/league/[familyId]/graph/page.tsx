@@ -457,6 +457,7 @@ export default function GraphPage() {
               chainAssetsByNode={visibility.chainAssetsByNode}
               fullyExpanded={fullyExpanded}
               onHeaderToggle={handleHeaderToggle}
+              seedAssetKey={seedAssetKey}
               manualPositions={manualPositions}
               onManualPositionChange={handleManualPositionChange}
             />

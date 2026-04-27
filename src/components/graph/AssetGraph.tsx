@@ -55,6 +55,11 @@ export interface AssetGraphProps {
   /** Set of node ids whose card is fully expanded (header was clicked). */
   fullyExpanded?: Set<string>;
   onHeaderToggle?: (nodeId: string) => void;
+  /** Asset key (e.g. "player:1234") of the originally-seeded asset. Drives
+   *  lane anchoring: the seed asset's thread sits at lane 0, others fan
+   *  above (negative) and below (positive) based on row position on the
+   *  seed card. */
+  seedAssetKey?: string;
   /** User-dragged positions that override the computed layout. Lifted to the
    *  page so a Reset-positions button can clear them. */
   manualPositions?: Map<string, Pos>;
@@ -120,6 +125,7 @@ function AssetGraphInner({
   chainAssetsByNode,
   fullyExpanded,
   onHeaderToggle,
+  seedAssetKey,
   manualPositions,
   onManualPositionChange,
 }: AssetGraphProps) {
@@ -157,8 +163,8 @@ function AssetGraphInner({
   }, [expandedEntries]);
 
   const lanes = useMemo(
-    () => assignLanes(seedIds ?? [], expandedEntries ?? new Set(), edges, nodes),
-    [seedIds, expandedEntries, edges, nodes],
+    () => assignLanes(seedIds ?? [], expandedEntries ?? new Set(), edges, nodes, seedAssetKey),
+    [seedIds, expandedEntries, edges, nodes, seedAssetKey],
   );
 
   // Anchor-relative layout: prior positions stick, new nodes fan out from
@@ -167,7 +173,13 @@ function AssetGraphInner({
   const priorPositionsRef = useRef<Map<string, Pos>>(new Map());
 
   const targetPositions = useMemo(() => {
-    const computed = layout({ nodes, edges }, layoutMode, lanes, priorPositionsRef.current);
+    const computed = layout(
+      { nodes, edges },
+      layoutMode,
+      lanes,
+      priorPositionsRef.current,
+      seedIds,
+    );
     // User-dragged positions override the auto-layout. Layered here so the
     // tween hook treats a manual position as the new target and settles.
     if (manualPositions && manualPositions.size > 0) {
@@ -176,7 +188,7 @@ function AssetGraphInner({
       }
     }
     return computed;
-  }, [nodes, edges, layoutMode, lanes, manualPositions]);
+  }, [nodes, edges, layoutMode, lanes, manualPositions, seedIds]);
 
   const spawnParents = useMemo(
     () => deriveSpawnParents(nodes, edges, new Set(priorPositionsRef.current.keys())),

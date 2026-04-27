@@ -1,13 +1,17 @@
 /**
- * Asset Graph Browser — chronological columns × thread lanes.
+ * Asset Graph Browser — per-lane chronological columns × thread lanes.
  *
- * X: each unique transaction `createdAt` gets its own column placed
- * strictly left-to-right. Same-`createdAt` events stack within their
- * (column, lane) bucket.
+ * Each lane (a horizontal y-band, assigned by `assignLanes`) maintains
+ * its own column counter. Cards within a lane are placed chronologically
+ * left-to-right with the seed at column 0; cards before the seed
+ * chronologically (e.g. a player's draft) get negative column offsets,
+ * cards after get positive. Lanes that don't pass through the seed
+ * (rare — disconnected islands) are aligned chronologically against the
+ * seed's `createdAt` so they slot into the global timeline.
  *
- * Y: derived from the lane index assigned by `assignLanes`. The seed
- * thread is lane 0 (centered); each additional expanded asset thread
- * gets +1 / −1 / +2 / −2 etc. so multiple threads fan vertically.
+ * X: per-lane column index (NOT a global chronology). This collapses
+ * unused horizontal space when threads have unrelated chronologies.
+ * Y: lane * LANE_GAP, with per-(column, lane) stacking for collisions.
  *
  * Current-roster pseudo-nodes pin to the column past the rightmost
  * transaction and inherit the lane of the thread that connects to them
@@ -21,8 +25,6 @@ import type { Graph, GraphNode } from "@/lib/assetGraph";
 
 export type LayoutMode = "band" | "dagre";
 
-// COLUMN_WIDTH > card width (260) by enough to leave a gutter for edge
-// routing without spreading the canvas needlessly. Tightened from 320.
 const COLUMN_WIDTH = 280;
 const ROW_HEIGHT = 200;
 const LANE_GAP = 280;
@@ -40,6 +42,7 @@ export function layout(
   // tween wiring), but the layout itself is purely chronological-by-lane
   // now — smooth motion is the tween hook's job.
   priorPositions?: Map<string, Pos>,
+  seedIds?: string[],
 ): Map<string, Pos> {
   const positions = new Map<string, Pos>();
   if (graph.nodes.length === 0) return positions;
@@ -51,11 +54,11 @@ export function layout(
     (n): n is Extract<GraphNode, { kind: "current_roster" }> => n.kind === "current_roster",
   );
 
-  placeChronologicalColumns(transactions, lanes ?? new Map(), positions);
+  placeByLane(transactions, lanes ?? new Map(), seedIds ?? [], positions);
 
   // -------------------------------------------------------------------------
-  // Current-roster nodes: pin to one column past the rightmost transaction.
-  // Same in both initial and subsequent layouts.
+  // Current-roster nodes: pin to one column past the rightmost transaction
+  // and inherit their connecting thread's lane.
   // -------------------------------------------------------------------------
   let maxX = COLUMN_X0;
   for (const p of positions.values()) {
@@ -63,10 +66,6 @@ export function layout(
   }
   const currentX = maxX + COLUMN_WIDTH + CURRENT_ROSTER_GAP;
 
-  // Current-roster nodes sit in the rightmost column and inherit the lane
-  // of the thread that connects to them, so each manager's roster aligns
-  // vertically with the branch that ends at it. Within a lane, multiple
-  // rosters stack by ROW_HEIGHT.
   const sortedRosters = [...currentRosters].sort((a, b) =>
     a.displayName.localeCompare(b.displayName),
   );
@@ -80,8 +79,6 @@ export function layout(
       y: ROW_Y0 + lane * LANE_GAP + stackIdx * ROW_HEIGHT,
     });
   }
-  // priorPositions intentionally unused now — lane-driven y is canonical
-  // and the tween hook handles smooth transitions when a lane changes.
   void priorPositions;
 
   return positions;
@@ -89,38 +86,67 @@ export function layout(
 
 type TxNode = Extract<GraphNode, { kind: "transaction" }>;
 
-function placeChronologicalColumns(
+/**
+ * Place transactions per-lane: each lane gets its own chronological
+ * column counter anchored on the seed. The seed sits at column 0 of its
+ * own lane; lanes that pass through the seed too anchor at the seed's
+ * lane index for that lane. Lanes without the seed fall back to the
+ * seed's `createdAt` as the column-0 reference.
+ */
+function placeByLane(
   transactions: TxNode[],
   lanes: Map<string, number>,
+  seedIds: string[],
   out: Map<string, Pos>,
 ): void {
-  const sorted = [...transactions].sort((a, b) => {
-    if (a.createdAt !== b.createdAt) return a.createdAt - b.createdAt;
-    if (a.season !== b.season) return a.season.localeCompare(b.season);
-    if (a.week !== b.week) return a.week - b.week;
-    return a.id.localeCompare(b.id);
-  });
+  const seedSet = new Set(seedIds);
+  const seedNode = transactions.find((n) => seedSet.has(n.id));
+  const seedCreatedAt = seedNode?.createdAt ?? null;
 
-  const colByCreatedAt = new Map<number, number>();
-  let nextCol = 0;
-  for (const n of sorted) {
-    if (!colByCreatedAt.has(n.createdAt)) {
-      colByCreatedAt.set(n.createdAt, nextCol++);
+  // Group transactions by lane.
+  const byLane = new Map<number, TxNode[]>();
+  for (const n of transactions) {
+    const lane = lanes.get(n.id) ?? 0;
+    let arr = byLane.get(lane);
+    if (!arr) { arr = []; byLane.set(lane, arr); }
+    arr.push(n);
+  }
+
+  for (const [lane, nodes] of byLane) {
+    nodes.sort(compareTx);
+
+    // Find the column-0 anchor for this lane:
+    //  1. If the seed node is in this lane, use its index.
+    //  2. Else, count nodes chronologically before the seed's createdAt
+    //     so this lane slots into the global timeline at the seed's x.
+    let anchorIdx: number;
+    const seedIdxInLane = seedNode ? nodes.findIndex((n) => n.id === seedNode.id) : -1;
+    if (seedIdxInLane >= 0) {
+      anchorIdx = seedIdxInLane;
+    } else if (seedCreatedAt != null) {
+      anchorIdx = nodes.filter((n) => n.createdAt < seedCreatedAt).length;
+    } else {
+      anchorIdx = 0;
+    }
+
+    // Stack within (col, lane) for collisions on identical createdAt.
+    const stackByCol = new Map<number, number>();
+    for (let i = 0; i < nodes.length; i++) {
+      const n = nodes[i];
+      const col = i - anchorIdx;
+      const stackIdx = stackByCol.get(col) ?? 0;
+      stackByCol.set(col, stackIdx + 1);
+      out.set(n.id, {
+        x: COLUMN_X0 + col * COLUMN_WIDTH,
+        y: ROW_Y0 + lane * LANE_GAP + stackIdx * ROW_HEIGHT,
+      });
     }
   }
+}
 
-  // Stack per (column, lane) so two threads at the same chronological
-  // column don't pile on top of each other.
-  const stackCount = new Map<string, number>();
-  for (const n of sorted) {
-    const colIdx = colByCreatedAt.get(n.createdAt) ?? 0;
-    const lane = lanes.get(n.id) ?? 0;
-    const stackKey = `${colIdx}|${lane}`;
-    const rowIdx = stackCount.get(stackKey) ?? 0;
-    stackCount.set(stackKey, rowIdx + 1);
-    out.set(n.id, {
-      x: COLUMN_X0 + colIdx * COLUMN_WIDTH,
-      y: ROW_Y0 + lane * LANE_GAP + rowIdx * ROW_HEIGHT,
-    });
-  }
+function compareTx(a: TxNode, b: TxNode): number {
+  if (a.createdAt !== b.createdAt) return a.createdAt - b.createdAt;
+  if (a.season !== b.season) return a.season.localeCompare(b.season);
+  if (a.week !== b.week) return a.week - b.week;
+  return a.id.localeCompare(b.id);
 }

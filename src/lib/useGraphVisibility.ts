@@ -115,6 +115,21 @@ export function useGraphVisibility(
     // computation. Whole-node expansion entries don't contribute here.
     const expandedAssetKeySet = new Set<string>();
 
+    // The seed asset is auto-expanded — its full thread (e.g. a player's
+    // draft → trades → current roster) shows by default without the user
+    // having to click `+` on the seed asset's row. Treat it like an
+    // expansion entry for the purposes of edge/node visibility AND chain
+    // membership.
+    if (seedAssetKey) {
+      expandedAssetKeySet.add(seedAssetKey);
+      const matching = edgesByAsset.get(seedAssetKey) ?? [];
+      for (const e of matching) {
+        visible.add(e.source);
+        visible.add(e.target);
+        visibleEdgeIds.add(e.id);
+      }
+    }
+
     for (const entry of expanded) {
       const sepIdx = entry.indexOf("~");
       if (sepIdx === -1) {

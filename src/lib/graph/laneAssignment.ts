@@ -1,16 +1,19 @@
 /**
  * Lane assignment for thread-aware layout.
  *
- * Each expanded asset thread gets its own horizontal "lane" (y-band).
- * Lane 0 is centered on the seed; lanes spread above (negative) and
- * below (positive) so multiple threads create a vertical fan.
+ * Each visible asset thread (seed asset + every entry in `expanded`) gets
+ * its own horizontal "lane" (y-band). Lanes are anchored on the *seed
+ * asset*: that thread sits at lane 0, and other threads spread above
+ * (negative) or below (positive) by the row distance from the seed asset
+ * on the seed transaction card.
  *
- * To prevent edge crossings, lane order mirrors the visual row order on
- * the seed card: an asset that's higher on the seed card gets a more
- * negative lane (rendered higher on the canvas).
+ * Concretely, with N visible threads and the seed asset at row index R
+ * on the seed card, a thread whose asset is at row index r gets
+ * `lane = r − R`. Top-of-card threads sit above the seed line; bottom-of-
+ * card threads sit below.
  *
- * Returns a Map<nodeId, laneIndex>. Nodes in multiple threads keep the
- * lane of the first thread to claim them (first-thread-wins).
+ * Returns Map<nodeId, laneIndex>. First-thread-wins for nodes that
+ * appear in multiple threads.
  */
 
 import type { GraphEdge, GraphNode, TransactionNode } from "@/lib/assetGraph";
@@ -21,13 +24,12 @@ export function assignLanes(
   expanded: Set<string>,
   edges: GraphEdge[],
   nodes?: GraphNode[],
+  seedAssetKey?: string,
 ): Map<string, number> {
   const lanes = new Map<string, number>();
 
   // Seeds always at lane 0.
   for (const id of seedIds) lanes.set(id, 0);
-
-  if (expanded.size === 0) return lanes;
 
   // Index edges by asset key for thread lookup.
   const edgesByAsset = new Map<string, GraphEdge[]>();
@@ -39,42 +41,51 @@ export function assignLanes(
     arr.push(e);
   }
 
-  // Unique expanded asset keys, in URL insertion order.
-  const expandedKeys: string[] = [];
+  // Build the visible-thread list: seed asset is implicit (auto-expanded);
+  // explicit `expanded` entries follow.
+  const visibleAssetKeys: string[] = [];
   const seen = new Set<string>();
+  if (seedAssetKey) {
+    visibleAssetKeys.push(seedAssetKey);
+    seen.add(seedAssetKey);
+  }
   for (const entry of expanded) {
     const sep = entry.indexOf("~");
     if (sep === -1) continue;
     const assetKey = entry.slice(sep + 1);
     if (!seen.has(assetKey)) {
       seen.add(assetKey);
-      expandedKeys.push(assetKey);
+      visibleAssetKeys.push(assetKey);
     }
   }
 
-  // Sort expanded keys by their visual row position on the seed card so the
-  // top-most asset row gets the top-most (most negative) lane and lines
-  // don't have to cross. Falls back to URL insertion order for any expanded
-  // asset that isn't on the seed card (rare).
+  if (visibleAssetKeys.length === 0) return lanes;
+
+  // Sort threads by their visual row position on the seed card so the
+  // lane stack mirrors the asset list (top of card → top of canvas).
   const seedNode = nodes?.find(
     (n): n is TransactionNode => n.kind === "transaction" && seedIds.includes(n.id),
   );
   const seedAssetOrder = seedNode ? buildSeedAssetVisualOrder(seedNode) : new Map<string, number>();
-  const orderedKeys = expandedKeys.slice().sort((a, b) => {
+  const orderedKeys = visibleAssetKeys.slice().sort((a, b) => {
     const aIdx = seedAssetOrder.get(a) ?? Number.POSITIVE_INFINITY;
     const bIdx = seedAssetOrder.get(b) ?? Number.POSITIVE_INFINITY;
     if (aIdx !== bIdx) return aIdx - bIdx;
-    return expandedKeys.indexOf(a) - expandedKeys.indexOf(b);
+    return visibleAssetKeys.indexOf(a) - visibleAssetKeys.indexOf(b);
   });
 
-  // Lane index = visual row position − floor((N-1)/2). Centers the fan so
-  // top assets are negative lanes (above seed) and bottom assets are
-  // positive (below).
-  const N = orderedKeys.length;
-  const midOffset = Math.floor((N - 1) / 2);
-  for (let i = 0; i < N; i++) {
-    const lane = i - midOffset;
-    const threadEdges = edgesByAsset.get(orderedKeys[i]) ?? [];
+  // Anchor lanes on the seed asset. Lane = rowIdx − seedRowIdx so the seed
+  // asset's thread is lane 0 and others fan symmetrically.
+  const seedRowIdx =
+    seedAssetKey != null && seedAssetOrder.has(seedAssetKey)
+      ? (seedAssetOrder.get(seedAssetKey) as number)
+      : Math.floor((orderedKeys.length - 1) / 2); // fallback: center the fan
+
+  for (let i = 0; i < orderedKeys.length; i++) {
+    const aKey = orderedKeys[i];
+    const rowIdx = seedAssetOrder.get(aKey);
+    const lane = rowIdx != null ? rowIdx - seedRowIdx : i - seedRowIdx;
+    const threadEdges = edgesByAsset.get(aKey) ?? [];
     for (const e of threadEdges) {
       if (!lanes.has(e.source)) lanes.set(e.source, lane);
       if (!lanes.has(e.target)) lanes.set(e.target, lane);
@@ -97,7 +108,6 @@ const POSITION_ORDER: Record<string, number> = {
 };
 
 function buildSeedAssetVisualOrder(node: TransactionNode): Map<string, number> {
-  // Group assets by recipient bucket; preserve first-seen order.
   type Asset = TransactionNode["assets"][number];
   const buckets = new Map<string, Asset[]>();
   for (const a of node.assets) {
@@ -108,7 +118,6 @@ function buildSeedAssetVisualOrder(node: TransactionNode): Map<string, number> {
   }
   for (const arr of buckets.values()) arr.sort(compareAssets);
 
-  // Flatten in bucket-iteration order, assigning sequential row indices.
   const order = new Map<string, number>();
   let idx = 0;
   for (const arr of buckets.values()) {
