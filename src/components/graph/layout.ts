@@ -79,83 +79,83 @@ export function layout(
 
     // 2. Identify new transaction nodes.
     const newNodes = transactions.filter((n) => !priorIds.has(n.id));
-
-    // 3. Resolve a spawn parent for each new node — the prior-positioned
-    //    neighbor it shares an edge with. First-edge-match (the v1 simple
-    //    rule); BFS-from-seed could refine this but isn't needed for the
-    //    typical "click +" interaction where the parent is the only prior
-    //    neighbor.
-    const spawnParentByNew = new Map<string, string>();
-    const unanchored: typeof newNodes = [];
-    for (const n of newNodes) {
-      let parentId: string | undefined;
-      for (const e of graph.edges) {
-        if (e.source === n.id && priorIds.has(e.target)) { parentId = e.target; break; }
-        if (e.target === n.id && priorIds.has(e.source)) { parentId = e.source; break; }
-      }
-      if (parentId) {
-        spawnParentByNew.set(n.id, parentId);
-      } else {
-        unanchored.push(n);
-      }
-    }
-
-    // 4. Group new nodes by spawn parent + direction, fan vertically.
-    type Bucket = { parentId: string; right: typeof newNodes; left: typeof newNodes };
-    const buckets = new Map<string, Bucket>();
     const nodeById = new Map(transactions.map((n) => [n.id, n] as const));
 
-    for (const n of newNodes) {
-      const parentId = spawnParentByNew.get(n.id);
-      if (!parentId) continue;
-      const parent = nodeById.get(parentId);
-      if (!parent) continue;
-      let bucket = buckets.get(parentId);
-      if (!bucket) {
-        bucket = { parentId, right: [], left: [] };
-        buckets.set(parentId, bucket);
-      }
-      if (n.createdAt > parent.createdAt) bucket.right.push(n);
-      else bucket.left.push(n);
-    }
-
-    for (const bucket of buckets.values()) {
-      const parentPos = positions.get(bucket.parentId);
-      if (!parentPos) continue;
-      bucket.right.sort(compareTransactionNodes);
-      bucket.left.sort(compareTransactionNodes);
-
-      placeFan(bucket.right, parentPos, COLUMN_WIDTH, positions);
-      placeFan(bucket.left, parentPos, -COLUMN_WIDTH, positions);
-    }
-
-    // 5. Collision pass: push newly-placed nodes down until they clear
-    //    everything already placed. Existing-prior-positioned nodes are not
-    //    moved; later iterations treat earlier newcomers as fixed obstacles.
-    const newlyPlaced = newNodes
-      .filter((n) => positions.has(n.id))
-      .sort(compareTransactionNodes);
+    // 3. Iteratively resolve spawn parents and place. Each round picks new
+    //    nodes whose edge connects to an already-placed node (priors OR
+    //    earlier-round placements). This is what lets a chain expansion
+    //    walk outward from the prior subgraph instead of dumping the
+    //    deeper hops into the chronological fallback (where they'd
+    //    overlap with existing cards).
+    const placedIds = new Set(priorIds);
+    const remaining = [...newNodes];
     const placedRects = Array.from(positions, ([id, p]) => ({ id, x: p.x, y: p.y }));
-    for (const n of newlyPlaced) {
-      let pos = positions.get(n.id);
-      if (!pos) continue;
-      let safety = 0;
-      while (collides(pos, placedRects, n.id) && safety < 50) {
-        pos = { x: pos.x, y: pos.y + ROW_HEIGHT };
-        safety++;
+
+    while (remaining.length > 0) {
+      // Round candidates: new nodes with at least one already-placed neighbor.
+      const round: Array<{ node: TxNode; parentId: string }> = [];
+      for (const n of remaining) {
+        let parentId: string | undefined;
+        for (const e of graph.edges) {
+          if (e.source === n.id && placedIds.has(e.target)) { parentId = e.target; break; }
+          if (e.target === n.id && placedIds.has(e.source)) { parentId = e.source; break; }
+        }
+        if (parentId) round.push({ node: n, parentId });
       }
-      positions.set(n.id, pos);
-      const idx = placedRects.findIndex((r) => r.id === n.id);
-      if (idx >= 0) placedRects[idx] = { id: n.id, x: pos.x, y: pos.y };
+      if (round.length === 0) break; // no progress; rest are unanchored islands
+
+      // Group by parent + direction (createdAt-relative left/right).
+      type Bucket = { right: TxNode[]; left: TxNode[] };
+      const buckets = new Map<string, Bucket>();
+      for (const { node, parentId } of round) {
+        const parent = nodeById.get(parentId);
+        if (!parent) continue;
+        let bucket = buckets.get(parentId);
+        if (!bucket) { bucket = { right: [], left: [] }; buckets.set(parentId, bucket); }
+        if (node.createdAt > parent.createdAt) bucket.right.push(node);
+        else bucket.left.push(node);
+      }
+
+      // Place each bucket's children fanned vertically around the parent.
+      for (const [parentId, bucket] of buckets) {
+        const parentPos = positions.get(parentId);
+        if (!parentPos) continue;
+        bucket.right.sort(compareTransactionNodes);
+        bucket.left.sort(compareTransactionNodes);
+        placeFan(bucket.right, parentPos, COLUMN_WIDTH, positions);
+        placeFan(bucket.left, parentPos, -COLUMN_WIDTH, positions);
+      }
+
+      // Collision pass for nodes placed this round only.
+      const roundOrder = round
+        .map(({ node }) => node)
+        .sort(compareTransactionNodes);
+      for (const n of roundOrder) {
+        let pos = positions.get(n.id);
+        if (!pos) continue;
+        let safety = 0;
+        while (collides(pos, placedRects, n.id) && safety < 50) {
+          pos = { x: pos.x, y: pos.y + ROW_HEIGHT };
+          safety++;
+        }
+        positions.set(n.id, pos);
+        placedRects.push({ id: n.id, x: pos.x, y: pos.y });
+        placedIds.add(n.id);
+      }
+
+      // Strip placed nodes out of the remaining set.
+      const placedThisRound = new Set(round.map(({ node }) => node.id));
+      for (let i = remaining.length - 1; i >= 0; i--) {
+        if (placedThisRound.has(remaining[i].id)) remaining.splice(i, 1);
+      }
     }
 
-    // 6. Unanchored new nodes (no edge to a prior node) → fall back to the
-    //    chronological-column algorithm so they at least land somewhere
-    //    reasonable. This is rare in practice (only happens if the visibility
-    //    layer surfaces an island).
-    if (unanchored.length > 0) {
+    // 4. Unanchored islands (no edge to any placed node) → chronological
+    //    fallback. Rare in practice; only happens if the visibility layer
+    //    surfaces a disconnected component.
+    if (remaining.length > 0) {
       const fallback = new Map<string, Pos>();
-      placeChronologicalColumns(unanchored, fallback);
+      placeChronologicalColumns(remaining, fallback);
       for (const [id, p] of fallback) {
         if (!positions.has(id)) positions.set(id, p);
       }
@@ -172,19 +172,32 @@ export function layout(
   }
   const currentX = maxX + COLUMN_WIDTH + CURRENT_ROSTER_GAP;
 
-  // Preserve prior positions for current_roster nodes — they shouldn't jump
-  // just because a new transaction column was added. Place fresh ones into
-  // the next-available row slot to avoid stacking on existing rosters.
+  // Current-roster nodes always sit in the rightmost column — they're a
+  // structural anchor, so they slide right when new transaction cards
+  // extend the timeline. Preserve their y from prior positions so they
+  // don't jump rows; fresh ones land in the next free row, skipping any
+  // already-occupied slot.
   const sortedRosters = [...currentRosters].sort((a, b) =>
     a.displayName.localeCompare(b.displayName),
   );
+  const occupiedYs = new Set<number>();
+  for (const n of sortedRosters) {
+    const prior = priorPositions?.get(n.id);
+    if (prior) occupiedYs.add(Math.round(prior.y));
+  }
   let nextRosterRow = 0;
   for (const n of sortedRosters) {
     const prior = priorPositions?.get(n.id);
     if (prior) {
-      positions.set(n.id, { x: prior.x, y: prior.y });
+      positions.set(n.id, { x: currentX, y: prior.y });
     } else {
-      positions.set(n.id, { x: currentX, y: ROW_Y0 + nextRosterRow * ROW_HEIGHT });
+      let y = ROW_Y0 + nextRosterRow * ROW_HEIGHT;
+      while (occupiedYs.has(Math.round(y))) {
+        nextRosterRow++;
+        y = ROW_Y0 + nextRosterRow * ROW_HEIGHT;
+      }
+      positions.set(n.id, { x: currentX, y });
+      occupiedYs.add(Math.round(y));
       nextRosterRow++;
     }
   }
