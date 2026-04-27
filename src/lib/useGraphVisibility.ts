@@ -161,8 +161,7 @@ export function useGraphVisibility(
     // click. Single-pass: only the immediately-revealed player's edges
     // are auto-expanded (no recursive cascade).
     for (const node of graph.nodes) {
-      if (node.kind !== "transaction") continue;
-      if (node.txKind !== "draft") continue;
+      if (node.kind !== "transaction" || node.txKind !== "draft") continue;
       if (!visible.has(node.id)) continue;
       for (const asset of node.assets) {
         if (asset.kind !== "player" || !asset.playerId) continue;

@@ -67,11 +67,14 @@ export function assignLanes(
     (n): n is TransactionNode => n.kind === "transaction" && seedIds.includes(n.id),
   );
   const seedAssetOrder = seedNode ? buildSeedAssetVisualOrder(seedNode) : new Map<string, number>();
+  // Pre-compute insertion-order index so the comparator stays O(1) per
+  // call instead of O(n) via `indexOf`.
+  const insertionIdx = new Map(visibleAssetKeys.map((k, i) => [k, i]));
   const orderedKeys = visibleAssetKeys.slice().sort((a, b) => {
     const aIdx = seedAssetOrder.get(a) ?? Number.POSITIVE_INFINITY;
     const bIdx = seedAssetOrder.get(b) ?? Number.POSITIVE_INFINITY;
     if (aIdx !== bIdx) return aIdx - bIdx;
-    return visibleAssetKeys.indexOf(a) - visibleAssetKeys.indexOf(b);
+    return (insertionIdx.get(a) ?? 0) - (insertionIdx.get(b) ?? 0);
   });
 
   // Sequential lane assignment anchored on the seed asset. Use position
