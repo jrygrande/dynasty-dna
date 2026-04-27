@@ -30,7 +30,9 @@ const COLUMN_WIDTH = 270;
 // the canvas without losing chronological direction.
 const COMPRESSED_GAP = 150;
 const ROW_HEIGHT = 200;
-const LANE_GAP = 280;
+// Card height (collapsed) is ~140px; LANE_GAP at 240 leaves ~100px gap
+// between bands for edge routing while compacting the vertical span.
+const LANE_GAP = 240;
 const COLUMN_X0 = 80;
 const ROW_Y0 = 40;
 
