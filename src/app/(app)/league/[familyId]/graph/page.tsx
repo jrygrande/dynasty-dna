@@ -15,7 +15,7 @@ import { useGraphVisibility, edgeAssetKey } from "@/lib/useGraphVisibility";
 import { GraphDetailDrawer } from "@/components/graph/GraphDetailDrawer";
 import { GraphHeaderStats } from "@/components/graph/GraphHeaderStats";
 import { CopyLinkButton } from "@/components/graph/CopyLinkButton";
-import { MobileDigest } from "@/components/graph/MobileDigest";
+import { MobileTimeline } from "@/components/graph/MobileTimeline";
 import { AssetPicker } from "@/components/graph/AssetPicker";
 import { trackEvent } from "@/lib/analytics";
 import { AssetGraph } from "@/components/graph/AssetGraph";
@@ -323,11 +323,44 @@ export default function GraphPage() {
     });
   }, [updateUrl]);
 
-  if (isNarrow) {
-    return <MobileDigest familyId={familyId} response={response} loading={loading} />;
-  }
-
   const hasSeed = seed.length > 0;
+  const selectedNodeId =
+    selection?.type === "node" ? selection.nodeId : null;
+
+  if (isNarrow) {
+    return (
+      <>
+        <MobileTimeline
+          familyId={familyId}
+          response={response}
+          loading={loading}
+          seed={seed}
+          expanded={expanded}
+          fullyExpanded={fullyExpanded}
+          selectedNodeId={selectedNodeId}
+          seedAssetKey={seedAssetKey}
+          onPickerSelect={handlePickerSelect}
+          onAssetClick={handleAssetExpand}
+          onHeaderToggle={handleHeaderToggle}
+          onSelect={(nodeId) =>
+            handleSelectionChange({ type: "node", nodeId })
+          }
+          onReset={handleReset}
+        />
+        {selection && visibility.visibleNodes.length > 0 && response && (
+          <GraphDetailDrawer
+            selection={selection}
+            nodes={visibility.visibleNodes}
+            edges={visibility.visibleEdges}
+            transactions={response.transactions}
+            familyId={familyId}
+            onClose={handleCloseSelection}
+            variant="sheet"
+          />
+        )}
+      </>
+    );
+  }
 
   return (
     <div className="flex flex-col h-[calc(100vh-3.5rem)] min-h-0">

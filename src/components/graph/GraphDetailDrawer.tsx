@@ -25,6 +25,11 @@ interface GraphDetailDrawerProps {
   transactions: Record<string, EnrichedTransaction>;
   familyId: string;
   onClose: () => void;
+  /**
+   * "drawer" (default): right-side fixed panel for desktop.
+   * "sheet": full-screen overlay for mobile.
+   */
+  variant?: "drawer" | "sheet";
 }
 
 export function GraphDetailDrawer({
@@ -34,6 +39,7 @@ export function GraphDetailDrawer({
   transactions,
   familyId,
   onClose,
+  variant = "drawer",
 }: GraphDetailDrawerProps) {
   const closeBtnRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -83,13 +89,18 @@ export function GraphDetailDrawer({
     return () => document.removeEventListener("keydown", handleKey);
   }, [onClose]);
 
+  const containerClass =
+    variant === "sheet"
+      ? "fixed inset-0 bg-card overflow-y-auto z-50"
+      : "absolute top-0 right-0 bottom-0 w-96 bg-card border-l shadow-lg overflow-y-auto z-10";
+
   return (
     <div
       ref={panelRef}
       role="dialog"
       aria-modal="true"
       aria-label="Graph detail"
-      className="absolute top-0 right-0 bottom-0 w-96 bg-card border-l shadow-lg overflow-y-auto z-10"
+      className={containerClass}
     >
       <div className="sticky top-0 flex items-center justify-between px-4 py-3 border-b bg-card">
         <h2 className="text-sm font-semibold">Details</h2>
