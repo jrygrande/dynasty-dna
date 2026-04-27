@@ -1,4 +1,5 @@
 import type { TransactionNode } from "@/lib/assetGraph";
+import { getRoundSuffix } from "@/lib/utils";
 
 export interface TransactionHeader {
   title: string;
@@ -39,21 +40,14 @@ export function buildTransactionHeader(node: TransactionNode): TransactionHeader
       const a = node.managers[0]?.displayName;
       const b = node.managers[1]?.displayName;
       const title =
-        a && b
-          ? `Trade between ${a} and ${b}`
-          : a
-            ? `Trade with ${a}`
-            : "Trade";
+        a && b ? `${a} ↔ ${b}` : a ? a : "Trade";
       return { title, subtitle: date };
     }
     case "draft": {
       const firstPick = node.assets.find((a) => a.kind === "pick");
       const round = firstPick?.pickRound;
-      const pickSeason = firstPick?.pickSeason ?? node.season;
       const title =
-        round != null
-          ? `Round ${round} — ${pickSeason} Draft`
-          : `${pickSeason} Draft`;
+        round != null ? `${round}${getRoundSuffix(round)} round` : "Draft";
       return { title, subtitle: `${managerName} · ${date}` };
     }
     case "waiver":
