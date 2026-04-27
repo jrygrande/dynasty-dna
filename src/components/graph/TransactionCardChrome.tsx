@@ -188,7 +188,9 @@ export function TransactionCardChrome({
   }
 
   const hiddenCount = data.assets.length - visibleAssets.length;
-  const showToggleBar = hiddenCount > 0 || data.headerExpanded;
+  // Toggle is meaningful only if collapsing would hide at least one asset.
+  const collapsibleCount = data.assets.length - data.chainAssetKeys.size;
+  const showToggleBar = collapsibleCount > 0;
   const allHiddenArePicks =
     hiddenCount > 0 &&
     data.assets.filter((a) => !data.chainAssetKeys.has(a.assetKey)).every((a) => a.kind === "pick");
