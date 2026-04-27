@@ -21,12 +21,14 @@ import type { Graph, GraphNode } from "@/lib/assetGraph";
 
 export type LayoutMode = "band" | "dagre";
 
-const COLUMN_WIDTH = 320;
+// COLUMN_WIDTH > card width (260) by enough to leave a gutter for edge
+// routing without spreading the canvas needlessly. Tightened from 320.
+const COLUMN_WIDTH = 280;
 const ROW_HEIGHT = 200;
 const LANE_GAP = 280;
 const COLUMN_X0 = 80;
 const ROW_Y0 = 40;
-const CURRENT_ROSTER_GAP = 120;
+const CURRENT_ROSTER_GAP = 80;
 
 export type Pos = { x: number; y: number };
 

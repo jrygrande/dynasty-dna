@@ -157,8 +157,8 @@ function AssetGraphInner({
   }, [expandedEntries]);
 
   const lanes = useMemo(
-    () => assignLanes(seedIds ?? [], expandedEntries ?? new Set(), edges),
-    [seedIds, expandedEntries, edges],
+    () => assignLanes(seedIds ?? [], expandedEntries ?? new Set(), edges, nodes),
+    [seedIds, expandedEntries, edges, nodes],
   );
 
   // Anchor-relative layout: prior positions stick, new nodes fan out from
