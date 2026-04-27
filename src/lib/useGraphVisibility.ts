@@ -155,6 +155,29 @@ export function useGraphVisibility(
       }
     }
 
+    // For any draft node reached by an expanded pick thread, auto-expand
+    // the player's thread too — the user's mental model of "this pick
+    // became this player" wants the connection visible without an extra
+    // click. Single-pass: only the immediately-revealed player's edges
+    // are auto-expanded (no recursive cascade).
+    for (const node of graph.nodes) {
+      if (node.kind !== "transaction") continue;
+      if (node.txKind !== "draft") continue;
+      if (!visible.has(node.id)) continue;
+      for (const asset of node.assets) {
+        if (asset.kind !== "player" || !asset.playerId) continue;
+        const playerKey = `player:${asset.playerId}`;
+        if (expandedAssetKeySet.has(playerKey)) continue;
+        expandedAssetKeySet.add(playerKey);
+        const matching = edgesByAsset.get(playerKey) ?? [];
+        for (const e of matching) {
+          visible.add(e.source);
+          visible.add(e.target);
+          visibleEdgeIds.add(e.id);
+        }
+      }
+    }
+
     for (const id of removed) visible.delete(id);
 
     const visibleNodes = graph.nodes

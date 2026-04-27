@@ -22,9 +22,13 @@ import type { Graph, GraphNode } from "@/lib/assetGraph";
 
 export type LayoutMode = "band" | "dagre";
 
-// Card width is 260; this leaves a 10px gutter for edge routing while
-// keeping the canvas as compact as possible.
+// Card width is 260; same-lane neighbors need this full separation so
+// they don't overlap visually.
 const COLUMN_WIDTH = 270;
+// Cross-lane neighbors live on different y bands, so they can be much
+// closer horizontally — gives a "staircase" overlap that consolidates
+// the canvas without losing chronological direction.
+const COMPRESSED_GAP = 150;
 const ROW_HEIGHT = 200;
 const LANE_GAP = 280;
 const COLUMN_X0 = 80;
@@ -56,16 +60,15 @@ export function layout(
 
   // -------------------------------------------------------------------------
   // Current-roster nodes are conceptually dated "today" — newer than any
-  // transaction. Pin them all to the same global rightmost column so they
-  // form a clean right edge. Lane still drives y so each manager's roster
-  // aligns vertically with its branch.
+  // transaction. Pin them all to the same x at the right edge so they
+  // form a clean right-edge anchor. Lane still drives y so each
+  // manager's roster aligns vertically with its branch.
   // -------------------------------------------------------------------------
-  let globalMaxCol = 0;
+  let globalMaxX = COLUMN_X0;
   for (const pos of positions.values()) {
-    const col = Math.round((pos.x - COLUMN_X0) / COLUMN_WIDTH);
-    if (col > globalMaxCol) globalMaxCol = col;
+    if (pos.x > globalMaxX) globalMaxX = pos.x;
   }
-  const rosterCol = globalMaxCol + 1;
+  const rosterX = globalMaxX + COLUMN_WIDTH;
 
   const sortedRosters = [...currentRosters].sort((a, b) =>
     a.displayName.localeCompare(b.displayName),
@@ -76,7 +79,7 @@ export function layout(
     const stackIdx = rosterStackByLane.get(lane) ?? 0;
     rosterStackByLane.set(lane, stackIdx + 1);
     positions.set(n.id, {
-      x: COLUMN_X0 + rosterCol * COLUMN_WIDTH,
+      x: rosterX,
       y: ROW_Y0 + lane * LANE_GAP + stackIdx * ROW_HEIGHT,
     });
   }
@@ -88,13 +91,17 @@ export function layout(
 type TxNode = Extract<GraphNode, { kind: "transaction" }>;
 
 /**
- * Place transactions on a GLOBAL chronological column grid: each unique
- * `createdAt` across all visible transactions gets one column. Cards in
- * different lanes that share a `createdAt` land at the same x (different
- * y). This guarantees edges flow left→right by time across lane changes.
+ * Place transactions on a global chronological grid with VARIABLE column
+ * gaps. Each unique `createdAt` becomes a timepoint with a single x.
+ * Adjacent timepoints whose cards live on different lanes (no shared
+ * lane) get a tighter `COMPRESSED_GAP`; same-lane neighbors get the
+ * full `COLUMN_WIDTH` so they don't overlap on the same y. The
+ * cumulative x is then anchored on the seed transaction so its column
+ * sits at COLUMN_X0.
  *
- * The seed transaction's column anchors x=COLUMN_X0 so older cards get
- * negative cols (left of seed) and newer get positive (right of seed).
+ * A safety constraint enforces that any two timepoints whose lane sets
+ * share a lane are at least `COLUMN_WIDTH` apart, so non-adjacent
+ * same-lane cards can't end up overlapping after compression.
  */
 function placeByLane(
   transactions: TxNode[],
@@ -105,30 +112,69 @@ function placeByLane(
   const seedSet = new Set(seedIds);
   const sorted = [...transactions].sort(compareTx);
 
-  // Assign one column per unique createdAt globally.
-  const colByCreatedAt = new Map<number, number>();
-  let nextCol = 0;
+  const sortedTimes = [...new Set(sorted.map((n) => n.createdAt))].sort(
+    (a, b) => a - b,
+  );
+
+  // For each timepoint, the set of lanes that have cards at that time.
+  const lanesByTime = new Map<number, Set<number>>();
   for (const n of sorted) {
-    if (!colByCreatedAt.has(n.createdAt)) {
-      colByCreatedAt.set(n.createdAt, nextCol++);
-    }
+    let set = lanesByTime.get(n.createdAt);
+    if (!set) { set = new Set(); lanesByTime.set(n.createdAt, set); }
+    set.add(lanes.get(n.id) ?? 0);
   }
 
-  // Anchor x=COLUMN_X0 on the seed transaction's column so older cards
-  // land at negative cols and newer at positive.
-  const seedTx = sorted.find((n) => seedSet.has(n.id));
-  const seedCol = seedTx ? colByCreatedAt.get(seedTx.createdAt) ?? 0 : 0;
+  // Cumulative x for each timepoint, with variable gap rule:
+  //  - same-lane neighbor (any prior lane appears at this time too) → COLUMN_WIDTH
+  //  - else → COMPRESSED_GAP
+  // Then enforce that any same-lane pair across non-adjacent timepoints
+  // still has ≥ COLUMN_WIDTH between them.
+  const xByTime = new Map<number, number>();
+  // Track each lane's last placed timepoint for the COLUMN_WIDTH safety check.
+  const lastTimeByLane = new Map<number, number>();
 
-  // Stack collisions within (col, lane) for cards sharing both.
-  const stackByColLane = new Map<string, number>();
+  for (let i = 0; i < sortedTimes.length; i++) {
+    const t = sortedTimes[i];
+    if (i === 0) {
+      xByTime.set(t, 0);
+      for (const lane of lanesByTime.get(t) ?? []) lastTimeByLane.set(lane, t);
+      continue;
+    }
+    const prevT = sortedTimes[i - 1];
+    const prevLanes = lanesByTime.get(prevT) ?? new Set<number>();
+    const currLanes = lanesByTime.get(t) ?? new Set<number>();
+    const sharedAdjacent = [...currLanes].some((l) => prevLanes.has(l));
+    const baseGap = sharedAdjacent ? COLUMN_WIDTH : COMPRESSED_GAP;
+
+    let x = (xByTime.get(prevT) ?? 0) + baseGap;
+
+    // Safety: ensure ≥ COLUMN_WIDTH from the most recent same-lane timepoint.
+    for (const lane of currLanes) {
+      const lastT = lastTimeByLane.get(lane);
+      if (lastT == null) continue;
+      const minX = (xByTime.get(lastT) ?? 0) + COLUMN_WIDTH;
+      if (x < minX) x = minX;
+    }
+
+    xByTime.set(t, x);
+    for (const lane of currLanes) lastTimeByLane.set(lane, t);
+  }
+
+  // Anchor x=COLUMN_X0 on the seed transaction's timepoint.
+  const seedTx = sorted.find((n) => seedSet.has(n.id));
+  const seedT = seedTx?.createdAt ?? sortedTimes[0];
+  const seedX = xByTime.get(seedT ?? 0) ?? 0;
+
+  // Place each card.
+  const stackByTimeLane = new Map<string, number>();
   for (const n of sorted) {
-    const col = (colByCreatedAt.get(n.createdAt) ?? 0) - seedCol;
     const lane = lanes.get(n.id) ?? 0;
-    const key = `${col}|${lane}`;
-    const stackIdx = stackByColLane.get(key) ?? 0;
-    stackByColLane.set(key, stackIdx + 1);
+    const key = `${n.createdAt}|${lane}`;
+    const stackIdx = stackByTimeLane.get(key) ?? 0;
+    stackByTimeLane.set(key, stackIdx + 1);
+    const x = COLUMN_X0 + ((xByTime.get(n.createdAt) ?? 0) - seedX);
     out.set(n.id, {
-      x: COLUMN_X0 + col * COLUMN_WIDTH,
+      x,
       y: ROW_Y0 + lane * LANE_GAP + stackIdx * ROW_HEIGHT,
     });
   }
