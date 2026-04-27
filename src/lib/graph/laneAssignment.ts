@@ -74,17 +74,20 @@ export function assignLanes(
     return visibleAssetKeys.indexOf(a) - visibleAssetKeys.indexOf(b);
   });
 
-  // Anchor lanes on the seed asset. Lane = rowIdx − seedRowIdx so the seed
-  // asset's thread is lane 0 and others fan symmetrically.
-  const seedRowIdx =
-    seedAssetKey != null && seedAssetOrder.has(seedAssetKey)
-      ? (seedAssetOrder.get(seedAssetKey) as number)
-      : Math.floor((orderedKeys.length - 1) / 2); // fallback: center the fan
+  // Sequential lane assignment anchored on the seed asset. Use position
+  // within `orderedKeys` (already sorted by seed-card row), not row index
+  // directly, so unexpanded rows don't leave vertical gaps between visible
+  // threads. With seed asset at sorted position S:
+  //   key at sorted i  →  lane = i − S
+  // Top-most expanded thread → most negative lane; seed asset → 0; below → positive.
+  const seedSortedIdx =
+    seedAssetKey != null ? orderedKeys.indexOf(seedAssetKey) : -1;
+  const anchorIdx =
+    seedSortedIdx >= 0 ? seedSortedIdx : Math.floor((orderedKeys.length - 1) / 2);
 
   for (let i = 0; i < orderedKeys.length; i++) {
     const aKey = orderedKeys[i];
-    const rowIdx = seedAssetOrder.get(aKey);
-    const lane = rowIdx != null ? rowIdx - seedRowIdx : i - seedRowIdx;
+    const lane = i - anchorIdx;
     const threadEdges = edgesByAsset.get(aKey) ?? [];
     for (const e of threadEdges) {
       if (!lanes.has(e.source)) lanes.set(e.source, lane);

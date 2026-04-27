@@ -57,14 +57,18 @@ export function layout(
   placeByLane(transactions, lanes ?? new Map(), seedIds ?? [], positions);
 
   // -------------------------------------------------------------------------
-  // Current-roster nodes: pin to one column past the rightmost transaction
-  // and inherit their connecting thread's lane.
+  // Current-roster nodes go at the right edge of THEIR LANE, not the global
+  // maxX. This keeps a thread's roster compactly close to its last
+  // transaction instead of stretching every roster to the rightmost
+  // column of any thread.
   // -------------------------------------------------------------------------
-  let maxX = COLUMN_X0;
-  for (const p of positions.values()) {
-    if (p.x > maxX) maxX = p.x;
+  const maxColByLane = new Map<number, number>();
+  for (const [id, pos] of positions) {
+    const lane = lanes?.get(id) ?? 0;
+    const col = Math.round((pos.x - COLUMN_X0) / COLUMN_WIDTH);
+    const prev = maxColByLane.get(lane);
+    if (prev == null || col > prev) maxColByLane.set(lane, col);
   }
-  const currentX = maxX + COLUMN_WIDTH + CURRENT_ROSTER_GAP;
 
   const sortedRosters = [...currentRosters].sort((a, b) =>
     a.displayName.localeCompare(b.displayName),
@@ -74,12 +78,17 @@ export function layout(
     const lane = lanes?.get(n.id) ?? 0;
     const stackIdx = rosterStackByLane.get(lane) ?? 0;
     rosterStackByLane.set(lane, stackIdx + 1);
+    const laneMaxCol = maxColByLane.get(lane) ?? 0;
+    const col = laneMaxCol + 1;
     positions.set(n.id, {
-      x: currentX,
+      x: COLUMN_X0 + col * COLUMN_WIDTH,
       y: ROW_Y0 + lane * LANE_GAP + stackIdx * ROW_HEIGHT,
     });
   }
   void priorPositions;
+  // CURRENT_ROSTER_GAP no longer used; rosters slot directly into next
+  // column of their lane.
+  void CURRENT_ROSTER_GAP;
 
   return positions;
 }
