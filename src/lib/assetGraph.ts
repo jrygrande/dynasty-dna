@@ -101,6 +101,14 @@ export interface TransactionNode {
   managers: TransactionManagerRef[];
   /** Assets touched by this transaction. */
   assets: TransactionAssetRef[];
+  /** For draft nodes, the pick that was consumed to draft the player. The
+   * pick lives on the incoming edge rather than in `assets` (which holds
+   * the player drafted), so we surface it here for header display. */
+  draftPick?: {
+    season: string;
+    round: number;
+    originalRosterId: number;
+  };
   layout?: LayoutPos;
 }
 
@@ -349,6 +357,23 @@ export function buildGraphFromEvents(input: BuildGraphInput): Graph {
     }
     if (ev.toUserId && !participantIds.has(ev.toUserId)) {
       node.managers.push({ userId: ev.toUserId, displayName: managerName(ev.toUserId) });
+    }
+
+    // For draft_selected events, the pick that was used isn't carried on
+    // `assets` (the asset is the player drafted), so capture it on the
+    // node for header display.
+    if (
+      ev.eventType === "draft_selected" &&
+      ev.pickSeason !== null &&
+      ev.pickRound !== null &&
+      ev.pickOriginalRosterId !== null &&
+      !node.draftPick
+    ) {
+      node.draftPick = {
+        season: ev.pickSeason,
+        round: ev.pickRound,
+        originalRosterId: ev.pickOriginalRosterId,
+      };
     }
 
     // Record asset touched by this event.

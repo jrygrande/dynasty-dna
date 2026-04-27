@@ -44,10 +44,13 @@ export function buildTransactionHeader(node: TransactionNode): TransactionHeader
       return { title, subtitle: date };
     }
     case "draft": {
-      const firstPick = node.assets.find((a) => a.kind === "pick");
-      const round = firstPick?.pickRound;
-      const title =
-        round != null ? `${round}${getRoundSuffix(round)} round` : "Draft";
+      // Pick details live on `draftPick` (populated from the draft_selected
+      // event), not in `assets` (which holds the player drafted). Falls
+      // back to "Draft" if pick info is somehow missing.
+      const pick = node.draftPick;
+      const title = pick
+        ? `${pick.round}${getRoundSuffix(pick.round)} round, ${pick.season}`
+        : "Draft";
       return { title, subtitle: `${managerName} · ${date}` };
     }
     case "waiver":

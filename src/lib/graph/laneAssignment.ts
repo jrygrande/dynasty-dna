@@ -49,16 +49,26 @@ export function assignLanes(
     }
   }
 
-  // All expanded thread nodes go to lane 0 (same horizontal level as
-  // the seed). The per-asset-row handles on each card create the visual
-  // thread separation — no vertical lane offset needed.
-  for (const assetKey of assetKeyOrder) {
-    const threadEdges = edgesByAsset.get(assetKey) ?? [];
+  // Each unique expanded asset gets its own lane (vertical band). Lanes
+  // alternate around the seed: 0, +1, -1, +2, -2, … so multiple expanded
+  // threads spread above and below the seed line. The first thread to
+  // claim a node wins (subsequent threads passing through that node
+  // don't relocate it).
+  for (let i = 0; i < assetKeyOrder.length; i++) {
+    const lane = laneIndexFor(i);
+    const threadEdges = edgesByAsset.get(assetKeyOrder[i]) ?? [];
     for (const e of threadEdges) {
-      if (!lanes.has(e.source)) lanes.set(e.source, 0);
-      if (!lanes.has(e.target)) lanes.set(e.target, 0);
+      if (!lanes.has(e.source)) lanes.set(e.source, lane);
+      if (!lanes.has(e.target)) lanes.set(e.target, lane);
     }
   }
 
   return lanes;
+}
+
+/** Lane indices in fan order: 0, +1, -1, +2, -2, +3, -3, … */
+function laneIndexFor(i: number): number {
+  if (i === 0) return 0;
+  const half = Math.ceil(i / 2);
+  return i % 2 === 1 ? half : -half;
 }

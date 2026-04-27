@@ -1,16 +1,20 @@
 /**
- * Asset Graph Browser — chronological column layout.
+ * Asset Graph Browser — chronological columns × thread lanes.
  *
- * Each unique transaction `createdAt` gets its own column placed strictly
- * left-to-right. Same-`createdAt` events stack vertically within their
- * column. Current-roster pseudo-nodes pin to the column past the rightmost
- * transaction so they always sit as the right-edge anchor.
+ * X: each unique transaction `createdAt` gets its own column placed
+ * strictly left-to-right. Same-`createdAt` events stack within their
+ * (column, lane) bucket.
  *
- * Smooth motion across renders is the responsibility of `useGraphPositionTween`,
- * NOT the layout: when a new card slots into the chronological order between
- * two existing cards, the tween hook animates the existing cards' shift, and
- * new cards launch from their spawn parent's current position. Layout itself
- * stays pure and chronologically deterministic.
+ * Y: derived from the lane index assigned by `assignLanes`. The seed
+ * thread is lane 0 (centered); each additional expanded asset thread
+ * gets +1 / −1 / +2 / −2 etc. so multiple threads fan vertically.
+ *
+ * Current-roster pseudo-nodes pin to the column past the rightmost
+ * transaction and inherit the lane of the thread that connects to them
+ * so each manager's roster aligns with its branch.
+ *
+ * Smooth motion across renders is the responsibility of
+ * `useGraphPositionTween` — layout itself stays pure and deterministic.
  */
 
 import type { Graph, GraphNode } from "@/lib/assetGraph";
@@ -19,6 +23,7 @@ export type LayoutMode = "band" | "dagre";
 
 const COLUMN_WIDTH = 320;
 const ROW_HEIGHT = 200;
+const LANE_GAP = 280;
 const COLUMN_X0 = 80;
 const ROW_Y0 = 40;
 const CURRENT_ROSTER_GAP = 120;
@@ -28,10 +33,10 @@ export type Pos = { x: number; y: number };
 export function layout(
   graph: Pick<Graph, "nodes" | "edges">,
   _mode: LayoutMode = "band",
-  _lanes?: Map<string, number>,
+  lanes?: Map<string, number>,
   // `priorPositions` is retained for API compatibility (and read by the
-  // tween wiring), but the layout itself is purely chronological now —
-  // smooth motion is the tween hook's job.
+  // tween wiring), but the layout itself is purely chronological-by-lane
+  // now — smooth motion is the tween hook's job.
   priorPositions?: Map<string, Pos>,
 ): Map<string, Pos> {
   const positions = new Map<string, Pos>();
@@ -44,7 +49,7 @@ export function layout(
     (n): n is Extract<GraphNode, { kind: "current_roster" }> => n.kind === "current_roster",
   );
 
-  placeChronologicalColumns(transactions, positions);
+  placeChronologicalColumns(transactions, lanes ?? new Map(), positions);
 
   // -------------------------------------------------------------------------
   // Current-roster nodes: pin to one column past the rightmost transaction.
@@ -56,35 +61,26 @@ export function layout(
   }
   const currentX = maxX + COLUMN_WIDTH + CURRENT_ROSTER_GAP;
 
-  // Current-roster nodes always sit in the rightmost column — they're a
-  // structural anchor, so they slide right when new transaction cards
-  // extend the timeline. Preserve their y from prior positions so they
-  // don't jump rows; fresh ones land in the next free row, skipping any
-  // already-occupied slot.
+  // Current-roster nodes sit in the rightmost column and inherit the lane
+  // of the thread that connects to them, so each manager's roster aligns
+  // vertically with the branch that ends at it. Within a lane, multiple
+  // rosters stack by ROW_HEIGHT.
   const sortedRosters = [...currentRosters].sort((a, b) =>
     a.displayName.localeCompare(b.displayName),
   );
-  const occupiedYs = new Set<number>();
+  const rosterStackByLane = new Map<number, number>();
   for (const n of sortedRosters) {
-    const prior = priorPositions?.get(n.id);
-    if (prior) occupiedYs.add(Math.round(prior.y));
+    const lane = lanes?.get(n.id) ?? 0;
+    const stackIdx = rosterStackByLane.get(lane) ?? 0;
+    rosterStackByLane.set(lane, stackIdx + 1);
+    positions.set(n.id, {
+      x: currentX,
+      y: ROW_Y0 + lane * LANE_GAP + stackIdx * ROW_HEIGHT,
+    });
   }
-  let nextRosterRow = 0;
-  for (const n of sortedRosters) {
-    const prior = priorPositions?.get(n.id);
-    if (prior) {
-      positions.set(n.id, { x: currentX, y: prior.y });
-    } else {
-      let y = ROW_Y0 + nextRosterRow * ROW_HEIGHT;
-      while (occupiedYs.has(Math.round(y))) {
-        nextRosterRow++;
-        y = ROW_Y0 + nextRosterRow * ROW_HEIGHT;
-      }
-      positions.set(n.id, { x: currentX, y });
-      occupiedYs.add(Math.round(y));
-      nextRosterRow++;
-    }
-  }
+  // priorPositions intentionally unused now — lane-driven y is canonical
+  // and the tween hook handles smooth transitions when a lane changes.
+  void priorPositions;
 
   return positions;
 }
@@ -93,6 +89,7 @@ type TxNode = Extract<GraphNode, { kind: "transaction" }>;
 
 function placeChronologicalColumns(
   transactions: TxNode[],
+  lanes: Map<string, number>,
   out: Map<string, Pos>,
 ): void {
   const sorted = [...transactions].sort((a, b) => {
@@ -110,14 +107,18 @@ function placeChronologicalColumns(
     }
   }
 
-  const stackCount = new Map<number, number>();
+  // Stack per (column, lane) so two threads at the same chronological
+  // column don't pile on top of each other.
+  const stackCount = new Map<string, number>();
   for (const n of sorted) {
     const colIdx = colByCreatedAt.get(n.createdAt) ?? 0;
-    const rowIdx = stackCount.get(colIdx) ?? 0;
-    stackCount.set(colIdx, rowIdx + 1);
+    const lane = lanes.get(n.id) ?? 0;
+    const stackKey = `${colIdx}|${lane}`;
+    const rowIdx = stackCount.get(stackKey) ?? 0;
+    stackCount.set(stackKey, rowIdx + 1);
     out.set(n.id, {
       x: COLUMN_X0 + colIdx * COLUMN_WIDTH,
-      y: ROW_Y0 + rowIdx * ROW_HEIGHT,
+      y: ROW_Y0 + lane * LANE_GAP + rowIdx * ROW_HEIGHT,
     });
   }
 }
