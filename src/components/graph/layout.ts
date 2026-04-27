@@ -22,12 +22,13 @@ import type { Graph, GraphNode } from "@/lib/assetGraph";
 
 export type LayoutMode = "band" | "dagre";
 
-const COLUMN_WIDTH = 280;
+// Card width is 260; this leaves a 10px gutter for edge routing while
+// keeping the canvas as compact as possible.
+const COLUMN_WIDTH = 270;
 const ROW_HEIGHT = 200;
 const LANE_GAP = 280;
 const COLUMN_X0 = 80;
 const ROW_Y0 = 40;
-const CURRENT_ROSTER_GAP = 80;
 
 export type Pos = { x: number; y: number };
 
@@ -54,18 +55,17 @@ export function layout(
   placeByLane(transactions, lanes ?? new Map(), seedIds ?? [], positions);
 
   // -------------------------------------------------------------------------
-  // Current-roster nodes go at the right edge of THEIR LANE, not the global
-  // maxX. This keeps a thread's roster compactly close to its last
-  // transaction instead of stretching every roster to the rightmost
-  // column of any thread.
+  // Current-roster nodes are conceptually dated "today" — newer than any
+  // transaction. Pin them all to the same global rightmost column so they
+  // form a clean right edge. Lane still drives y so each manager's roster
+  // aligns vertically with its branch.
   // -------------------------------------------------------------------------
-  const maxColByLane = new Map<number, number>();
-  for (const [id, pos] of positions) {
-    const lane = lanes?.get(id) ?? 0;
+  let globalMaxCol = 0;
+  for (const pos of positions.values()) {
     const col = Math.round((pos.x - COLUMN_X0) / COLUMN_WIDTH);
-    const prev = maxColByLane.get(lane);
-    if (prev == null || col > prev) maxColByLane.set(lane, col);
+    if (col > globalMaxCol) globalMaxCol = col;
   }
+  const rosterCol = globalMaxCol + 1;
 
   const sortedRosters = [...currentRosters].sort((a, b) =>
     a.displayName.localeCompare(b.displayName),
@@ -75,17 +75,12 @@ export function layout(
     const lane = lanes?.get(n.id) ?? 0;
     const stackIdx = rosterStackByLane.get(lane) ?? 0;
     rosterStackByLane.set(lane, stackIdx + 1);
-    const laneMaxCol = maxColByLane.get(lane) ?? 0;
-    const col = laneMaxCol + 1;
     positions.set(n.id, {
-      x: COLUMN_X0 + col * COLUMN_WIDTH,
+      x: COLUMN_X0 + rosterCol * COLUMN_WIDTH,
       y: ROW_Y0 + lane * LANE_GAP + stackIdx * ROW_HEIGHT,
     });
   }
   void priorPositions;
-  // CURRENT_ROSTER_GAP no longer used; rosters slot directly into next
-  // column of their lane.
-  void CURRENT_ROSTER_GAP;
 
   return positions;
 }
