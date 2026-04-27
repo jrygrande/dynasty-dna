@@ -5,6 +5,7 @@ import {
   ArrowLeftRight,
   ChevronDown,
   ChevronUp,
+  Dna,
   Hourglass,
   Shield,
   UserPlus,
@@ -146,6 +147,16 @@ function sortAssets(a: TransactionNodeAsset, b: TransactionNodeAsset): number {
 
 type RowState = "available" | "on-graph" | "traced-elsewhere";
 
+/**
+ * Soft sage glow concentrated in the row's middle, fading toward all four
+ * edges. Replaces the previous full-row tint + left rail for on-graph /
+ * traced-elsewhere rows. The 60% × 140% ellipse sized at 50% 50% means the
+ * brightest point sits in the row's center and fades to transparent before
+ * reaching the row borders.
+ */
+const ON_GRAPH_HIGHLIGHT =
+  "bg-[radial-gradient(ellipse_60%_140%_at_50%_50%,_var(--sage-100),_transparent_75%)]";
+
 export function TransactionCardChrome({
   nodeId,
   data,
@@ -243,7 +254,7 @@ export function TransactionCardChrome({
           <div className="flex-1 min-w-0 flex flex-col">
             {/* Allowed per design: graph headers may use Source Serif 4 (relaxes marketing-only rule). */}
             <span
-              className="truncate font-serif text-[15px] font-medium leading-tight text-sage-800"
+              className="font-serif text-[15px] font-medium leading-tight text-sage-800 [overflow-wrap:anywhere] line-clamp-2"
               title={data.header.title}
             >
               {data.header.title}
@@ -384,7 +395,7 @@ function AssetRow({
         className={cn(
           "w-full flex items-center gap-2 px-3 py-1 text-left transition-colors",
           "hover:bg-accent/40",
-          isTraced && "bg-sage-50 border-l-2 border-primary rounded-r-md",
+          isTraced && ON_GRAPH_HIGHLIGHT,
           rowState === "traced-elsewhere" && "opacity-[0.55]",
           rowState === "available" && isHovered && "bg-accent/30",
         )}
@@ -416,32 +427,37 @@ function AssetRow({
   );
 }
 
-const ROW_INDICATOR: Record<RowState, { glyph: string; classes: string }> = {
-  available: {
-    glyph: "+",
-    classes: "border border-dashed border-border text-muted-foreground",
-  },
-  "on-graph": {
-    glyph: "✓",
-    classes: "bg-primary text-primary-foreground",
-  },
-  "traced-elsewhere": {
-    glyph: "✓",
-    classes: "bg-slate-400 text-primary-foreground",
-  },
-};
-
 function RowStateIndicator({ state }: { state: RowState }) {
-  const { glyph, classes } = ROW_INDICATOR[state];
+  const isOnGraph = state === "on-graph";
+  const isTraced = state === "traced-elsewhere";
+  const isActive = isOnGraph || isTraced;
   return (
-    <span
-      aria-hidden
-      className={cn(
-        "inline-flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full text-[11px] leading-none",
-        classes,
-      )}
-    >
-      {glyph}
+    <span className="relative inline-flex h-[22px] w-[22px] items-center justify-center shrink-0">
+      {/* Available: dashed outline + plus glyph */}
+      <span
+        aria-hidden="true"
+        className={cn(
+          "absolute inset-0 inline-flex items-center justify-center rounded-full border border-dashed border-border text-[11px] leading-none text-muted-foreground transition-opacity duration-200",
+          isActive ? "opacity-0" : "opacity-100",
+        )}
+      >
+        +
+      </span>
+      {/* On-graph / traced: Dna icon, springy rotation, no fill. */}
+      <Dna
+        aria-hidden="true"
+        className={cn(
+          "absolute h-3.5 w-3.5 transition-all motion-reduce:transition-none",
+          "[transition-duration:300ms] [transition-timing-function:cubic-bezier(0.34,1.56,0.64,1)]",
+          isActive ? "rotate-[6deg]" : "rotate-0",
+          // Color first, opacity last so tailwind-merge keeps the active opacity.
+          isTraced
+            ? "text-slate-400 opacity-[0.55]"
+            : isOnGraph
+              ? "text-primary opacity-100"
+              : "text-primary opacity-0",
+        )}
+      />
     </span>
   );
 }
