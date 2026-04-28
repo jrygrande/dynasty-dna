@@ -38,7 +38,9 @@ function parseSelection(value: string | null): GraphSelection | null {
     return { type: "node", nodeId: value.slice(5) };
   }
   if (value.startsWith("edge:")) {
-    return { type: "edge", edgeId: value.slice(5) };
+    const ids = value.slice(5).split(",").map((s) => s.trim()).filter(Boolean);
+    if (ids.length === 0) return null;
+    return { type: "edge", edgeIds: ids };
   }
   return null;
 }
@@ -46,7 +48,8 @@ function parseSelection(value: string | null): GraphSelection | null {
 function serializeSelection(sel: GraphSelection | null): string | null {
   if (!sel) return null;
   if (sel.type === "node") return `node:${sel.nodeId}`;
-  return `edge:${sel.edgeId}`;
+  if (sel.edgeIds.length === 0) return null;
+  return `edge:${sel.edgeIds.join(",")}`;
 }
 
 export default function GraphPage() {
@@ -253,7 +256,6 @@ export default function GraphPage() {
     setTooltipDismissed(true);
   }, []);
 
-  const handleCloseSelection = useCallback(() => updateUrl({ selection: null }), [updateUrl]);
   const handleSelectionChange = useCallback(
     (next: GraphSelection | null) => updateUrl({ selection: serializeSelection(next) }),
     [updateUrl],
@@ -375,7 +377,7 @@ export default function GraphPage() {
             edges={visibility.visibleEdges}
             transactions={response.transactions}
             familyId={familyId}
-            onClose={handleCloseSelection}
+            onSelectionChange={handleSelectionChange}
             variant="sheet"
           />
         )}
@@ -490,7 +492,7 @@ export default function GraphPage() {
             edges={visibleGraph.edges}
             transactions={response.transactions}
             familyId={familyId}
-            onClose={handleCloseSelection}
+            onSelectionChange={handleSelectionChange}
           />
         )}
       </div>

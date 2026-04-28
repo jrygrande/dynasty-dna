@@ -331,7 +331,8 @@ function AssetGraphInner({
         targetHandle: isExpanded && !rosterNodeIds.has(e.target) ? `asset-target-${aKey}` : "card-target",
         type: "transaction",
         zIndex: isExpanded ? 10 : undefined,
-        selected: selection?.type === "edge" && selection.edgeId === e.id,
+        selected:
+          selection?.type === "edge" && selection.edgeIds.includes(e.id),
         data: {
           assetKind: e.assetKind,
           assetKey: aKey,
@@ -442,8 +443,19 @@ function AssetGraphInner({
   );
 
   const onEdgeClick = useCallback<EdgeMouseHandler>(
-    (_, edge) => onSelect({ type: "edge", edgeId: edge.id }),
-    [onSelect],
+    (event, edge) => {
+      const additive = event.metaKey || event.ctrlKey || event.shiftKey;
+      if (!additive) {
+        onSelect({ type: "edge", edgeIds: [edge.id] });
+        return;
+      }
+      const current = selection?.type === "edge" ? selection.edgeIds : [];
+      const next = current.includes(edge.id)
+        ? current.filter((id) => id !== edge.id)
+        : [...current, edge.id];
+      onSelect(next.length === 0 ? null : { type: "edge", edgeIds: next });
+    },
+    [onSelect, selection],
   );
 
   const onPaneClick = useCallback(() => onSelect(null), [onSelect]);
