@@ -563,6 +563,19 @@ export function buildGraphFromEvents(input: BuildGraphInput): Graph {
     const origUserName = origUser ? managerName(origUser) : null;
     const label = pickLabel(first, origUserName);
 
+    // A pick can never be traded after it's been used. When Sleeper records
+    // the pick_trade with a created_at after the draft's start_time (e.g.
+    // commissioner-approved during/after the draft), the global compareEvents
+    // sort puts draft_selected first and the trade orphans. Force the
+    // pick_trade events to stay in createdAt order, but always close with
+    // draft_selected last.
+    events.sort((a, b) => {
+      const aIsDraft = a.eventType === "draft_selected";
+      const bIsDraft = b.eventType === "draft_selected";
+      if (aIsDraft !== bIsDraft) return aIsDraft ? 1 : -1;
+      return (a.createdAt ?? 0) - (b.createdAt ?? 0);
+    });
+
     let tenureOwner: string | null = null;
     let tenureStart: { nodeId: string; season: string; week: number } | null = null;
 

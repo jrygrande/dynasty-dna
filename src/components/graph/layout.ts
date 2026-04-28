@@ -50,7 +50,8 @@ export function layout(
   }
 
   const laneMap = lanes ?? new Map<string, number>();
-  const maxTransactionX = placeByLane(transactions, laneMap, seedIds ?? [], positions);
+  const effectiveTime = effectiveCreatedAt(transactions, graph.edges);
+  const maxTransactionX = placeByLane(transactions, laneMap, seedIds ?? [], effectiveTime, positions);
 
   // Current-roster nodes pin to a single x past the rightmost transaction.
   // Lane drives y so each manager's roster aligns with its connecting thread.
@@ -90,23 +91,26 @@ function placeByLane(
   transactions: TxNode[],
   lanes: Map<string, number>,
   seedIds: string[],
+  effectiveTime: Map<string, number>,
   out: Map<string, Pos>,
 ): number {
   if (transactions.length === 0) return COLUMN_X0;
 
   const seedSet = new Set(seedIds);
-  const sorted = [...transactions].sort(compareTx);
+  const timeOf = (n: TxNode): number => effectiveTime.get(n.id) ?? n.createdAt;
+  const sorted = [...transactions].sort((a, b) => compareTx(a, b, timeOf));
 
-  // Single pass: collect unique createdAts (in sorted order) AND the set of
+  // Single pass: collect unique timepoints (in sorted order) AND the set of
   // lanes touching each timepoint.
   const sortedTimes: number[] = [];
   const lanesByTime = new Map<number, Set<number>>();
   for (const n of sorted) {
-    let set = lanesByTime.get(n.createdAt);
+    const t = timeOf(n);
+    let set = lanesByTime.get(t);
     if (!set) {
       set = new Set();
-      lanesByTime.set(n.createdAt, set);
-      sortedTimes.push(n.createdAt);
+      lanesByTime.set(t, set);
+      sortedTimes.push(t);
     }
     set.add(lanes.get(n.id) ?? 0);
   }
@@ -144,7 +148,7 @@ function placeByLane(
 
   // Anchor x=COLUMN_X0 on the seed transaction's timepoint.
   const seedTx = sorted.find((n) => seedSet.has(n.id));
-  const seedT = seedTx?.createdAt ?? sortedTimes[0];
+  const seedT = seedTx ? timeOf(seedTx) : sortedTimes[0];
   const seedX = xByTime.get(seedT) ?? 0;
 
   // Place each card and track the rightmost x as we go.
@@ -152,18 +156,69 @@ function placeByLane(
   const stackByTimeLane = new Map<string, number>();
   for (const n of sorted) {
     const lane = lanes.get(n.id) ?? 0;
-    const key = `${n.createdAt}|${lane}`;
+    const t = timeOf(n);
+    const key = `${t}|${lane}`;
     const stackIdx = stackByTimeLane.get(key) ?? 0;
     stackByTimeLane.set(key, stackIdx + 1);
-    const x = COLUMN_X0 + ((xByTime.get(n.createdAt) ?? 0) - seedX);
+    const x = COLUMN_X0 + ((xByTime.get(t) ?? 0) - seedX);
     out.set(n.id, { x, y: ROW_Y0 + lane * LANE_GAP + stackIdx * ROW_HEIGHT });
     if (x > maxX) maxX = x;
   }
   return maxX;
 }
 
-function compareTx(a: TxNode, b: TxNode): number {
-  if (a.createdAt !== b.createdAt) return a.createdAt - b.createdAt;
+/**
+ * Compute an effective `createdAt` per transaction that respects edge
+ * direction. Sleeper occasionally records pick_trade transactions with a
+ * `created_at` after the draft's start_time (commissioner approval lands
+ * during/after the draft), which would visually place the trade card to the
+ * right of the draft it feeds. This propagation pulls every source's
+ * effective time strictly below its target's, in BFS order from sinks.
+ */
+function effectiveCreatedAt(
+  transactions: TxNode[],
+  edges: Graph["edges"],
+): Map<string, number> {
+  const time = new Map<string, number>();
+  for (const n of transactions) time.set(n.id, n.createdAt);
+
+  // Adjacency: node id -> outgoing edges' target ids (transactions only).
+  const txIds = new Set(time.keys());
+  const outgoing = new Map<string, string[]>();
+  for (const e of edges) {
+    if (!txIds.has(e.source) || !txIds.has(e.target)) continue;
+    let arr = outgoing.get(e.source);
+    if (!arr) { arr = []; outgoing.set(e.source, arr); }
+    arr.push(e.target);
+  }
+
+  // Iterate to fixpoint. Each pass shrinks any source whose time isn't
+  // strictly less than every reachable target. Bound iterations defensively.
+  const MAX_ITER = 16;
+  for (let i = 0; i < MAX_ITER; i++) {
+    let changed = false;
+    for (const [src, targets] of outgoing) {
+      const ts = time.get(src);
+      if (ts == null) continue;
+      let earliestTarget = Infinity;
+      for (const tgt of targets) {
+        const tt = time.get(tgt);
+        if (tt != null && tt < earliestTarget) earliestTarget = tt;
+      }
+      if (earliestTarget !== Infinity && ts >= earliestTarget) {
+        time.set(src, earliestTarget - 1);
+        changed = true;
+      }
+    }
+    if (!changed) break;
+  }
+  return time;
+}
+
+function compareTx(a: TxNode, b: TxNode, timeOf: (n: TxNode) => number): number {
+  const ta = timeOf(a);
+  const tb = timeOf(b);
+  if (ta !== tb) return ta - tb;
   if (a.season !== b.season) return a.season.localeCompare(b.season);
   if (a.week !== b.week) return a.week - b.week;
   return a.id.localeCompare(b.id);
