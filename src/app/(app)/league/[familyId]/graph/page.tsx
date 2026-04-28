@@ -38,7 +38,9 @@ function parseSelection(value: string | null): GraphSelection | null {
     return { type: "node", nodeId: value.slice(5) };
   }
   if (value.startsWith("edge:")) {
-    return { type: "edge", edgeId: value.slice(5) };
+    const ids = value.slice(5).split(",").map((s) => s.trim()).filter(Boolean);
+    if (ids.length === 0) return null;
+    return { type: "edge", edgeIds: ids };
   }
   return null;
 }
@@ -46,7 +48,8 @@ function parseSelection(value: string | null): GraphSelection | null {
 function serializeSelection(sel: GraphSelection | null): string | null {
   if (!sel) return null;
   if (sel.type === "node") return `node:${sel.nodeId}`;
-  return `edge:${sel.edgeId}`;
+  if (sel.edgeIds.length === 0) return null;
+  return `edge:${sel.edgeIds.join(",")}`;
 }
 
 export default function GraphPage() {
@@ -376,6 +379,7 @@ export default function GraphPage() {
             transactions={response.transactions}
             familyId={familyId}
             onClose={handleCloseSelection}
+            onSelectionChange={handleSelectionChange}
             variant="sheet"
           />
         )}
@@ -491,6 +495,7 @@ export default function GraphPage() {
             transactions={response.transactions}
             familyId={familyId}
             onClose={handleCloseSelection}
+            onSelectionChange={handleSelectionChange}
           />
         )}
       </div>

@@ -169,7 +169,7 @@ export interface Graph {
 
 export type GraphSelection =
   | { type: "node"; nodeId: string }
-  | { type: "edge"; edgeId: string };
+  | { type: "edge"; edgeIds: string[] };
 
 /** Seed focus for the graph — which asset to anchor the view on. */
 export type GraphFocus =

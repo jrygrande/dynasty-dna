@@ -25,6 +25,8 @@ interface GraphDetailDrawerProps {
   transactions: Record<string, EnrichedTransaction>;
   familyId: string;
   onClose: () => void;
+  /** Replace the current selection (called when removing a single column from compare mode). */
+  onSelectionChange?: (next: GraphSelection | null) => void;
   /**
    * "drawer" (default): right-side fixed panel for desktop.
    * "sheet": full-screen overlay for mobile.
@@ -39,24 +41,31 @@ export function GraphDetailDrawer({
   transactions,
   familyId,
   onClose,
+  onSelectionChange,
   variant = "drawer",
 }: GraphDetailDrawerProps) {
   const closeBtnRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
 
+  const selectionFingerprint =
+    selection.type === "node"
+      ? `node:${selection.nodeId}`
+      : `edge:${selection.edgeIds.join(",")}`;
   useEffect(() => {
     if (selection.type === "node") {
       const node = nodes.find((n) => n.id === selection.nodeId);
       trackEvent("graph_node_selected", { kind: node?.kind ?? "unknown" });
-    } else {
-      const edge = edges.find((e) => e.id === selection.edgeId);
+    } else if (selection.edgeIds.length === 1) {
+      const edge = edges.find((e) => e.id === selection.edgeIds[0]);
       trackEvent("graph_edge_selected", {
         assetKind: edge?.assetKind ?? "unknown",
         isOpen: edge?.isOpen ?? false,
       });
+    } else {
+      trackEvent("graph_edges_compared", { count: selection.edgeIds.length });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selection.type, selection.type === "node" ? selection.nodeId : selection.edgeId]);
+  }, [selectionFingerprint]);
 
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
@@ -89,10 +98,20 @@ export function GraphDetailDrawer({
     return () => document.removeEventListener("keydown", handleKey);
   }, [onClose]);
 
+  const isCompare = selection.type === "edge" && selection.edgeIds.length >= 2;
+  const widthClass = isCompare ? "w-[40rem]" : "w-96";
   const containerClass =
     variant === "sheet"
       ? "fixed inset-0 bg-card overflow-y-auto z-50"
-      : "absolute top-0 right-0 bottom-0 w-96 bg-card border-l border-border/60 shadow-lg overflow-y-auto z-10";
+      : `absolute top-0 right-0 bottom-0 ${widthClass} bg-card border-l border-border/60 shadow-lg overflow-y-auto z-10`;
+
+  const handleRemoveEdge = onSelectionChange
+    ? (edgeId: string) => {
+        if (selection.type !== "edge") return;
+        const next = selection.edgeIds.filter((id) => id !== edgeId);
+        onSelectionChange(next.length === 0 ? null : { type: "edge", edgeIds: next });
+      }
+    : undefined;
 
   return (
     <div
@@ -104,7 +123,11 @@ export function GraphDetailDrawer({
     >
       <div className="sticky top-0 flex items-center justify-between px-4 py-3 border-b border-border/60 bg-card">
         {/* Allowed per design: graph headers may use Source Serif 4 (relaxes marketing-only rule). */}
-        <h2 className="font-serif text-base text-sage-800">Details</h2>
+        <h2 className="font-serif text-base text-sage-800">
+          {isCompare
+            ? `Comparing ${(selection as { edgeIds: string[] }).edgeIds.length} stints`
+            : "Details"}
+        </h2>
         <button
           ref={closeBtnRef}
           type="button"
@@ -123,9 +146,17 @@ export function GraphDetailDrawer({
             transactions={transactions}
             familyId={familyId}
           />
+        ) : selection.edgeIds.length >= 2 ? (
+          <EdgeCompare
+            edges={selection.edgeIds
+              .map((id) => edges.find((e) => e.id === id))
+              .filter((e): e is GraphEdge => Boolean(e))}
+            familyId={familyId}
+            onRemove={handleRemoveEdge}
+          />
         ) : (
           <EdgeDetail
-            edge={edges.find((e) => e.id === selection.edgeId) ?? null}
+            edge={edges.find((e) => e.id === selection.edgeIds[0]) ?? null}
             familyId={familyId}
           />
         )}
@@ -270,6 +301,11 @@ function EdgeDetail({ edge, familyId }: { edge: GraphEdge | null; familyId: stri
       <p className="text-xs text-muted-foreground">
         {edge.startSeason} W{edge.startWeek} → {endLabel}
       </p>
+      {edge.assetKind === "player" && edge.playerId && (
+        <p className="text-[11px] text-muted-foreground pt-1 border-t border-border/40">
+          Tip: <kbd className="font-mono">⌘</kbd>-click another stint to compare.
+        </p>
+      )}
     </div>
   );
 }
@@ -284,6 +320,48 @@ interface StintStatsResponse {
   starterWeeks: number;
 }
 
+type StintStatsState =
+  | { status: "loading" }
+  | { status: "error" }
+  | { status: "ok"; data: StintStatsResponse };
+
+function buildStintStatsUrl(familyId: string, edge: GraphEdge): string | null {
+  if (!edge.playerId) return null;
+  const sp = new URLSearchParams({
+    managerUserId: edge.managerUserId,
+    startSeason: edge.startSeason,
+    startWeek: String(edge.startWeek),
+  });
+  if (edge.endSeason) sp.set("endSeason", edge.endSeason);
+  if (edge.endWeek != null) sp.set("endWeek", String(edge.endWeek));
+  return `/api/leagues/${familyId}/player/${encodeURIComponent(edge.playerId)}/stint-stats?${sp.toString()}`;
+}
+
+function useStintStats(familyId: string, edge: GraphEdge): StintStatsState {
+  const [state, setState] = useState<StintStatsState>({ status: "loading" });
+  const url = buildStintStatsUrl(familyId, edge);
+  useEffect(() => {
+    if (!url) {
+      setState({ status: "error" });
+      return;
+    }
+    let cancelled = false;
+    setState({ status: "loading" });
+    fetch(url)
+      .then((res) => (res.ok ? res.json() : Promise.reject()))
+      .then((data: StintStatsResponse) => {
+        if (!cancelled) setState({ status: "ok", data });
+      })
+      .catch(() => {
+        if (!cancelled) setState({ status: "error" });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [url]);
+  return state;
+}
+
 function PlayerStintStats({
   familyId,
   edge,
@@ -291,52 +369,9 @@ function PlayerStintStats({
   familyId: string;
   edge: GraphEdge;
 }) {
-  const [stats, setStats] = useState<StintStatsResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
+  const state = useStintStats(familyId, edge);
 
-  useEffect(() => {
-    if (!edge.playerId) return;
-    let cancelled = false;
-    setLoading(true);
-    setError(false);
-
-    const sp = new URLSearchParams({
-      managerUserId: edge.managerUserId,
-      startSeason: edge.startSeason,
-      startWeek: String(edge.startWeek),
-    });
-    if (edge.endSeason) sp.set("endSeason", edge.endSeason);
-    if (edge.endWeek != null) sp.set("endWeek", String(edge.endWeek));
-
-    fetch(
-      `/api/leagues/${familyId}/player/${encodeURIComponent(edge.playerId)}/stint-stats?${sp.toString()}`,
-    )
-      .then((res) => (res.ok ? res.json() : Promise.reject()))
-      .then((data: StintStatsResponse) => {
-        if (!cancelled) setStats(data);
-      })
-      .catch(() => {
-        if (!cancelled) setError(true);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    familyId,
-    edge.playerId,
-    edge.managerUserId,
-    edge.startSeason,
-    edge.startWeek,
-    edge.endSeason,
-    edge.endWeek,
-  ]);
-
-  if (loading) {
+  if (state.status === "loading") {
     return (
       <div className="grid grid-cols-2 gap-2">
         {[0, 1, 2, 3].map((i) => (
@@ -346,7 +381,7 @@ function PlayerStintStats({
     );
   }
 
-  if (error || !stats || stats.weeksActive === 0) {
+  if (state.status === "error" || state.data.weeksActive === 0) {
     return (
       <p className="text-xs text-muted-foreground">
         No active scoring weeks recorded for this stint.
@@ -354,6 +389,7 @@ function PlayerStintStats({
     );
   }
 
+  const stats = state.data;
   return (
     <div>
       <p className="text-xs text-muted-foreground mb-1.5">Stint stats</p>
@@ -379,6 +415,243 @@ function PlayerStintStats({
           hint={`${stats.weeksActive}/${stats.weeksAvailable}`}
         />
       </div>
+    </div>
+  );
+}
+
+const COMPARE_METRIC_ROWS = [
+  {
+    label: "PPG",
+    value: (s: StintStatsResponse) => fmtNumber(s.ppg),
+    hint: (s: StintStatsResponse) =>
+      `${s.weeksActive} wk${s.weeksActive === 1 ? "" : "s"}`,
+  },
+  {
+    label: "PPG starting",
+    value: (s: StintStatsResponse) => fmtNumber(s.ppgStarting),
+    hint: (s: StintStatsResponse) =>
+      `${s.starterWeeks} wk${s.starterWeeks === 1 ? "" : "s"}`,
+  },
+  {
+    label: "Start %",
+    value: (s: StintStatsResponse) => fmtPercent(s.startPct),
+    hint: (s: StintStatsResponse) => `${s.starterWeeks}/${s.weeksActive}`,
+  },
+  {
+    label: "Active %",
+    value: (s: StintStatsResponse) => fmtPercent(s.activePct),
+    hint: (s: StintStatsResponse) => `${s.weeksActive}/${s.weeksAvailable}`,
+  },
+] as const;
+
+function useStintStatsByEdge(
+  familyId: string,
+  edges: GraphEdge[],
+): Map<string, StintStatsState> {
+  const [results, setResults] = useState<Map<string, StintStatsState>>(
+    () => new Map(),
+  );
+  const urlByEdge = edges
+    .map((e) => `${e.id}|${buildStintStatsUrl(familyId, e) ?? ""}`)
+    .join("\n");
+
+  useEffect(() => {
+    let cancelled = false;
+    const next = new Map<string, StintStatsState>();
+    for (const edge of edges) {
+      next.set(edge.id, { status: "loading" });
+    }
+    setResults(next);
+
+    edges.forEach((edge) => {
+      const url = buildStintStatsUrl(familyId, edge);
+      if (!url) {
+        setResults((prev) => {
+          const m = new Map(prev);
+          m.set(edge.id, { status: "error" });
+          return m;
+        });
+        return;
+      }
+      fetch(url)
+        .then((res) => (res.ok ? res.json() : Promise.reject()))
+        .then((data: StintStatsResponse) => {
+          if (cancelled) return;
+          setResults((prev) => {
+            const m = new Map(prev);
+            m.set(edge.id, { status: "ok", data });
+            return m;
+          });
+        })
+        .catch(() => {
+          if (cancelled) return;
+          setResults((prev) => {
+            const m = new Map(prev);
+            m.set(edge.id, { status: "error" });
+            return m;
+          });
+        });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [urlByEdge]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return results;
+}
+
+function EdgeCompare({
+  edges,
+  familyId,
+  onRemove,
+}: {
+  edges: GraphEdge[];
+  familyId: string;
+  onRemove?: (edgeId: string) => void;
+}) {
+  const statsByEdge = useStintStatsByEdge(familyId, edges);
+  if (edges.length === 0) {
+    return <p className="text-sm text-muted-foreground">No stints to compare.</p>;
+  }
+  const colTemplate = `100px repeat(${edges.length}, minmax(120px, 1fr))`;
+
+  return (
+    <div className="space-y-3">
+      <div className="overflow-x-auto -mx-4 px-4">
+        <div className="min-w-max space-y-2">
+          <div
+            className="grid gap-2 items-stretch"
+            style={{ gridTemplateColumns: colTemplate }}
+          >
+            <div />
+            {edges.map((edge) => (
+              <CompareColumnHeader
+                key={edge.id}
+                edge={edge}
+                familyId={familyId}
+                onRemove={onRemove}
+              />
+            ))}
+          </div>
+
+          {COMPARE_METRIC_ROWS.map((row) => (
+            <div
+              key={row.label}
+              className="grid gap-2 items-center"
+              style={{ gridTemplateColumns: colTemplate }}
+            >
+              <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                {row.label}
+              </p>
+              {edges.map((edge) => (
+                <CompareCell
+                  key={edge.id}
+                  edge={edge}
+                  state={statsByEdge.get(edge.id) ?? { status: "loading" }}
+                  row={row}
+                />
+              ))}
+            </div>
+          ))}
+        </div>
+      </div>
+      <p className="text-[11px] text-muted-foreground">
+        Tip: <kbd className="font-mono">⌘</kbd>-click an edge to add or remove it from this comparison.
+      </p>
+    </div>
+  );
+}
+
+function CompareColumnHeader({
+  edge,
+  familyId,
+  onRemove,
+}: {
+  edge: GraphEdge;
+  familyId: string;
+  onRemove?: (edgeId: string) => void;
+}) {
+  const endLabel = edge.isOpen
+    ? "Ongoing"
+    : `${edge.endSeason ?? ""}${edge.endWeek ? ` W${edge.endWeek}` : ""}`;
+  const isPlayer = edge.assetKind === "player";
+  return (
+    <div className="rounded-md border border-border/60 bg-background px-2 py-1.5 text-xs space-y-0.5 relative">
+      {onRemove && (
+        <button
+          type="button"
+          onClick={() => onRemove(edge.id)}
+          className="absolute top-1 right-1 inline-flex items-center justify-center h-5 w-5 rounded hover:bg-accent hover:text-accent-foreground"
+          aria-label="Remove from comparison"
+        >
+          <X className="h-3 w-3" />
+        </button>
+      )}
+      {isPlayer ? (
+        <Link
+          href={
+            edge.playerId
+              ? `/league/${familyId}/player/${encodeURIComponent(edge.playerId)}`
+              : "#"
+          }
+          className="block pr-5 font-semibold leading-tight hover:underline"
+        >
+          {edge.playerPosition ? `${edge.playerPosition} · ` : ""}
+          {edge.playerName}
+        </Link>
+      ) : (
+        <p className="pr-5 font-semibold leading-tight">{edge.pickLabel}</p>
+      )}
+      <p className="text-muted-foreground truncate">{edge.managerName}</p>
+      <p className="font-mono text-[10px] text-muted-foreground">
+        {edge.startSeason} W{edge.startWeek} → {endLabel}
+      </p>
+    </div>
+  );
+}
+
+function CompareCell({
+  edge,
+  state,
+  row,
+}: {
+  edge: GraphEdge;
+  state: StintStatsState;
+  row: (typeof COMPARE_METRIC_ROWS)[number];
+}) {
+  const isPlayer = edge.assetKind === "player" && Boolean(edge.playerId);
+
+  if (!isPlayer) {
+    return (
+      <div className="rounded-md border border-border/60 bg-background px-2 py-1.5 text-center">
+        <p className="font-mono text-base font-semibold text-muted-foreground leading-tight">
+          —
+        </p>
+        <p className="font-mono text-[10px] text-muted-foreground">pick</p>
+      </div>
+    );
+  }
+  if (state.status === "loading") {
+    return <div className="h-12 rounded-md bg-muted animate-pulse" />;
+  }
+  if (state.status === "error" || state.data.weeksActive === 0) {
+    return (
+      <div className="rounded-md border border-border/60 bg-background px-2 py-1.5 text-center">
+        <p className="font-mono text-base font-semibold text-muted-foreground leading-tight">
+          —
+        </p>
+      </div>
+    );
+  }
+  return (
+    <div className="rounded-md border border-border/60 bg-background px-2 py-1.5 text-center">
+      <p className="font-mono text-base font-semibold text-foreground leading-tight">
+        {row.value(state.data)}
+      </p>
+      <p className="font-mono text-[10px] text-muted-foreground">
+        {row.hint(state.data)}
+      </p>
     </div>
   );
 }
