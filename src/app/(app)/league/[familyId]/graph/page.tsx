@@ -256,7 +256,6 @@ export default function GraphPage() {
     setTooltipDismissed(true);
   }, []);
 
-  const handleCloseSelection = useCallback(() => updateUrl({ selection: null }), [updateUrl]);
   const handleSelectionChange = useCallback(
     (next: GraphSelection | null) => updateUrl({ selection: serializeSelection(next) }),
     [updateUrl],
@@ -378,7 +377,6 @@ export default function GraphPage() {
             edges={visibility.visibleEdges}
             transactions={response.transactions}
             familyId={familyId}
-            onClose={handleCloseSelection}
             onSelectionChange={handleSelectionChange}
             variant="sheet"
           />
@@ -494,7 +492,6 @@ export default function GraphPage() {
             edges={visibleGraph.edges}
             transactions={response.transactions}
             familyId={familyId}
-            onClose={handleCloseSelection}
             onSelectionChange={handleSelectionChange}
           />
         )}

@@ -24,9 +24,8 @@ interface GraphDetailDrawerProps {
   edges: GraphEdge[];
   transactions: Record<string, EnrichedTransaction>;
   familyId: string;
-  onClose: () => void;
-  /** Replace the current selection (called when removing a single column from compare mode). */
-  onSelectionChange?: (next: GraphSelection | null) => void;
+  /** Replace the current selection. Called with `null` to close the drawer. */
+  onSelectionChange: (next: GraphSelection | null) => void;
   /**
    * "drawer" (default): right-side fixed panel for desktop.
    * "sheet": full-screen overlay for mobile.
@@ -40,7 +39,6 @@ export function GraphDetailDrawer({
   edges,
   transactions,
   familyId,
-  onClose,
   onSelectionChange,
   variant = "drawer",
 }: GraphDetailDrawerProps) {
@@ -67,11 +65,12 @@ export function GraphDetailDrawer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectionFingerprint]);
 
+  const handleClose = () => onSelectionChange(null);
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
       if (e.key === "Escape") {
         e.preventDefault();
-        onClose();
+        onSelectionChange(null);
         return;
       }
       if (e.key === "Tab" && panelRef.current) {
@@ -96,22 +95,27 @@ export function GraphDetailDrawer({
     document.addEventListener("keydown", handleKey);
     closeBtnRef.current?.focus();
     return () => document.removeEventListener("keydown", handleKey);
-  }, [onClose]);
+  }, [onSelectionChange]);
+
+  const edgesById = useMemo(
+    () => new Map(edges.map((e) => [e.id, e])),
+    [edges],
+  );
 
   const isCompare = selection.type === "edge" && selection.edgeIds.length >= 2;
+  const compareEdgeCount =
+    selection.type === "edge" ? selection.edgeIds.length : 0;
   const widthClass = isCompare ? "w-[40rem]" : "w-96";
   const containerClass =
     variant === "sheet"
       ? "fixed inset-0 bg-card overflow-y-auto z-50"
       : `absolute top-0 right-0 bottom-0 ${widthClass} bg-card border-l border-border/60 shadow-lg overflow-y-auto z-10`;
 
-  const handleRemoveEdge = onSelectionChange
-    ? (edgeId: string) => {
-        if (selection.type !== "edge") return;
-        const next = selection.edgeIds.filter((id) => id !== edgeId);
-        onSelectionChange(next.length === 0 ? null : { type: "edge", edgeIds: next });
-      }
-    : undefined;
+  const handleRemoveEdge = (edgeId: string) => {
+    if (selection.type !== "edge") return;
+    const next = selection.edgeIds.filter((id) => id !== edgeId);
+    onSelectionChange(next.length === 0 ? null : { type: "edge", edgeIds: next });
+  };
 
   return (
     <div
@@ -124,14 +128,12 @@ export function GraphDetailDrawer({
       <div className="sticky top-0 flex items-center justify-between px-4 py-3 border-b border-border/60 bg-card">
         {/* Allowed per design: graph headers may use Source Serif 4 (relaxes marketing-only rule). */}
         <h2 className="font-serif text-base text-sage-800">
-          {isCompare
-            ? `Comparing ${(selection as { edgeIds: string[] }).edgeIds.length} stints`
-            : "Details"}
+          {isCompare ? `Comparing ${compareEdgeCount} stints` : "Details"}
         </h2>
         <button
           ref={closeBtnRef}
           type="button"
-          onClick={onClose}
+          onClick={handleClose}
           className="inline-flex items-center justify-center h-7 w-7 rounded-md hover:bg-accent hover:text-accent-foreground"
           aria-label="Close details"
         >
@@ -146,17 +148,17 @@ export function GraphDetailDrawer({
             transactions={transactions}
             familyId={familyId}
           />
-        ) : selection.edgeIds.length >= 2 ? (
+        ) : isCompare ? (
           <EdgeCompare
             edges={selection.edgeIds
-              .map((id) => edges.find((e) => e.id === id))
+              .map((id) => edgesById.get(id))
               .filter((e): e is GraphEdge => Boolean(e))}
             familyId={familyId}
             onRemove={handleRemoveEdge}
           />
         ) : (
           <EdgeDetail
-            edge={edges.find((e) => e.id === selection.edgeIds[0]) ?? null}
+            edge={edgesById.get(selection.edgeIds[0]) ?? null}
             familyId={familyId}
           />
         )}
@@ -423,27 +425,27 @@ const COMPARE_METRIC_ROWS = [
   {
     label: "PPG",
     raw: (s: StintStatsResponse) => s.ppg,
-    value: (s: StintStatsResponse) => fmtNumber(s.ppg),
+    format: fmtNumber,
     hint: (s: StintStatsResponse) =>
       `${s.weeksActive} wk${s.weeksActive === 1 ? "" : "s"}`,
   },
   {
     label: "PPG starting",
     raw: (s: StintStatsResponse) => s.ppgStarting,
-    value: (s: StintStatsResponse) => fmtNumber(s.ppgStarting),
+    format: fmtNumber,
     hint: (s: StintStatsResponse) =>
       `${s.starterWeeks} wk${s.starterWeeks === 1 ? "" : "s"}`,
   },
   {
     label: "Start %",
     raw: (s: StintStatsResponse) => s.startPct,
-    value: (s: StintStatsResponse) => fmtPercent(s.startPct),
+    format: fmtPercent,
     hint: (s: StintStatsResponse) => `${s.starterWeeks}/${s.weeksActive}`,
   },
   {
     label: "Active %",
     raw: (s: StintStatsResponse) => s.activePct,
-    value: (s: StintStatsResponse) => fmtPercent(s.activePct),
+    format: fmtPercent,
     hint: (s: StintStatsResponse) => `${s.weeksActive}/${s.weeksAvailable}`,
   },
 ] as const;
@@ -515,35 +517,35 @@ function EdgeCompare({
   onRemove?: (edgeId: string) => void;
 }) {
   const statsByEdge = useStintStatsByEdge(familyId, edges);
-  const leadersByRow = useMemo(() => {
-    const map = new Map<string, Set<string>>();
-    for (const row of COMPARE_METRIC_ROWS) {
-      const candidates: Array<{ id: string; value: number }> = [];
-      for (const edge of edges) {
-        const state = statsByEdge.get(edge.id);
-        if (state?.status !== "ok") continue;
-        if (state.data.weeksActive === 0) continue;
-        const raw = row.raw(state.data);
-        if (raw == null) continue;
-        candidates.push({ id: edge.id, value: raw });
-      }
-      if (candidates.length < 2) continue;
-      const max = Math.max(...candidates.map((c) => c.value));
-      map.set(
-        row.label,
-        new Set(candidates.filter((c) => c.value === max).map((c) => c.id)),
-      );
-    }
-    return map;
-  }, [edges, statsByEdge]);
   if (edges.length === 0) {
     return <p className="text-sm text-muted-foreground">No stints to compare.</p>;
+  }
+  // Computed inline: deps (edges, statsByEdge) get fresh references on every
+  // setState in useStintStatsByEdge, so useMemo wouldn't actually cache. The
+  // work is N*4 lookups — cheap.
+  const leadersByRow = new Map<string, Set<string>>();
+  for (const row of COMPARE_METRIC_ROWS) {
+    const candidates: Array<{ id: string; value: number }> = [];
+    for (const edge of edges) {
+      const state = statsByEdge.get(edge.id);
+      if (state?.status !== "ok") continue;
+      if (state.data.weeksActive === 0) continue;
+      const raw = row.raw(state.data);
+      if (raw == null) continue;
+      candidates.push({ id: edge.id, value: raw });
+    }
+    if (candidates.length < 2) continue;
+    const max = Math.max(...candidates.map((c) => c.value));
+    leadersByRow.set(
+      row.label,
+      new Set(candidates.filter((c) => c.value === max).map((c) => c.id)),
+    );
   }
   const colTemplate = `100px repeat(${edges.length}, minmax(120px, 1fr))`;
 
   return (
     <div className="space-y-3">
-      <div className="overflow-x-auto -mx-4 px-4">
+      <div className="-mx-4 px-4 overflow-x-auto">
         <div className="min-w-max space-y-2">
           <div
             className="grid gap-2 items-stretch"
@@ -680,7 +682,7 @@ function CompareCell({
     : "font-mono text-base font-semibold text-foreground leading-tight";
   return (
     <div className={containerClass} aria-label={isLeader ? "Top value" : undefined}>
-      <p className={valueClass}>{row.value(state.data)}</p>
+      <p className={valueClass}>{row.format(row.raw(state.data))}</p>
       <p className="font-mono text-[10px] text-muted-foreground">
         {row.hint(state.data)}
       </p>
