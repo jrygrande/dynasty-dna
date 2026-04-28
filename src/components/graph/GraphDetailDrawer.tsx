@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowRight, X } from "lucide-react";
 import type { GraphEdge, GraphNode, GraphSelection } from "@/lib/assetGraph";
@@ -264,11 +264,155 @@ function EdgeDetail({ edge, familyId }: { edge: GraphEdge | null; familyId: stri
         <p className="text-xs text-muted-foreground">Manager</p>
         <p className="text-sm">{edge.managerName}</p>
       </div>
+      {edge.assetKind === "player" && edge.playerId && (
+        <PlayerStintStats familyId={familyId} edge={edge} />
+      )}
       <p className="text-xs text-muted-foreground">
         {edge.startSeason} W{edge.startWeek} → {endLabel}
       </p>
     </div>
   );
+}
+
+interface StintStatsResponse {
+  ppg: number | null;
+  ppgStarting: number | null;
+  startPct: number | null;
+  activePct: number | null;
+  weeksInWindow: number;
+  weeksRostered: number;
+  starterWeeks: number;
+}
+
+function PlayerStintStats({
+  familyId,
+  edge,
+}: {
+  familyId: string;
+  edge: GraphEdge;
+}) {
+  const [stats, setStats] = useState<StintStatsResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    if (!edge.playerId) return;
+    let cancelled = false;
+    setLoading(true);
+    setError(false);
+
+    const sp = new URLSearchParams({
+      managerUserId: edge.managerUserId,
+      startSeason: edge.startSeason,
+      startWeek: String(edge.startWeek),
+    });
+    if (edge.endSeason) sp.set("endSeason", edge.endSeason);
+    if (edge.endWeek != null) sp.set("endWeek", String(edge.endWeek));
+
+    fetch(
+      `/api/leagues/${familyId}/player/${encodeURIComponent(edge.playerId)}/stint-stats?${sp.toString()}`,
+    )
+      .then((res) => (res.ok ? res.json() : Promise.reject()))
+      .then((data: StintStatsResponse) => {
+        if (!cancelled) setStats(data);
+      })
+      .catch(() => {
+        if (!cancelled) setError(true);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    familyId,
+    edge.playerId,
+    edge.managerUserId,
+    edge.startSeason,
+    edge.startWeek,
+    edge.endSeason,
+    edge.endWeek,
+  ]);
+
+  if (loading) {
+    return (
+      <div className="grid grid-cols-2 gap-2">
+        {[0, 1, 2, 3].map((i) => (
+          <div key={i} className="h-14 rounded-md bg-muted animate-pulse" />
+        ))}
+      </div>
+    );
+  }
+
+  if (error || !stats || stats.weeksRostered === 0) {
+    return (
+      <p className="text-xs text-muted-foreground">
+        No scoring weeks recorded for this stint.
+      </p>
+    );
+  }
+
+  return (
+    <div>
+      <p className="text-xs text-muted-foreground mb-1.5">Stint stats</p>
+      <div className="grid grid-cols-2 gap-2">
+        <StatTile
+          label="PPG"
+          value={fmtNumber(stats.ppg)}
+          hint={`${stats.weeksRostered} wk${stats.weeksRostered === 1 ? "" : "s"}`}
+        />
+        <StatTile
+          label="PPG starting"
+          value={fmtNumber(stats.ppgStarting)}
+          hint={`${stats.starterWeeks} wk${stats.starterWeeks === 1 ? "" : "s"}`}
+        />
+        <StatTile
+          label="Start %"
+          value={fmtPercent(stats.startPct)}
+          hint={`${stats.starterWeeks}/${stats.weeksRostered}`}
+        />
+        <StatTile
+          label="Active %"
+          value={fmtPercent(stats.activePct)}
+          hint={`${stats.weeksRostered}/${stats.weeksInWindow}`}
+        />
+      </div>
+    </div>
+  );
+}
+
+function StatTile({
+  label,
+  value,
+  hint,
+}: {
+  label: string;
+  value: string;
+  hint: string;
+}) {
+  return (
+    <div className="rounded-md border border-border/60 bg-background px-2.5 py-1.5">
+      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+        {label}
+      </p>
+      <p className="font-mono text-base font-semibold text-foreground leading-tight">
+        {value}
+      </p>
+      <p className="font-mono text-[10px] text-muted-foreground">{hint}</p>
+    </div>
+  );
+}
+
+function fmtNumber(n: number | null): string {
+  if (n == null) return "—";
+  return n.toFixed(1);
+}
+
+function fmtPercent(n: number | null): string {
+  if (n == null) return "—";
+  return `${Math.round(n * 100)}%`;
 }
 
 export default GraphDetailDrawer;
