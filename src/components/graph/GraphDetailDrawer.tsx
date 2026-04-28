@@ -279,8 +279,8 @@ interface StintStatsResponse {
   ppgStarting: number | null;
   startPct: number | null;
   activePct: number | null;
-  weeksInWindow: number;
-  weeksRostered: number;
+  weeksAvailable: number;
+  weeksActive: number;
   starterWeeks: number;
 }
 
@@ -346,10 +346,10 @@ function PlayerStintStats({
     );
   }
 
-  if (error || !stats || stats.weeksRostered === 0) {
+  if (error || !stats || stats.weeksActive === 0) {
     return (
       <p className="text-xs text-muted-foreground">
-        No scoring weeks recorded for this stint.
+        No active scoring weeks recorded for this stint.
       </p>
     );
   }
@@ -361,7 +361,7 @@ function PlayerStintStats({
         <StatTile
           label="PPG"
           value={fmtNumber(stats.ppg)}
-          hint={`${stats.weeksRostered} wk${stats.weeksRostered === 1 ? "" : "s"}`}
+          hint={`${stats.weeksActive} wk${stats.weeksActive === 1 ? "" : "s"}`}
         />
         <StatTile
           label="PPG starting"
@@ -371,12 +371,12 @@ function PlayerStintStats({
         <StatTile
           label="Start %"
           value={fmtPercent(stats.startPct)}
-          hint={`${stats.starterWeeks}/${stats.weeksRostered}`}
+          hint={`${stats.starterWeeks}/${stats.weeksActive}`}
         />
         <StatTile
           label="Active %"
           value={fmtPercent(stats.activePct)}
-          hint={`${stats.weeksRostered}/${stats.weeksInWindow}`}
+          hint={`${stats.weeksActive}/${stats.weeksAvailable}`}
         />
       </div>
     </div>

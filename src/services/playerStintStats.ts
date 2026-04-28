@@ -18,10 +18,15 @@ export interface StintStats {
   ppgStarting: number | null;
   startPct: number | null;
   activePct: number | null;
-  weeksInWindow: number;
-  weeksRostered: number;
+  /** Stint weeks that weren't byes (denominator for Active %). */
+  weeksAvailable: number;
+  /** Non-bye stint weeks where the player was on an NFL active roster (status=ACT). */
+  weeksActive: number;
+  /** Subset of weeksActive where the manager started the player. */
   starterWeeks: number;
+  /** Sum of points across active weeks only (bye and inactive weeks excluded). */
   totalPoints: number;
+  /** Sum of points across active+starter weeks. */
   starterPoints: number;
   byeWeeksExcluded: number;
 }
@@ -108,6 +113,8 @@ export async function computePlayerStintStats(
 
   const seasonsInWindow = [...new Set([...windowKeys].map((k) => parseInt(k.split("|")[0], 10)))];
   const byeKeys = new Set<string>();
+  const activeKeys = new Set<string>();
+
   if (gsisId && seasonsInWindow.length > 0) {
     const [statusRows, scheduleRows] = await Promise.all([
       db
@@ -126,8 +133,11 @@ export async function computePlayerStintStats(
     ]);
 
     const playerTeamByWeek = new Map<string, string>();
+    const playerStatusByWeek = new Map<string, string>();
     for (const r of statusRows) {
-      if (r.team) playerTeamByWeek.set(`${r.season}|${r.week}`, r.team);
+      const key = `${r.season}|${r.week}`;
+      if (r.team) playerTeamByWeek.set(key, r.team);
+      playerStatusByWeek.set(key, r.status);
     }
 
     const teamPlayedWeeks = new Map<string, Set<number>>();
@@ -171,9 +181,20 @@ export async function computePlayerStintStats(
         byeKeys.add(key);
       }
     }
+
+    for (const key of windowKeys) {
+      if (byeKeys.has(key)) continue;
+      if (playerStatusByWeek.get(key) === "ACT") activeKeys.add(key);
+    }
+  } else {
+    // No NFL status data available — treat every non-bye window week as active
+    // so we don't artificially deflate Active % for older or unsigned players.
+    for (const key of windowKeys) {
+      if (!byeKeys.has(key)) activeKeys.add(key);
+    }
   }
 
-  const weeksInWindow = windowKeys.size - byeKeys.size;
+  const weeksAvailable = windowKeys.size - byeKeys.size;
 
   const perLeaguePairs = [...leagueRosterMap.entries()].map(([lid, rid]) =>
     and(
@@ -196,7 +217,6 @@ export async function computePlayerStintStats(
       ),
     );
 
-  let weeksRostered = 0;
   let starterWeeks = 0;
   let totalPoints = 0;
   let starterPoints = 0;
@@ -204,9 +224,7 @@ export async function computePlayerStintStats(
     const season = leagueSeasonMap.get(s.leagueId);
     if (!season) continue;
     const key = `${season}|${s.week}`;
-    if (!windowKeys.has(key)) continue;
-    if (byeKeys.has(key)) continue;
-    weeksRostered += 1;
+    if (!activeKeys.has(key)) continue;
     const pts = s.points ?? 0;
     totalPoints += pts;
     if (s.isStarter) {
@@ -215,13 +233,14 @@ export async function computePlayerStintStats(
     }
   }
 
+  const weeksActive = activeKeys.size;
   return {
-    ppg: weeksRostered > 0 ? totalPoints / weeksRostered : null,
+    ppg: weeksActive > 0 ? totalPoints / weeksActive : null,
     ppgStarting: starterWeeks > 0 ? starterPoints / starterWeeks : null,
-    startPct: weeksRostered > 0 ? starterWeeks / weeksRostered : null,
-    activePct: weeksInWindow > 0 ? weeksRostered / weeksInWindow : null,
-    weeksInWindow,
-    weeksRostered,
+    startPct: weeksActive > 0 ? starterWeeks / weeksActive : null,
+    activePct: weeksAvailable > 0 ? weeksActive / weeksAvailable : null,
+    weeksAvailable,
+    weeksActive,
     starterWeeks,
     totalPoints,
     starterPoints,
@@ -235,8 +254,8 @@ function emptyStats(): StintStats {
     ppgStarting: null,
     startPct: null,
     activePct: null,
-    weeksInWindow: 0,
-    weeksRostered: 0,
+    weeksAvailable: 0,
+    weeksActive: 0,
     starterWeeks: 0,
     totalPoints: 0,
     starterPoints: 0,
