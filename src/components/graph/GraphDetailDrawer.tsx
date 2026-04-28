@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowRight, X } from "lucide-react";
 import type { GraphEdge, GraphNode, GraphSelection } from "@/lib/assetGraph";
@@ -302,7 +302,7 @@ function EdgeDetail({ edge, familyId }: { edge: GraphEdge | null; familyId: stri
         {edge.startSeason} W{edge.startWeek} → {endLabel}
       </p>
       {edge.assetKind === "player" && edge.playerId && (
-        <p className="text-[11px] text-muted-foreground pt-1 border-t border-border/40">
+        <p className="text-[11px] tip-shimmer pt-1 border-t border-border/40">
           Tip: <kbd className="font-mono">⌘</kbd>-click another stint to compare.
         </p>
       )}
@@ -422,23 +422,27 @@ function PlayerStintStats({
 const COMPARE_METRIC_ROWS = [
   {
     label: "PPG",
+    raw: (s: StintStatsResponse) => s.ppg,
     value: (s: StintStatsResponse) => fmtNumber(s.ppg),
     hint: (s: StintStatsResponse) =>
       `${s.weeksActive} wk${s.weeksActive === 1 ? "" : "s"}`,
   },
   {
     label: "PPG starting",
+    raw: (s: StintStatsResponse) => s.ppgStarting,
     value: (s: StintStatsResponse) => fmtNumber(s.ppgStarting),
     hint: (s: StintStatsResponse) =>
       `${s.starterWeeks} wk${s.starterWeeks === 1 ? "" : "s"}`,
   },
   {
     label: "Start %",
+    raw: (s: StintStatsResponse) => s.startPct,
     value: (s: StintStatsResponse) => fmtPercent(s.startPct),
     hint: (s: StintStatsResponse) => `${s.starterWeeks}/${s.weeksActive}`,
   },
   {
     label: "Active %",
+    raw: (s: StintStatsResponse) => s.activePct,
     value: (s: StintStatsResponse) => fmtPercent(s.activePct),
     hint: (s: StintStatsResponse) => `${s.weeksActive}/${s.weeksAvailable}`,
   },
@@ -511,6 +515,27 @@ function EdgeCompare({
   onRemove?: (edgeId: string) => void;
 }) {
   const statsByEdge = useStintStatsByEdge(familyId, edges);
+  const leadersByRow = useMemo(() => {
+    const map = new Map<string, Set<string>>();
+    for (const row of COMPARE_METRIC_ROWS) {
+      const candidates: Array<{ id: string; value: number }> = [];
+      for (const edge of edges) {
+        const state = statsByEdge.get(edge.id);
+        if (state?.status !== "ok") continue;
+        if (state.data.weeksActive === 0) continue;
+        const raw = row.raw(state.data);
+        if (raw == null) continue;
+        candidates.push({ id: edge.id, value: raw });
+      }
+      if (candidates.length < 2) continue;
+      const max = Math.max(...candidates.map((c) => c.value));
+      map.set(
+        row.label,
+        new Set(candidates.filter((c) => c.value === max).map((c) => c.id)),
+      );
+    }
+    return map;
+  }, [edges, statsByEdge]);
   if (edges.length === 0) {
     return <p className="text-sm text-muted-foreground">No stints to compare.</p>;
   }
@@ -550,13 +575,14 @@ function EdgeCompare({
                   edge={edge}
                   state={statsByEdge.get(edge.id) ?? { status: "loading" }}
                   row={row}
+                  isLeader={leadersByRow.get(row.label)?.has(edge.id) ?? false}
                 />
               ))}
             </div>
           ))}
         </div>
       </div>
-      <p className="text-[11px] text-muted-foreground">
+      <p className="text-[11px] tip-shimmer">
         Tip: <kbd className="font-mono">⌘</kbd>-click an edge to add or remove it from this comparison.
       </p>
     </div>
@@ -615,10 +641,12 @@ function CompareCell({
   edge,
   state,
   row,
+  isLeader,
 }: {
   edge: GraphEdge;
   state: StintStatsState;
   row: (typeof COMPARE_METRIC_ROWS)[number];
+  isLeader: boolean;
 }) {
   const isPlayer = edge.assetKind === "player" && Boolean(edge.playerId);
 
@@ -644,11 +672,15 @@ function CompareCell({
       </div>
     );
   }
+  const containerClass = isLeader
+    ? "rounded-md border border-primary/40 bg-primary/5 px-2 py-1.5 text-center"
+    : "rounded-md border border-border/60 bg-background px-2 py-1.5 text-center";
+  const valueClass = isLeader
+    ? "font-mono text-base font-semibold text-primary leading-tight"
+    : "font-mono text-base font-semibold text-foreground leading-tight";
   return (
-    <div className="rounded-md border border-border/60 bg-background px-2 py-1.5 text-center">
-      <p className="font-mono text-base font-semibold text-foreground leading-tight">
-        {row.value(state.data)}
-      </p>
+    <div className={containerClass} aria-label={isLeader ? "Top value" : undefined}>
+      <p className={valueClass}>{row.value(state.data)}</p>
       <p className="font-mono text-[10px] text-muted-foreground">
         {row.hint(state.data)}
       </p>

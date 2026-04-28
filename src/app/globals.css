@@ -119,3 +119,31 @@
     font-variant-numeric: tabular-nums;
   }
 }
+
+@layer utilities {
+  /* Soft sage shimmer for tip text. Uses background-clip:text so the
+     gradient animates across the glyph fills rather than the box. */
+  .tip-shimmer {
+    background-image: linear-gradient(
+      90deg,
+      hsl(var(--muted-foreground)) 0%,
+      hsl(var(--muted-foreground)) 40%,
+      hsl(var(--primary)) 50%,
+      hsl(var(--muted-foreground)) 60%,
+      hsl(var(--muted-foreground)) 100%
+    );
+    background-size: 300% 100%;
+    background-clip: text;
+    -webkit-background-clip: text;
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+    @apply animate-tip-shimmer;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .tip-shimmer {
+      animation: none;
+      color: hsl(var(--muted-foreground));
+      -webkit-text-fill-color: hsl(var(--muted-foreground));
+    }
+  }
+}
