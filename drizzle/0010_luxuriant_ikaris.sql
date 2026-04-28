@@ -1,0 +1,1 @@
+CREATE INDEX "league_family_members_league_id_idx" ON "league_family_members" USING btree ("league_id");
