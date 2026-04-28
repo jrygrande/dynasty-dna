@@ -71,6 +71,13 @@
       "when": 1777226373692,
       "tag": "0009_whole_firestar",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1777377668749,
+      "tag": "0010_luxuriant_ikaris",
+      "breakpoints": true
     }
   ]
 }

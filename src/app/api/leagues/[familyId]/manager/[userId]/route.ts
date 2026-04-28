@@ -12,7 +12,6 @@ export async function GET(
     const { familyId: rawFamilyId, userId } = await params;
     const db = getDb();
 
-    // Resolve familyId (supports both UUID and rootLeagueId)
     const familyId = await resolveFamily(rawFamilyId);
     if (!familyId) {
       return NextResponse.json(

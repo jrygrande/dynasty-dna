@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, schema } from "@/db";
 import { eq, and, inArray, sql } from "drizzle-orm";
+import { resolveFamily } from "@/lib/familyResolution";
 
 /**
  * GET /api/leagues/[familyId]/player/[playerId]/weekly-log
@@ -28,29 +29,7 @@ export async function GET(
   const rosterIdFilter = searchParams.get("rosterId");
   const starterOnly = searchParams.get("starterOnly") === "true";
 
-  // --- Resolve family → league IDs ---
-  const isUuid =
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
-      familyId
-    );
-
-  let resolvedFamilyId: string | null = null;
-  if (isUuid) {
-    const family = await db
-      .select()
-      .from(schema.leagueFamilies)
-      .where(eq(schema.leagueFamilies.id, familyId))
-      .limit(1);
-    if (family.length > 0) resolvedFamilyId = family[0].id;
-  }
-  if (!resolvedFamilyId) {
-    const family = await db
-      .select()
-      .from(schema.leagueFamilies)
-      .where(eq(schema.leagueFamilies.rootLeagueId, familyId))
-      .limit(1);
-    if (family.length > 0) resolvedFamilyId = family[0].id;
-  }
+  const resolvedFamilyId = await resolveFamily(familyId);
   if (!resolvedFamilyId) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }

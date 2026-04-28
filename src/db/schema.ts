@@ -111,7 +111,11 @@ export const leagueFamilies = pgTable(
   "league_families",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    rootLeagueId: text("root_league_id").notNull(), // The most recent league in the chain
+    // The league_id used to seed the family. Intended to be the most recent
+    // season at sync time, but can drift after a season rollover — do not rely
+    // on this for "current league" lookups; query league_family_members and
+    // pick the latest season instead.
+    rootLeagueId: text("root_league_id").notNull(),
     name: text("name").notNull(),
     createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
   },
@@ -135,6 +139,7 @@ export const leagueFamilyMembers = pgTable(
   },
   (lfm) => ({
     pk: primaryKey({ columns: [lfm.familyId, lfm.leagueId] }),
+    leagueIdIdx: index("league_family_members_league_id_idx").on(lfm.leagueId),
   })
 );
 

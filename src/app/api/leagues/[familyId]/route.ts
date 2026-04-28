@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, schema } from "@/db";
 import { eq } from "drizzle-orm";
+import { resolveFamily } from "@/lib/familyResolution";
 
 export async function GET(
   req: NextRequest,
@@ -10,30 +11,10 @@ export async function GET(
   const familyId = params.familyId;
   const seasonParam = req.nextUrl.searchParams.get("season");
 
-  // UUID format check — only query the UUID column if it looks like a UUID
-  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(familyId);
+  const resolvedFamilyId = await resolveFamily(familyId);
 
-  // First try to find as a family ID (only if it's a valid UUID)
-  let family: (typeof schema.leagueFamilies.$inferSelect)[] = [];
-  if (isUuid) {
-    family = await db
-      .select()
-      .from(schema.leagueFamilies)
-      .where(eq(schema.leagueFamilies.id, familyId))
-      .limit(1);
-  }
-
-  // If not found, treat familyId as a league ID (for direct navigation)
-  if (family.length === 0) {
-    family = await db
-      .select()
-      .from(schema.leagueFamilies)
-      .where(eq(schema.leagueFamilies.rootLeagueId, familyId))
-      .limit(1);
-  }
-
-  if (family.length === 0) {
-    // League exists but no family yet — return basic league data
+  if (!resolvedFamilyId) {
+    // No family yet — try to return basic league data if a matching league row exists
     const leagues = await db
       .select()
       .from(schema.leagues)
@@ -87,19 +68,22 @@ export async function GET(
   const members = await db
     .select()
     .from(schema.leagueFamilyMembers)
-    .where(eq(schema.leagueFamilyMembers.familyId, family[0].id));
+    .where(eq(schema.leagueFamilyMembers.familyId, resolvedFamilyId));
 
   const seasons = members
     .map((m) => ({ leagueId: m.leagueId, season: m.season }))
     .sort((a, b) => Number(b.season) - Number(a.season));
 
-  // Determine which season's league to load
-  let currentLeagueId = family[0].rootLeagueId;
-  if (seasonParam) {
-    const seasonMatch = seasons.find((s) => s.season === seasonParam);
-    if (seasonMatch) {
-      currentLeagueId = seasonMatch.leagueId;
-    }
+  // Pick the season to render. Default to the most recent season rather
+  // than rootLeagueId, which can be stale after a season rollover.
+  const currentLeagueId =
+    (seasonParam &&
+      seasons.find((s) => s.season === seasonParam)?.leagueId) ||
+    members.find((m) => m.leagueId === familyId)?.leagueId ||
+    seasons[0]?.leagueId;
+
+  if (!currentLeagueId) {
+    return NextResponse.json({ error: "League not found" }, { status: 404 });
   }
 
   const leagues = await db
@@ -131,7 +115,7 @@ export async function GET(
       totalRosters: league.totalRosters,
       status: league.status,
     },
-    familyId: family[0].id,
+    familyId: resolvedFamilyId,
     seasons,
     rosters: rosters.map((r) => ({
       rosterId: r.rosterId,

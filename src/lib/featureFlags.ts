@@ -65,7 +65,7 @@ export const FLAGS = {
    */
   ASSET_GRAPH_BROWSER: {
     id: "asset-graph-browser",
-    title: "Asset Graph Browser",
+    title: "Lineage Tracer",
     description: "Interactive visualization of how players and picks flow between managers",
     status: "disabled",
     hypothesis:
