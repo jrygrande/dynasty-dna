@@ -152,17 +152,27 @@ function AssetGraphInner({
     return m;
   }, [expandedEntries]);
 
-  // Set of asset keys that have been expanded — used to route edges to
-  // per-asset-row handles instead of the card-level handles.
+  // Set of asset keys whose thread is "active" — routes edges through the
+  // per-asset-row handles and styles them as the thicker thread variant.
+  // Includes both URL-expanded entries AND auto-revealed threads from
+  // `useGraphVisibility` (seed asset, draft→player, draft→pick): the seed
+  // thread should look the same as a manually-clicked one without the user
+  // having to click `+` first.
   const expandedAssetKeys = useMemo(() => {
     const keys = new Set<string>();
-    if (!expandedEntries) return keys;
-    for (const entry of expandedEntries) {
-      const sep = entry.indexOf("~");
-      if (sep !== -1) keys.add(entry.slice(sep + 1));
+    if (expandedEntries) {
+      for (const entry of expandedEntries) {
+        const sep = entry.indexOf("~");
+        if (sep !== -1) keys.add(entry.slice(sep + 1));
+      }
+    }
+    if (chainAssetsByNode) {
+      for (const set of chainAssetsByNode.values()) {
+        for (const k of set) keys.add(k);
+      }
     }
     return keys;
-  }, [expandedEntries]);
+  }, [expandedEntries, chainAssetsByNode]);
 
   // Per-node hint that mirrors the rendered card's shape (rows, recipient
   // buckets, toggle bar) so the layout's height estimate matches what
