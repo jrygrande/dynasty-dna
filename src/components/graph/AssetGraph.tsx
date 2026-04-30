@@ -33,11 +33,10 @@ import { edgeAssetKey } from "@/lib/useGraphVisibility";
 
 import { TransactionNode, type TransactionNodeData } from "./nodes/TransactionNode";
 import type { TransactionNodeAsset } from "./TransactionCardChrome";
-import { buildTransactionHeader } from "./transactionHeader";
+import { buildTransactionHeader, isHeaderExpanded } from "./transactionHeader";
 import { CurrentRosterNode, type CurrentRosterNodeData } from "./nodes/CurrentRosterNode";
 import { TransactionEdge, type TransactionEdgeData } from "./edges/TransactionEdge";
-import { layout, type LayoutMode, type Pos } from "./layout";
-import { assignLanes } from "@/lib/graph/laneAssignment";
+import { layout, nodeDimensions, type NodeHints, type Pos } from "./layout";
 import { deriveSpawnParents } from "@/lib/graph/spawnParents";
 import { useGraphPositionTween } from "@/lib/graph/useGraphPositionTween";
 
@@ -46,7 +45,6 @@ export interface AssetGraphProps {
   edges: GraphEdge[];
   selection: GraphSelection | null;
   onSelect: (s: GraphSelection | null) => void;
-  layoutMode?: LayoutMode;
   seedIds?: string[];
   expandedEntries?: Set<string>;
   onAssetExpand?: (nodeId: string, assetKey: string) => void;
@@ -55,11 +53,6 @@ export interface AssetGraphProps {
   /** Set of node ids whose card is fully expanded (header was clicked). */
   fullyExpanded?: Set<string>;
   onHeaderToggle?: (nodeId: string) => void;
-  /** Asset key (e.g. "player:1234") of the originally-seeded asset. Drives
-   *  lane anchoring: the seed asset's thread sits at lane 0, others fan
-   *  above (negative) and below (positive) based on row position on the
-   *  seed card. */
-  seedAssetKey?: string;
   /** User-dragged positions that override the computed layout. Lifted to the
    *  page so a Reset-positions button can clear them. */
   manualPositions?: Map<string, Pos>;
@@ -118,14 +111,12 @@ function AssetGraphInner({
   edges,
   selection,
   onSelect,
-  layoutMode = "band",
   seedIds,
   expandedEntries,
   onAssetExpand,
   chainAssetsByNode,
   fullyExpanded,
   onHeaderToggle,
-  seedAssetKey,
   manualPositions,
   onManualPositionChange,
 }: AssetGraphProps) {
@@ -162,17 +153,27 @@ function AssetGraphInner({
     return keys;
   }, [expandedEntries]);
 
-  const lanes = useMemo(
-    () => assignLanes(seedIds ?? [], expandedEntries ?? new Set(), edges, nodes, seedAssetKey),
-    [seedIds, expandedEntries, edges, nodes, seedAssetKey],
-  );
+  // Per-node hint that mirrors the rendered card's row count, so the
+  // layout's height estimate matches what dagre will actually need.
+  const layoutHints = useMemo(() => {
+    const m = new Map<string, NodeHints>();
+    for (const n of nodes) {
+      if (n.kind !== "transaction") continue;
+      const chainSize = chainAssetsByNode?.get(n.id)?.size ?? 0;
+      const assetRows = isHeaderExpanded(n, fullyExpanded)
+        ? n.assets.length
+        : chainSize;
+      m.set(n.id, { assetRows });
+    }
+    return m;
+  }, [nodes, fullyExpanded, chainAssetsByNode]);
 
   // Track the previous render's target positions so `deriveSpawnParents`
   // (below) can identify newly-appearing nodes for the tween launch.
   const priorPositionsRef = useRef<Map<string, Pos>>(new Map());
 
   const targetPositions = useMemo(() => {
-    const computed = layout({ nodes, edges }, lanes, seedIds);
+    const computed = layout({ nodes, edges }, layoutHints);
     // User-dragged positions override the auto-layout. Layered here so the
     // tween hook treats a manual position as the new target and settles.
     if (manualPositions && manualPositions.size > 0) {
@@ -181,7 +182,7 @@ function AssetGraphInner({
       }
     }
     return computed;
-  }, [nodes, edges, lanes, manualPositions, seedIds]);
+  }, [nodes, edges, layoutHints, manualPositions]);
 
   const spawnParents = useMemo(
     () => deriveSpawnParents(nodes, edges, new Set(priorPositionsRef.current.keys())),
@@ -195,32 +196,16 @@ function AssetGraphInner({
     priorPositionsRef.current = targetPositions;
   }, [targetPositions]);
 
-  // Compute obstacle rectangles from node positions for edge routing.
-  // Transaction cards are 260px wide; height estimated from asset count.
-  // Current roster cards are 152x56.
+  // Obstacle rectangles share `nodeDimensions` with the layout so edge
+  // routing matches the cards dagre actually placed.
   const obstacleRects = useMemo<Obstacle[]>(() => {
     return nodes.map((n) => {
       const pos = positions.get(n.id);
       if (!pos) return null;
-      if (n.kind === "current_roster") {
-        return { x: pos.x, y: pos.y, width: 152, height: 56 };
-      }
-      // Estimate transaction card height: header ~50px + assets * 22px + padding.
-      // When the card is collapsed (header not toggled open), only chain-relevant
-      // assets are rendered, so use that count instead of the full asset list.
-      // Draft cards always render expanded (single-asset, nothing to hide).
-      const headerExpanded = n.txKind === "draft" || (fullyExpanded?.has(n.id) ?? false);
-      const chainSize = chainAssetsByNode?.get(n.id)?.size ?? 0;
-      const assetCount =
-        n.kind === "transaction"
-          ? headerExpanded
-            ? n.assets.length
-            : chainSize
-          : 0;
-      const height = 50 + Math.max(assetCount, 1) * 22 + 20;
-      return { x: pos.x, y: pos.y, width: 260, height };
+      const dim = nodeDimensions(n, layoutHints.get(n.id));
+      return { x: pos.x, y: pos.y, width: dim.width, height: dim.height };
     }).filter((r): r is Obstacle => r !== null);
-  }, [nodes, positions, fullyExpanded, chainAssetsByNode]);
+  }, [nodes, positions, layoutHints]);
 
   // For each node, compute which asset keys are expanded (including downstream
   // nodes in the thread, not just the node where the user clicked +).
@@ -400,9 +385,7 @@ function AssetGraphInner({
 
       const header = buildTransactionHeader(n);
       const chainAssetKeys = chainAssetsByNode?.get(n.id) ?? new Set<string>();
-      // Draft cards always render expanded — they only have one asset, so the
-      // collapsed/header-only view shows nothing extra and feels broken.
-      const headerExpanded = n.txKind === "draft" || (fullyExpanded?.has(n.id) ?? false);
+      const headerExpanded = isHeaderExpanded(n, fullyExpanded);
 
       return {
         id: n.id,

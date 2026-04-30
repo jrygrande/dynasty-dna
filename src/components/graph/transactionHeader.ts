@@ -1,9 +1,22 @@
-import type { TransactionNode } from "@/lib/assetGraph";
+import type { GraphNode, TransactionNode } from "@/lib/assetGraph";
 import { getRoundSuffix } from "@/lib/utils";
 
 export interface TransactionHeader {
   title: string;
   subtitle: string;
+}
+
+/**
+ * Whether a node's card renders all of its asset rows. Draft cards always
+ * do (single asset, nothing to hide); trade/waiver/FA cards only when the
+ * user has clicked the header to expand it.
+ */
+export function isHeaderExpanded(
+  node: GraphNode,
+  fullyExpanded: Set<string> | undefined,
+): boolean {
+  if (node.kind !== "transaction") return false;
+  return node.txKind === "draft" || (fullyExpanded?.has(node.id) ?? false);
 }
 
 /**

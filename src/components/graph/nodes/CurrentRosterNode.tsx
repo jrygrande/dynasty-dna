@@ -4,6 +4,7 @@ import { memo } from "react";
 import { Handle, Position, type NodeProps } from "reactflow";
 
 import { cn } from "@/lib/utils";
+import { ROSTER_HEIGHT, ROSTER_WIDTH } from "../layout";
 
 export interface CurrentRosterNodeData {
   displayName: string;
@@ -29,7 +30,7 @@ function CurrentRosterNodeImpl({ data, selected }: NodeProps<CurrentRosterNodeDa
         isSelected && "ring-2 ring-primary",
         data.dimmed && "opacity-30",
       )}
-      style={{ width: 152, height: 56 }}
+      style={{ width: ROSTER_WIDTH, height: ROSTER_HEIGHT }}
       aria-label={`Current roster of ${data.displayName}`}
     >
       <Handle type="target" position={Position.Left} id="card-target" className="!bg-transparent !border-0" />
