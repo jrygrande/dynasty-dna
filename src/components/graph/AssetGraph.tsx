@@ -305,6 +305,21 @@ function AssetGraphInner({
     [nodes],
   );
 
+  // Set of draft node IDs. Draft cards carry the *player* drafted as their
+  // only asset row, NOT the pick that was consumed (the pick lives on the
+  // incoming tenure edge — see assetGraph.ts). So a `pick` tenure edge
+  // ending at a draft can't anchor to `asset-target-{pickKey}` on the
+  // draft side: that handle is never rendered. Fall back to `card-target`.
+  const draftNodeIds = useMemo(
+    () =>
+      new Set(
+        nodes
+          .filter((n) => n.kind === "transaction" && n.txKind === "draft")
+          .map((n) => n.id),
+      ),
+    [nodes],
+  );
+
   // Compute gutter offsets: for expanded edges sharing the same source→target
   // column pair, spread them vertically so they don't overlap.
   const gutterOffsets = useMemo(() => {
@@ -331,12 +346,18 @@ function AssetGraphInner({
       const isExpanded = expandedAssetKeys.has(aKey);
       const assetLabel =
         e.assetKind === "player" ? e.playerName ?? "" : e.pickLabel ?? "";
+      // A pick tenure ending at a draft must use the draft card's edge
+      // handle: the draft card has no pick row to anchor to (see
+      // `draftNodeIds`).
+      const targetMissingAssetRow =
+        rosterNodeIds.has(e.target) ||
+        (e.assetKind === "pick" && draftNodeIds.has(e.target));
       return {
         id: e.id,
         source: e.source,
         target: e.target,
         sourceHandle: isExpanded && !rosterNodeIds.has(e.source) ? `asset-source-${aKey}` : "card-source",
-        targetHandle: isExpanded && !rosterNodeIds.has(e.target) ? `asset-target-${aKey}` : "card-target",
+        targetHandle: isExpanded && !targetMissingAssetRow ? `asset-target-${aKey}` : "card-target",
         type: "transaction",
         // Edges stay below `NODE_Z` so cards always paint on top. Expanded
         // edges still float above non-expanded ones via the 1 vs 0 ordering.
@@ -353,7 +374,7 @@ function AssetGraphInner({
         },
       };
     });
-  }, [edges, selection, expandedAssetKeys, rosterNodeIds]);
+  }, [edges, selection, expandedAssetKeys, rosterNodeIds, draftNodeIds, gutterOffsets]);
 
   const flowNodes = useMemo<Node<FlowNodeData>[]>(() => {
     return nodes.map((n): Node<FlowNodeData> => {
