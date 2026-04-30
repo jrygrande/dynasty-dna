@@ -25,18 +25,26 @@ export const NODE_WIDTH = 260;
 export const ROSTER_WIDTH = 152;
 export const ROSTER_HEIGHT = 56;
 
-// Card height = header + (asset rows × row height) + bottom padding. Tuned
-// against rendered cards in the wild (a 3-asset trade renders ~156px tall;
-// a 1-asset draft ~107px). A small overshoot is preferable to undershoot
-// since dagre uses the height as the minimum vertical footprint.
-const HEADER_HEIGHT = 70;
-const ROW_HEIGHT = 22;
-const VERTICAL_PADDING = 24;
+// Card height = header + per-bucket header rows + per-asset rows + optional
+// toggle bar + bottom padding. Constants tuned against rendered cards in
+// the wild (a 1-asset draft ~107px; a 3-asset trade ~156px). A small
+// overshoot is preferable to undershoot since dagre uses the height as the
+// minimum vertical footprint, and undershooting causes visible overlap.
+const HEADER_HEIGHT = 56;
+const BUCKET_HEADER_HEIGHT = 22;
+const ROW_HEIGHT = 26;
+const TOGGLE_BAR_HEIGHT = 28;
+const VERTICAL_PADDING = 6;
 
 export interface NodeHints {
   /** Number of asset rows currently rendered (chain-only when collapsed,
    *  all assets when the header is open or the card is a draft). */
   assetRows: number;
+  /** Number of distinct recipient buckets in the visible asset list — each
+   *  contributes a "→ MANAGER" subheader row. */
+  bucketCount: number;
+  /** Whether the bottom "Show N more / Collapse" bar is rendered. */
+  hasToggleBar: boolean;
 }
 
 /**
@@ -53,13 +61,18 @@ export function layout(
   const g = new dagre.graphlib.Graph({ multigraph: false, compound: false });
   g.setGraph({
     rankdir: "LR",
-    ranker: "longest-path",
+    // network-simplex packs ranks tightly while preserving direction —
+    // longest-path inflates horizontal distance when one branch is much
+    // longer than another, leaving large empty gaps between adjacent
+    // ranks. Network-simplex is slower but well within budget for the
+    // <50-node graphs this view ever shows.
+    ranker: "network-simplex",
     // Vertical gap between cards sharing a column. Tight enough to read
     // as a single thread, loose enough that adjacent cards aren't kissing.
     nodesep: 36,
     // Horizontal gap between columns. Cards are 260px wide; this gives
     // room for edge labels + bezier curvature without long diagonals.
-    ranksep: 80,
+    ranksep: 70,
     edgesep: 12,
     marginx: 40,
     marginy: 40,
@@ -108,8 +121,24 @@ export function nodeDimensions(
   if (node.kind === "current_roster") {
     return { width: ROSTER_WIDTH, height: ROSTER_HEIGHT };
   }
-  const fallbackRows = node.txKind === "draft" ? 1 : node.assets.length;
-  const rows = Math.max(hints?.assetRows ?? fallbackRows, 1);
-  const height = HEADER_HEIGHT + rows * ROW_HEIGHT + VERTICAL_PADDING;
+  const rows = Math.max(hints?.assetRows ?? defaultRows(node), 1);
+  const buckets = Math.max(hints?.bucketCount ?? defaultBuckets(node), 1);
+  const toggle = hints?.hasToggleBar ? TOGGLE_BAR_HEIGHT : 0;
+  const height =
+    HEADER_HEIGHT +
+    buckets * BUCKET_HEADER_HEIGHT +
+    rows * ROW_HEIGHT +
+    toggle +
+    VERTICAL_PADDING;
   return { width: NODE_WIDTH, height };
+}
+
+function defaultRows(node: Extract<GraphNode, { kind: "transaction" }>): number {
+  return node.txKind === "draft" ? 1 : node.assets.length;
+}
+
+function defaultBuckets(node: Extract<GraphNode, { kind: "transaction" }>): number {
+  const recipients = new Set<string>();
+  for (const a of node.assets) recipients.add(a.toUserId ?? "__none__");
+  return recipients.size;
 }

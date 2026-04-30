@@ -237,8 +237,16 @@ describe("layout (dagre)", () => {
     // Both code paths funnel through `nodeDimensions` so an expanded card
     // can't overlap edges that the layout thought were clear.
     const node = tx("tx:1", 4);
-    const collapsedDim = nodeDimensions(node, { assetRows: 1 });
-    const expandedDim = nodeDimensions(node, { assetRows: 4 });
+    const collapsedDim = nodeDimensions(node, {
+      assetRows: 1,
+      bucketCount: 1,
+      hasToggleBar: true,
+    });
+    const expandedDim = nodeDimensions(node, {
+      assetRows: 4,
+      bucketCount: 1,
+      hasToggleBar: false,
+    });
     expect(expandedDim.height > collapsedDim.height).toBe(true);
     expect(expandedDim.width).toBe(collapsedDim.width);
   });

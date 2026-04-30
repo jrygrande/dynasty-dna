@@ -20,6 +20,37 @@ export function isHeaderExpanded(
 }
 
 /**
+ * Layout-relevant shape of a transaction card given the current expansion
+ * state. Mirrors `TransactionCardChrome`'s render logic so the layout's
+ * height estimate tracks what actually paints. Returns null for non-
+ * transaction nodes (current rosters render at a fixed size).
+ */
+export function cardShape(
+  node: GraphNode,
+  fullyExpanded: Set<string> | undefined,
+  chainAssetKeys: Set<string> | undefined,
+): { assetRows: number; bucketCount: number; hasToggleBar: boolean } | null {
+  if (node.kind !== "transaction") return null;
+  const expanded = isHeaderExpanded(node, fullyExpanded);
+  const visible = expanded
+    ? node.assets
+    : node.assets.filter((a) => chainAssetKeys?.has(assetKey(a)) ?? false);
+  const recipients = new Set<string>();
+  for (const a of visible) recipients.add(a.toUserId ?? "__none__");
+  const collapsibleCount = node.assets.length - (chainAssetKeys?.size ?? 0);
+  return {
+    assetRows: visible.length,
+    bucketCount: recipients.size,
+    hasToggleBar: collapsibleCount > 0,
+  };
+}
+
+function assetKey(a: { kind: "player" | "pick"; playerId?: string; pickSeason?: string; pickRound?: number; pickOriginalRosterId?: number }): string {
+  if (a.kind === "player") return `player:${a.playerId}`;
+  return `pick:${a.pickSeason}:${a.pickRound}:${a.pickOriginalRosterId}`;
+}
+
+/**
  * Format a transaction's date. Falls back to "season · Wweek" when the
  * createdAt timestamp is missing or unparseable.
  */

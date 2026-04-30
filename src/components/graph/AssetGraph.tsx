@@ -33,7 +33,7 @@ import { edgeAssetKey } from "@/lib/useGraphVisibility";
 
 import { TransactionNode, type TransactionNodeData } from "./nodes/TransactionNode";
 import type { TransactionNodeAsset } from "./TransactionCardChrome";
-import { buildTransactionHeader, isHeaderExpanded } from "./transactionHeader";
+import { buildTransactionHeader, cardShape, isHeaderExpanded } from "./transactionHeader";
 import { CurrentRosterNode, type CurrentRosterNodeData } from "./nodes/CurrentRosterNode";
 import { TransactionEdge, type TransactionEdgeData } from "./edges/TransactionEdge";
 import { layout, nodeDimensions, type NodeHints, type Pos } from "./layout";
@@ -153,17 +153,14 @@ function AssetGraphInner({
     return keys;
   }, [expandedEntries]);
 
-  // Per-node hint that mirrors the rendered card's row count, so the
-  // layout's height estimate matches what dagre will actually need.
+  // Per-node hint that mirrors the rendered card's shape (rows, recipient
+  // buckets, toggle bar) so the layout's height estimate matches what
+  // dagre will actually need to leave room for.
   const layoutHints = useMemo(() => {
     const m = new Map<string, NodeHints>();
     for (const n of nodes) {
-      if (n.kind !== "transaction") continue;
-      const chainSize = chainAssetsByNode?.get(n.id)?.size ?? 0;
-      const assetRows = isHeaderExpanded(n, fullyExpanded)
-        ? n.assets.length
-        : chainSize;
-      m.set(n.id, { assetRows });
+      const shape = cardShape(n, fullyExpanded, chainAssetsByNode?.get(n.id));
+      if (shape) m.set(n.id, shape);
     }
     return m;
   }, [nodes, fullyExpanded, chainAssetsByNode]);
