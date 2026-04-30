@@ -1,9 +1,44 @@
-import type { TransactionNode } from "@/lib/assetGraph";
+import { assetKey, type GraphNode, type TransactionNode } from "@/lib/assetGraph";
 import { getRoundSuffix } from "@/lib/utils";
 
 export interface TransactionHeader {
   title: string;
   subtitle: string;
+}
+
+/** Draft cards always render expanded (single asset, nothing to hide). */
+export function isHeaderExpanded(
+  node: GraphNode,
+  fullyExpanded: Set<string> | undefined,
+): boolean {
+  if (node.kind !== "transaction") return false;
+  return node.txKind === "draft" || (fullyExpanded?.has(node.id) ?? false);
+}
+
+/**
+ * Layout-relevant shape of a transaction card given the current expansion
+ * state. Mirrors `TransactionCardChrome`'s render logic so the layout's
+ * height estimate tracks what actually paints. Returns null for non-
+ * transaction nodes (current rosters render at a fixed size).
+ */
+export function cardShape(
+  node: GraphNode,
+  fullyExpanded: Set<string> | undefined,
+  chainAssetKeys: Set<string> | undefined,
+): { assetRows: number; bucketCount: number; hasToggleBar: boolean } | null {
+  if (node.kind !== "transaction") return null;
+  const expanded = isHeaderExpanded(node, fullyExpanded);
+  const visible = expanded
+    ? node.assets
+    : node.assets.filter((a) => chainAssetKeys?.has(assetKey(a)) ?? false);
+  const recipients = new Set<string>();
+  for (const a of visible) recipients.add(a.toUserId ?? "__none__");
+  const collapsibleCount = node.assets.length - (chainAssetKeys?.size ?? 0);
+  return {
+    assetRows: visible.length,
+    bucketCount: recipients.size,
+    hasToggleBar: collapsibleCount > 0,
+  };
 }
 
 /**

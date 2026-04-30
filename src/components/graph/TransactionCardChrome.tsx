@@ -16,6 +16,7 @@ import {
 
 import { cn } from "@/lib/utils";
 import type { TransactionKind } from "@/lib/assetGraph";
+import { NODE_WIDTH } from "./layout";
 import type { TransactionHeader } from "./transactionHeader";
 
 export interface TransactionNodeAsset {
@@ -218,7 +219,7 @@ export function TransactionCardChrome({
         isSelected && "ring-2 ring-primary",
         data.dimmed && "opacity-30",
       )}
-      style={{ width: 260 }}
+      style={{ width: NODE_WIDTH }}
       aria-label={data.header.title}
       onClick={handleNodeClick}
     >

@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import type { Graph, GraphEdge, GraphNode } from "./assetGraph";
+import { assetKey, type Graph, type GraphEdge, type GraphNode } from "./assetGraph";
 
 /**
  * Expansion entries:
@@ -41,20 +41,25 @@ const EMPTY: Visibility = {
   chainAssetsByNode: new Map(),
 };
 
-/** Compute the asset key for an edge (matches URL encoding used by asset-row clicks). */
+/** Compute the asset key for an edge, returning "" when the edge is
+ *  missing its identifying fields (so callers can skip it cleanly). */
 export function edgeAssetKey(edge: GraphEdge): string {
-  if (edge.assetKind === "player" && edge.playerId) return `player:${edge.playerId}`;
+  if (edge.assetKind === "player" && !edge.playerId) return "";
   if (
     edge.assetKind === "pick" &&
-    edge.pickSeason !== null &&
-    edge.pickRound !== null &&
-    edge.pickOriginalRosterId !== null
+    (edge.pickSeason === null ||
+      edge.pickRound === null ||
+      edge.pickOriginalRosterId === null)
   ) {
-    // leagueId isn't on the edge directly — we rely on the event's pick tuple being
-    // unique within the family for the scope of rendering. Encode what we have.
-    return `pick:${edge.pickSeason}:${edge.pickRound}:${edge.pickOriginalRosterId}`;
+    return "";
   }
-  return "";
+  return assetKey({
+    kind: edge.assetKind,
+    playerId: edge.playerId,
+    pickSeason: edge.pickSeason,
+    pickRound: edge.pickRound,
+    pickOriginalRosterId: edge.pickOriginalRosterId,
+  });
 }
 
 export function useGraphVisibility(

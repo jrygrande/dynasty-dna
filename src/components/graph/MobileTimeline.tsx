@@ -20,7 +20,7 @@ import {
   type TransactionCardChromeData,
   type TransactionNodeAsset,
 } from "./TransactionCardChrome";
-import { buildTransactionHeader } from "./transactionHeader";
+import { buildTransactionHeader, isHeaderExpanded } from "./transactionHeader";
 
 interface MobileTimelineProps {
   familyId: string;
@@ -273,8 +273,7 @@ function MobileCard({
   onSelect: (nodeId: string) => void;
 }) {
   const header = buildTransactionHeader(node);
-  const headerExpanded =
-    node.txKind === "draft" || fullyExpanded.has(node.id);
+  const headerExpanded = isHeaderExpanded(node, fullyExpanded);
   const dimmed = chainAssetKeys.size === 0 && !headerExpanded;
 
   const nameByUser = new Map(
