@@ -36,7 +36,14 @@ import type { TransactionNodeAsset } from "./TransactionCardChrome";
 import { buildTransactionHeader, cardShape, isHeaderExpanded } from "./transactionHeader";
 import { CurrentRosterNode, type CurrentRosterNodeData } from "./nodes/CurrentRosterNode";
 import { TransactionEdge, type TransactionEdgeData } from "./edges/TransactionEdge";
-import { layout, nodeDimensions, type NodeHints, type Pos } from "./layout";
+import {
+  layout,
+  nodeDimensions,
+  ROSTER_HEIGHT,
+  ROSTER_WIDTH,
+  type NodeHints,
+  type Pos,
+} from "./layout";
 import { deriveSpawnParents } from "@/lib/graph/spawnParents";
 import { useGraphPositionTween } from "@/lib/graph/useGraphPositionTween";
 
@@ -86,6 +93,10 @@ const ObstaclesContext = createContext<Obstacle[]>([]);
 export function useObstacles() {
   return useContext(ObstaclesContext);
 }
+
+/** Node zIndex sits above the 0–1 band reserved for edges, so cards
+ *  always paint on top of the edges that connect them. */
+const NODE_Z = 10;
 
 const nodeTypes: NodeTypes = {
   transaction: TransactionNode,
@@ -194,14 +205,19 @@ function AssetGraphInner({
   }, [targetPositions]);
 
   // Obstacle rectangles share `nodeDimensions` with the layout so edge
-  // routing matches the cards dagre actually placed.
+  // routing matches the cards dagre actually placed. Pre-sorted by `x`
+  // ascending so `routeEdgePath` (called once per edge per frame during
+  // a tween) doesn't re-sort.
   const obstacleRects = useMemo<Obstacle[]>(() => {
-    return nodes.map((n) => {
-      const pos = positions.get(n.id);
-      if (!pos) return null;
-      const dim = nodeDimensions(n, layoutHints.get(n.id));
-      return { x: pos.x, y: pos.y, width: dim.width, height: dim.height };
-    }).filter((r): r is Obstacle => r !== null);
+    return nodes
+      .map((n): Obstacle | null => {
+        const pos = positions.get(n.id);
+        if (!pos) return null;
+        const dim = nodeDimensions(n, layoutHints.get(n.id));
+        return { x: pos.x, y: pos.y, width: dim.width, height: dim.height };
+      })
+      .filter((r): r is Obstacle => r !== null)
+      .sort((a, b) => a.x - b.x);
   }, [nodes, positions, layoutHints]);
 
   // For each node, compute which asset keys are expanded (including downstream
@@ -312,7 +328,9 @@ function AssetGraphInner({
         sourceHandle: isExpanded && !rosterNodeIds.has(e.source) ? `asset-source-${aKey}` : "card-source",
         targetHandle: isExpanded && !rosterNodeIds.has(e.target) ? `asset-target-${aKey}` : "card-target",
         type: "transaction",
-        zIndex: isExpanded ? 10 : undefined,
+        // Edges stay below `NODE_Z` so cards always paint on top. Expanded
+        // edges still float above non-expanded ones via the 1 vs 0 ordering.
+        zIndex: isExpanded ? 1 : 0,
         selected:
           selection?.type === "edge" && selection.edgeIds.includes(e.id),
         data: {
@@ -338,6 +356,12 @@ function AssetGraphInner({
           type: "current_roster",
           position: pos,
           selected: isSelected,
+          // Forwarding the fixed roster dimensions lets React Flow place
+          // handles on the first paint, before its ResizeObserver fires —
+          // without this the player→roster edge briefly anchored at (0, 0)
+          // and only completed after a second interaction.
+          style: { width: ROSTER_WIDTH, height: ROSTER_HEIGHT },
+          zIndex: NODE_Z,
           data: {
             displayName: n.displayName,
             avatar: n.avatar,
@@ -389,6 +413,10 @@ function AssetGraphInner({
         type: "transaction",
         position: pos,
         selected: isSelected,
+        // Transaction heights are content-determined, so React Flow
+        // measures them — forcing a layout-estimated height here would
+        // misplace handles when the card overshoots its estimate.
+        zIndex: NODE_Z,
         data: {
           txKind: n.txKind,
           header,

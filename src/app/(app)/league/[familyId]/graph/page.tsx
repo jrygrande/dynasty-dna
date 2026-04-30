@@ -326,8 +326,10 @@ export default function GraphPage() {
     });
   }, [updateUrl]);
 
-  // User-dragged card overrides for the auto-layout. Session-only — clears
-  // when the seed changes (different graph) or via the Reset-positions button.
+  // User-dragged card overrides for the auto-layout. Cleared on topology
+  // change (seed swap, chain expansion) so a card dragged earlier can't
+  // sit somewhere that breaks chronological order for a newly-revealed
+  // thread — that's the wrap-around edge the issue calls out.
   const [manualPositions, setManualPositions] = useState<Map<string, Pos>>(
     () => new Map(),
   );
@@ -339,12 +341,18 @@ export default function GraphPage() {
     });
   }, []);
   const handleResetManualPositions = useCallback(() => {
-    setManualPositions(new Map());
+    setManualPositions((prev) => (prev.size === 0 ? prev : new Map()));
   }, []);
   const seedKey = seed.join(",");
+  // Sorted so insertion order doesn't trigger spurious resets.
+  const visibleNodeHash = useMemo(() => {
+    const ids = visibility.visibleNodes.map((n) => n.id);
+    ids.sort();
+    return ids.join(",");
+  }, [visibility.visibleNodes]);
   useEffect(() => {
-    setManualPositions(new Map());
-  }, [seedKey]);
+    setManualPositions((prev) => (prev.size === 0 ? prev : new Map()));
+  }, [seedKey, visibleNodeHash]);
 
   const hasSeed = seed.length > 0;
   const selectedNodeId =
