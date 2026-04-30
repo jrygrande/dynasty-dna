@@ -36,7 +36,14 @@ import type { TransactionNodeAsset } from "./TransactionCardChrome";
 import { buildTransactionHeader, cardShape, isHeaderExpanded } from "./transactionHeader";
 import { CurrentRosterNode, type CurrentRosterNodeData } from "./nodes/CurrentRosterNode";
 import { TransactionEdge, type TransactionEdgeData } from "./edges/TransactionEdge";
-import { layout, nodeDimensions, type NodeHints, type Pos } from "./layout";
+import {
+  layout,
+  nodeDimensions,
+  ROSTER_HEIGHT,
+  ROSTER_WIDTH,
+  type NodeHints,
+  type Pos,
+} from "./layout";
 import { deriveSpawnParents } from "@/lib/graph/spawnParents";
 import { useGraphPositionTween } from "@/lib/graph/useGraphPositionTween";
 
@@ -86,6 +93,10 @@ const ObstaclesContext = createContext<Obstacle[]>([]);
 export function useObstacles() {
   return useContext(ObstaclesContext);
 }
+
+/** Node zIndex sits above the 0–1 band reserved for edges, so cards
+ *  always paint on top of the edges that connect them. */
+const NODE_Z = 10;
 
 const nodeTypes: NodeTypes = {
   transaction: TransactionNode,
@@ -141,17 +152,27 @@ function AssetGraphInner({
     return m;
   }, [expandedEntries]);
 
-  // Set of asset keys that have been expanded — used to route edges to
-  // per-asset-row handles instead of the card-level handles.
+  // Set of asset keys whose thread is "active" — routes edges through the
+  // per-asset-row handles and styles them as the thicker thread variant.
+  // Includes both URL-expanded entries AND auto-revealed threads from
+  // `useGraphVisibility` (seed asset, draft→player, draft→pick): the seed
+  // thread should look the same as a manually-clicked one without the user
+  // having to click `+` first.
   const expandedAssetKeys = useMemo(() => {
     const keys = new Set<string>();
-    if (!expandedEntries) return keys;
-    for (const entry of expandedEntries) {
-      const sep = entry.indexOf("~");
-      if (sep !== -1) keys.add(entry.slice(sep + 1));
+    if (expandedEntries) {
+      for (const entry of expandedEntries) {
+        const sep = entry.indexOf("~");
+        if (sep !== -1) keys.add(entry.slice(sep + 1));
+      }
+    }
+    if (chainAssetsByNode) {
+      for (const set of chainAssetsByNode.values()) {
+        for (const k of set) keys.add(k);
+      }
     }
     return keys;
-  }, [expandedEntries]);
+  }, [expandedEntries, chainAssetsByNode]);
 
   // Per-node hint that mirrors the rendered card's shape (rows, recipient
   // buckets, toggle bar) so the layout's height estimate matches what
@@ -194,14 +215,19 @@ function AssetGraphInner({
   }, [targetPositions]);
 
   // Obstacle rectangles share `nodeDimensions` with the layout so edge
-  // routing matches the cards dagre actually placed.
+  // routing matches the cards dagre actually placed. Pre-sorted by `x`
+  // ascending so `routeEdgePath` (called once per edge per frame during
+  // a tween) doesn't re-sort.
   const obstacleRects = useMemo<Obstacle[]>(() => {
-    return nodes.map((n) => {
-      const pos = positions.get(n.id);
-      if (!pos) return null;
-      const dim = nodeDimensions(n, layoutHints.get(n.id));
-      return { x: pos.x, y: pos.y, width: dim.width, height: dim.height };
-    }).filter((r): r is Obstacle => r !== null);
+    return nodes
+      .map((n): Obstacle | null => {
+        const pos = positions.get(n.id);
+        if (!pos) return null;
+        const dim = nodeDimensions(n, layoutHints.get(n.id));
+        return { x: pos.x, y: pos.y, width: dim.width, height: dim.height };
+      })
+      .filter((r): r is Obstacle => r !== null)
+      .sort((a, b) => a.x - b.x);
   }, [nodes, positions, layoutHints]);
 
   // For each node, compute which asset keys are expanded (including downstream
@@ -279,6 +305,21 @@ function AssetGraphInner({
     [nodes],
   );
 
+  // Set of draft node IDs. Draft cards carry the *player* drafted as their
+  // only asset row, NOT the pick that was consumed (the pick lives on the
+  // incoming tenure edge — see assetGraph.ts). So a `pick` tenure edge
+  // ending at a draft can't anchor to `asset-target-{pickKey}` on the
+  // draft side: that handle is never rendered. Fall back to `card-target`.
+  const draftNodeIds = useMemo(
+    () =>
+      new Set(
+        nodes
+          .filter((n) => n.kind === "transaction" && n.txKind === "draft")
+          .map((n) => n.id),
+      ),
+    [nodes],
+  );
+
   // Compute gutter offsets: for expanded edges sharing the same source→target
   // column pair, spread them vertically so they don't overlap.
   const gutterOffsets = useMemo(() => {
@@ -305,14 +346,22 @@ function AssetGraphInner({
       const isExpanded = expandedAssetKeys.has(aKey);
       const assetLabel =
         e.assetKind === "player" ? e.playerName ?? "" : e.pickLabel ?? "";
+      // A pick tenure ending at a draft must use the draft card's edge
+      // handle: the draft card has no pick row to anchor to (see
+      // `draftNodeIds`).
+      const targetMissingAssetRow =
+        rosterNodeIds.has(e.target) ||
+        (e.assetKind === "pick" && draftNodeIds.has(e.target));
       return {
         id: e.id,
         source: e.source,
         target: e.target,
         sourceHandle: isExpanded && !rosterNodeIds.has(e.source) ? `asset-source-${aKey}` : "card-source",
-        targetHandle: isExpanded && !rosterNodeIds.has(e.target) ? `asset-target-${aKey}` : "card-target",
+        targetHandle: isExpanded && !targetMissingAssetRow ? `asset-target-${aKey}` : "card-target",
         type: "transaction",
-        zIndex: isExpanded ? 10 : undefined,
+        // Edges stay below `NODE_Z` so cards always paint on top. Expanded
+        // edges still float above non-expanded ones via the 1 vs 0 ordering.
+        zIndex: isExpanded ? 1 : 0,
         selected:
           selection?.type === "edge" && selection.edgeIds.includes(e.id),
         data: {
@@ -325,7 +374,7 @@ function AssetGraphInner({
         },
       };
     });
-  }, [edges, selection, expandedAssetKeys, rosterNodeIds]);
+  }, [edges, selection, expandedAssetKeys, rosterNodeIds, draftNodeIds, gutterOffsets]);
 
   const flowNodes = useMemo<Node<FlowNodeData>[]>(() => {
     return nodes.map((n): Node<FlowNodeData> => {
@@ -338,6 +387,12 @@ function AssetGraphInner({
           type: "current_roster",
           position: pos,
           selected: isSelected,
+          // Forwarding the fixed roster dimensions lets React Flow place
+          // handles on the first paint, before its ResizeObserver fires —
+          // without this the player→roster edge briefly anchored at (0, 0)
+          // and only completed after a second interaction.
+          style: { width: ROSTER_WIDTH, height: ROSTER_HEIGHT },
+          zIndex: NODE_Z,
           data: {
             displayName: n.displayName,
             avatar: n.avatar,
@@ -389,6 +444,10 @@ function AssetGraphInner({
         type: "transaction",
         position: pos,
         selected: isSelected,
+        // Transaction heights are content-determined, so React Flow
+        // measures them — forcing a layout-estimated height here would
+        // misplace handles when the card overshoots its estimate.
+        zIndex: NODE_Z,
         data: {
           txKind: n.txKind,
           header,

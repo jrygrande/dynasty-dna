@@ -64,158 +64,170 @@ export function edgeAssetKey(edge: GraphEdge): string {
 
 export function useGraphVisibility(
   graph: Graph | null,
+  state: VisibilityState,
+): Visibility {
+  const { seed, expanded, removed, seedAssetKey } = state;
+  return useMemo<Visibility>(
+    () => computeVisibility(graph, state),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [graph, seed, expanded, removed, seedAssetKey],
+  );
+}
+
+/** Pure compute kernel. Exported for unit tests; production callers should
+ *  use `useGraphVisibility` so React memoizes against state changes. */
+export function computeVisibility(
+  graph: Graph | null,
   { seed, expanded, removed, seedAssetKey }: VisibilityState,
 ): Visibility {
-  return useMemo<Visibility>(() => {
-    if (!graph) return EMPTY;
+  if (!graph) return EMPTY;
 
-    const seedSet = new Set(seed);
+  const seedSet = new Set(seed);
 
-    // Index edges by node id for fast incidence lookup.
-    const edgesByNode = new Map<string, GraphEdge[]>();
-    // Index edges by asset key for full-thread expansion.
-    const edgesByAsset = new Map<string, GraphEdge[]>();
-    for (const e of graph.edges) {
-      let s = edgesByNode.get(e.source);
-      if (!s) {
-        s = [];
-        edgesByNode.set(e.source, s);
+  // Index edges by node id for fast incidence lookup.
+  const edgesByNode = new Map<string, GraphEdge[]>();
+  // Index edges by asset key for full-thread expansion.
+  const edgesByAsset = new Map<string, GraphEdge[]>();
+  for (const e of graph.edges) {
+    let s = edgesByNode.get(e.source);
+    if (!s) {
+      s = [];
+      edgesByNode.set(e.source, s);
+    }
+    s.push(e);
+    if (e.target !== e.source) {
+      let t = edgesByNode.get(e.target);
+      if (!t) {
+        t = [];
+        edgesByNode.set(e.target, t);
       }
-      s.push(e);
-      if (e.target !== e.source) {
-        let t = edgesByNode.get(e.target);
-        if (!t) {
-          t = [];
-          edgesByNode.set(e.target, t);
-        }
-        t.push(e);
+      t.push(e);
+    }
+    const aKey = edgeAssetKey(e);
+    if (aKey) {
+      let a = edgesByAsset.get(aKey);
+      if (!a) {
+        a = [];
+        edgesByAsset.set(aKey, a);
       }
-      const aKey = edgeAssetKey(e);
-      if (aKey) {
-        let a = edgesByAsset.get(aKey);
-        if (!a) {
-          a = [];
-          edgesByAsset.set(aKey, a);
-        }
-        a.push(e);
+      a.push(e);
+    }
+  }
+
+  const visible = new Set<string>(seedSet);
+  const visibleEdgeIds = new Set<string>();
+
+  // Seed nodes are always visible. For seed nodes, we also expose every
+  // tenure edge incident to them (so a seed of [tradeNode, rosterNode]
+  // naturally draws the tenure between them).
+  for (const id of seedSet) {
+    const incident = edgesByNode.get(id) ?? [];
+    for (const e of incident) {
+      if (seedSet.has(e.source) && seedSet.has(e.target)) {
+        visibleEdgeIds.add(e.id);
       }
     }
+  }
 
-    const visible = new Set<string>(seedSet);
-    const visibleEdgeIds = new Set<string>();
+  // Track the set of asset keys that are "expanded" (full-thread) for chain
+  // computation. Whole-node expansion entries don't contribute here.
+  const expandedAssetKeySet = new Set<string>();
 
-    // Seed nodes are always visible. For seed nodes, we also expose every
-    // tenure edge incident to them (so a seed of [tradeNode, rosterNode]
-    // naturally draws the tenure between them).
-    for (const id of seedSet) {
-      const incident = edgesByNode.get(id) ?? [];
+  const revealThread = (key: string | undefined) => {
+    if (!key || expandedAssetKeySet.has(key)) return;
+    expandedAssetKeySet.add(key);
+    for (const e of edgesByAsset.get(key) ?? []) {
+      visible.add(e.source);
+      visible.add(e.target);
+      visibleEdgeIds.add(e.id);
+    }
+  };
+
+  // The seed asset is auto-expanded — its full thread (e.g. a player's
+  // draft → trades → current roster) shows by default without the user
+  // having to click `+` on the seed asset's row.
+  revealThread(seedAssetKey);
+
+  for (const entry of expanded) {
+    const sepIdx = entry.indexOf("~");
+    if (sepIdx === -1) {
+      // Whole-node expansion: add all neighbors.
+      const incident = edgesByNode.get(entry) ?? [];
       for (const e of incident) {
-        if (seedSet.has(e.source) && seedSet.has(e.target)) {
-          visibleEdgeIds.add(e.id);
-        }
-      }
-    }
-
-    // Track the set of asset keys that are "expanded" (full-thread) for chain
-    // computation. Whole-node expansion entries don't contribute here.
-    const expandedAssetKeySet = new Set<string>();
-
-    const revealThread = (key: string | undefined) => {
-      if (!key || expandedAssetKeySet.has(key)) return;
-      expandedAssetKeySet.add(key);
-      for (const e of edgesByAsset.get(key) ?? []) {
         visible.add(e.source);
         visible.add(e.target);
         visibleEdgeIds.add(e.id);
       }
-    };
-
-    // The seed asset is auto-expanded — its full thread (e.g. a player's
-    // draft → trades → current roster) shows by default without the user
-    // having to click `+` on the seed asset's row.
-    revealThread(seedAssetKey);
-
-    for (const entry of expanded) {
-      const sepIdx = entry.indexOf("~");
-      if (sepIdx === -1) {
-        // Whole-node expansion: add all neighbors.
-        const incident = edgesByNode.get(entry) ?? [];
-        for (const e of incident) {
-          visible.add(e.source);
-          visible.add(e.target);
-          visibleEdgeIds.add(e.id);
-        }
-        visible.add(entry);
-        continue;
-      }
-      // Per-asset expansion: reveal ALL edges for this asset across the graph.
-      revealThread(entry.slice(sepIdx + 1));
+      visible.add(entry);
+      continue;
     }
+    // Per-asset expansion: reveal ALL edges for this asset across the graph.
+    revealThread(entry.slice(sepIdx + 1));
+  }
 
-    // For any visible draft node, auto-expand both halves of the lineage:
-    //   - the player drafted at this node (so seeding by a pick reveals
-    //     pick → draft → player → roster without an extra click), and
-    //   - the originating pick (so seeding by a player reveals the pick's
-    //     pre-draft trade history backwards from the draft).
-    // Single-pass: pick auto-expansion only reveals pick_trade nodes (never
-    // new drafts), so no recursive cascade is needed.
-    for (const node of graph.nodes) {
-      if (node.kind !== "transaction" || node.txKind !== "draft") continue;
-      if (!visible.has(node.id)) continue;
-      for (const asset of node.assets) {
-        if (asset.kind === "player" && asset.playerId) {
-          revealThread(`player:${asset.playerId}`);
-        }
-      }
-      // Pick identity lives on the incoming pick tenure edge (draft_selected
-      // closes the pick tenure at this node). Picks never traded before the
-      // draft have no incoming pick edge, so this is a no-op for them.
-      for (const e of edgesByNode.get(node.id) ?? []) {
-        if (e.target !== node.id || e.assetKind !== "pick") continue;
-        revealThread(edgeAssetKey(e));
+  // For any visible draft node, auto-expand both halves of the lineage:
+  //   - the player drafted at this node (so seeding by a pick reveals
+  //     pick → draft → player → roster without an extra click), and
+  //   - the originating pick (so seeding by a player reveals the pick's
+  //     pre-draft trade history backwards from the draft).
+  // Single-pass: pick auto-expansion only reveals pick_trade nodes (never
+  // new drafts), so no recursive cascade is needed.
+  for (const node of graph.nodes) {
+    if (node.kind !== "transaction" || node.txKind !== "draft") continue;
+    if (!visible.has(node.id)) continue;
+    for (const asset of node.assets) {
+      if (asset.kind === "player" && asset.playerId) {
+        revealThread(`player:${asset.playerId}`);
       }
     }
-
-    for (const id of removed) visible.delete(id);
-
-    const visibleNodes = graph.nodes
-      .filter((n) => visible.has(n.id))
-      .map((n) => ({ ...n, layout: undefined }));
-
-    const visibleEdges = graph.edges.filter(
-      (e) =>
-        visibleEdgeIds.has(e.id) &&
-        visible.has(e.source) &&
-        visible.has(e.target),
-    );
-
-    // Compute chain-relevant asset keys per visible transaction node.
-    // - Seed node: include the seed asset key (if defined).
-    // - Any node: include each incident visible-edge's asset key whose
-    //   thread is currently expanded.
-    const chainAssetsByNode = new Map<string, Set<string>>();
-    for (const n of visibleNodes) {
-      if (n.kind !== "transaction") continue;
-      const set = new Set<string>();
-      if (seedSet.has(n.id) && seedAssetKey) set.add(seedAssetKey);
-      chainAssetsByNode.set(n.id, set);
+    // Pick identity lives on the incoming pick tenure edge (draft_selected
+    // closes the pick tenure at this node). Picks never traded before the
+    // draft have no incoming pick edge, so this is a no-op for them.
+    for (const e of edgesByNode.get(node.id) ?? []) {
+      if (e.target !== node.id || e.assetKind !== "pick") continue;
+      revealThread(edgeAssetKey(e));
     }
-    for (const e of visibleEdges) {
-      const aKey = edgeAssetKey(e);
-      if (!aKey || !expandedAssetKeySet.has(aKey)) continue;
-      for (const nid of [e.source, e.target]) {
-        const set = chainAssetsByNode.get(nid);
-        if (set) set.add(aKey);
-      }
-    }
+  }
 
-    return {
-      visibleNodes,
-      visibleEdges,
-      isExpanded: (id) => expanded.has(id),
-      isAssetExpanded: (nodeId, assetKey) => expanded.has(`${nodeId}~${assetKey}`),
-      isSeed: (id) => seedSet.has(id),
-      chainAssetsByNode,
-    };
-  }, [graph, seed, expanded, removed, seedAssetKey]);
+  for (const id of removed) visible.delete(id);
+
+  const visibleNodes = graph.nodes
+    .filter((n) => visible.has(n.id))
+    .map((n) => ({ ...n, layout: undefined }));
+
+  const visibleEdges = graph.edges.filter(
+    (e) =>
+      visibleEdgeIds.has(e.id) &&
+      visible.has(e.source) &&
+      visible.has(e.target),
+  );
+
+  // Compute chain-relevant asset keys per visible transaction node.
+  // - Seed node: include the seed asset key (if defined).
+  // - Any node: include each incident visible-edge's asset key whose
+  //   thread is currently expanded.
+  const chainAssetsByNode = new Map<string, Set<string>>();
+  for (const n of visibleNodes) {
+    if (n.kind !== "transaction") continue;
+    const set = new Set<string>();
+    if (seedSet.has(n.id) && seedAssetKey) set.add(seedAssetKey);
+    chainAssetsByNode.set(n.id, set);
+  }
+  for (const e of visibleEdges) {
+    const aKey = edgeAssetKey(e);
+    if (!aKey || !expandedAssetKeySet.has(aKey)) continue;
+    for (const nid of [e.source, e.target]) {
+      const set = chainAssetsByNode.get(nid);
+      if (set) set.add(aKey);
+    }
+  }
+
+  return {
+    visibleNodes,
+    visibleEdges,
+    isExpanded: (id) => expanded.has(id),
+    isAssetExpanded: (nodeId, assetKey) => expanded.has(`${nodeId}~${assetKey}`),
+    isSeed: (id) => seedSet.has(id),
+    chainAssetsByNode,
+  };
 }
