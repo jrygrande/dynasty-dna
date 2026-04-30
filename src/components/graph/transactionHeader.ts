@@ -1,4 +1,4 @@
-import type { GraphNode, TransactionNode } from "@/lib/assetGraph";
+import { assetKey, type GraphNode, type TransactionNode } from "@/lib/assetGraph";
 import { getRoundSuffix } from "@/lib/utils";
 
 export interface TransactionHeader {
@@ -6,11 +6,7 @@ export interface TransactionHeader {
   subtitle: string;
 }
 
-/**
- * Whether a node's card renders all of its asset rows. Draft cards always
- * do (single asset, nothing to hide); trade/waiver/FA cards only when the
- * user has clicked the header to expand it.
- */
+/** Draft cards always render expanded (single asset, nothing to hide). */
 export function isHeaderExpanded(
   node: GraphNode,
   fullyExpanded: Set<string> | undefined,
@@ -43,11 +39,6 @@ export function cardShape(
     bucketCount: recipients.size,
     hasToggleBar: collapsibleCount > 0,
   };
-}
-
-function assetKey(a: { kind: "player" | "pick"; playerId?: string; pickSeason?: string; pickRound?: number; pickOriginalRosterId?: number }): string {
-  if (a.kind === "player") return `player:${a.playerId}`;
-  return `pick:${a.pickSeason}:${a.pickRound}:${a.pickOriginalRosterId}`;
 }
 
 /**

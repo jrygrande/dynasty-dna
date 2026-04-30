@@ -28,7 +28,7 @@ import ReactFlow, {
 } from "reactflow";
 import "reactflow/dist/style.css";
 
-import type { GraphEdge, GraphNode, GraphSelection } from "@/lib/assetGraph";
+import { assetKey, type GraphEdge, type GraphNode, type GraphSelection } from "@/lib/assetGraph";
 import { edgeAssetKey } from "@/lib/useGraphVisibility";
 
 import { TransactionNode, type TransactionNodeData } from "./nodes/TransactionNode";
@@ -355,7 +355,7 @@ function AssetGraphInner({
           const name = a.playerName ?? a.playerId ?? "Player";
           return {
             kind: "player",
-            assetKey: `player:${a.playerId}`,
+            assetKey: assetKey(a),
             label: name,
             position,
             toUserId: a.toUserId,
@@ -371,7 +371,7 @@ function AssetGraphInner({
         const ownerLabel = parenIdx >= 0 ? fullLabel.slice(parenIdx + 1) : undefined;
         return {
           kind: "pick",
-          assetKey: `pick:${a.pickSeason}:${a.pickRound}:${a.pickOriginalRosterId}`,
+          assetKey: assetKey(a),
           label,
           ownerLabel,
           toUserId: a.toUserId,

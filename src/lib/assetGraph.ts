@@ -36,6 +36,25 @@ export function pickKey(p: {
   return `${p.pickSeason}:${p.pickRound}:${p.pickOriginalRosterId}`;
 }
 
+/**
+ * Stable key for an asset (player or pick) within a graph. Used to match
+ * a TransactionNode's asset rows against tenure edges that share the same
+ * underlying asset, so chain expansion + visible-row filtering stay in
+ * lockstep across the whole graph. Single source of truth for the key
+ * format — both `edgeAssetKey` and the chrome/layout consumers funnel
+ * through this so a future format change updates everything atomically.
+ */
+export function assetKey(a: {
+  kind: "player" | "pick";
+  playerId?: string | null;
+  pickSeason?: string | null;
+  pickRound?: number | null;
+  pickOriginalRosterId?: number | null;
+}): string {
+  if (a.kind === "player") return `player:${a.playerId ?? ""}`;
+  return `pick:${a.pickSeason ?? ""}:${a.pickRound ?? ""}:${a.pickOriginalRosterId ?? ""}`;
+}
+
 /** Node id for a transaction with a real transactionId (trade, waiver, FA). */
 export function transactionNodeId(transactionId: string): string {
   return `tx:${transactionId}`;
