@@ -20,13 +20,27 @@ interface FindLeaguesResponse {
   total_league_count: number;
 }
 
+interface SleeperPayload {
+  user_id: string;
+  total_league_count: number;
+  dynastyLeagues: Array<{
+    league_id: string;
+    name: string;
+    season: string;
+    avatar: string | null;
+  }>;
+}
+
 const RESPONSE_CACHE_TTL_MS = 60_000;
 const DYNASTY_LEAGUE_TYPE = 2;
 
 const rateLimit = createIpRateLimiter({ max: 10, windowMs: 60_000 });
+// Caches only the Sleeper-derived shape — family + waitlist state are queried
+// fresh per request so writes (cleanup, new waitlist rows) become visible
+// immediately across all users, not after this username's TTL expires.
 const responseCache = new Map<
   string,
-  { value: FindLeaguesResponse; expiresAt: number }
+  { value: SleeperPayload; expiresAt: number }
 >();
 
 function sweepCacheExpired(now: number) {
@@ -70,49 +84,62 @@ export async function POST(req: NextRequest) {
   const now = Date.now();
   sweepCacheExpired(now);
   const cached = responseCache.get(username);
-  if (cached && cached.expiresAt > now) {
-    return NextResponse.json(cached.value);
-  }
+  let sleeperPayload: SleeperPayload | null =
+    cached && cached.expiresAt > now ? cached.value : null;
 
-  const [userRes, nflStateRes] = await Promise.allSettled([
-    Sleeper.getUserByUsername(username),
-    Sleeper.getNFLState(),
-  ]);
+  if (!sleeperPayload) {
+    const [userRes, nflStateRes] = await Promise.allSettled([
+      Sleeper.getUserByUsername(username),
+      Sleeper.getNFLState(),
+    ]);
 
-  if (userRes.status === "rejected") {
-    return SLEEPER_DOWN;
-  }
-  const user = userRes.value;
-  if (!user || !user.user_id) {
-    return NextResponse.json(
-      { error: `We couldn't find @${username} on Sleeper.` },
-      { status: 404 }
-    );
-  }
-  if (nflStateRes.status === "rejected") {
-    return SLEEPER_DOWN;
-  }
-  const currentSeason = String(nflStateRes.value.season);
+    if (userRes.status === "rejected") return SLEEPER_DOWN;
+    const user = userRes.value;
+    if (!user || !user.user_id) {
+      return NextResponse.json(
+        { error: `We couldn't find @${username} on Sleeper.` },
+        { status: 404 }
+      );
+    }
+    if (nflStateRes.status === "rejected") return SLEEPER_DOWN;
+    const currentSeason = String(nflStateRes.value.season);
 
-  let userLeagues;
-  try {
-    userLeagues = await Sleeper.getLeaguesByUser(user.user_id, currentSeason);
-  } catch {
-    return SLEEPER_DOWN;
-  }
-  const totalLeagueCount = userLeagues?.length ?? 0;
+    let userLeagues;
+    try {
+      userLeagues = await Sleeper.getLeaguesByUser(user.user_id, currentSeason);
+    } catch {
+      return SLEEPER_DOWN;
+    }
 
-  const dynastyLeagues = (userLeagues || []).filter((l) => {
-    const t = (l.settings as Record<string, unknown> | undefined)?.type;
-    return t === DYNASTY_LEAGUE_TYPE;
-  });
+    const dynastyLeagues = (userLeagues || [])
+      .filter((l) => {
+        const t = (l.settings as Record<string, unknown> | undefined)?.type;
+        return t === DYNASTY_LEAGUE_TYPE;
+      })
+      .map((l) => ({
+        league_id: l.league_id,
+        name: l.name,
+        season: l.season,
+        avatar: (l as unknown as { avatar?: string | null }).avatar ?? null,
+      }));
+
+    sleeperPayload = {
+      user_id: user.user_id,
+      total_league_count: userLeagues?.length ?? 0,
+      dynastyLeagues,
+    };
+    responseCache.set(username, {
+      value: sleeperPayload,
+      expiresAt: Date.now() + RESPONSE_CACHE_TTL_MS,
+    });
+  }
 
   const familyMap = new Map<string, string>();
   const waitlistedSet = new Set<string>();
-  if (dynastyLeagues.length > 0) {
+  if (sleeperPayload.dynastyLeagues.length > 0) {
     try {
       const db = getDb();
-      const leagueIds = dynastyLeagues.map((l) => l.league_id);
+      const leagueIds = sleeperPayload.dynastyLeagues.map((l) => l.league_id);
       const [matched, waitlisted] = await Promise.all([
         db
           .select({
@@ -147,23 +174,17 @@ export async function POST(req: NextRequest) {
 
   const response: FindLeaguesResponse = {
     username,
-    user_id: user.user_id,
-    leagues: dynastyLeagues.map((l) => ({
+    user_id: sleeperPayload.user_id,
+    leagues: sleeperPayload.dynastyLeagues.map((l) => ({
       league_id: l.league_id,
       family_id: familyMap.get(l.league_id) ?? null,
       name: l.name,
       season: l.season,
-      avatar:
-        (l as unknown as { avatar?: string | null }).avatar ?? null,
+      avatar: l.avatar,
       waitlisted: waitlistedSet.has(l.league_id),
     })),
-    total_league_count: totalLeagueCount,
+    total_league_count: sleeperPayload.total_league_count,
   };
-
-  responseCache.set(username, {
-    value: response,
-    expiresAt: Date.now() + RESPONSE_CACHE_TTL_MS,
-  });
 
   return NextResponse.json(response);
 }
