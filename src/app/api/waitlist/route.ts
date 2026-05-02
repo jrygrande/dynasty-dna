@@ -74,7 +74,7 @@ export async function POST(req: NextRequest) {
 
     const countRow = await db.execute(sql`
       SELECT (
-        (SELECT COUNT(DISTINCT league_id) FROM ${schema.leagueFamilyMembers})
+        (SELECT COUNT(*) FROM ${schema.leagueFamilies})
         +
         (SELECT COUNT(DISTINCT league_id) FROM ${schema.waitlist}
          WHERE status = 'pending'

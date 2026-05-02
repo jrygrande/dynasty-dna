@@ -9,7 +9,7 @@ export async function GET() {
     const db = getDb();
     const result = await db.execute(sql`
       SELECT (
-        (SELECT COUNT(DISTINCT league_id) FROM ${schema.leagueFamilyMembers})
+        (SELECT COUNT(*) FROM ${schema.leagueFamilies})
         +
         (SELECT COUNT(DISTINCT league_id) FROM ${schema.waitlist}
          WHERE status = 'pending'
