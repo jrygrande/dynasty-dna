@@ -25,9 +25,8 @@ export default function LandingPage() {
         >
           Get started
         </Link>
-        <p className="text-xs text-muted-foreground mt-6 flex flex-wrap justify-center gap-x-2 gap-y-0.5">
-          <span>Only for Sleeper leagues</span>
-          <span>&middot; Player valuations by FantasyCalc &middot; NFL data from nflverse</span>
+        <p className="text-xs text-muted-foreground mt-6">
+          Only for Sleeper leagues &middot; Player valuations by FantasyCalc &middot; NFL data from nflverse
         </p>
       </section>
 
@@ -35,24 +34,24 @@ export default function LandingPage() {
       <section className="container mx-auto px-6 pb-20 max-w-5xl">
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
           <FeatureCard
-            icon={<ArrowRightLeft className="h-6 w-6 text-primary" />}
-            title="Know if you won the trade"
-            description="Every trade scored with surplus value so you can see who came out ahead — and why."
+            icon={<Dna className="h-6 w-6 text-primary" />}
+            title="Lineage Tracer"
+            description="Find the origin of every asset and higher order outcomes of each trade."
           />
           <FeatureCard
             icon={<ClipboardList className="h-6 w-6 text-primary" />}
-            title="Grade every pick"
-            description="Pick-by-pick draft grades comparing capital spent vs. production gained."
+            title="Transaction Grading"
+            description="Every trade, draft pick, and move graded on realized production and future value."
+          />
+          <FeatureCard
+            icon={<ArrowRightLeft className="h-6 w-6 text-primary" />}
+            title="Trade Finder"
+            description="Find the manager in your league who wants to acquire your sell-high piece."
           />
           <FeatureCard
             icon={<BarChart3 className="h-6 w-6 text-primary" />}
-            title="Never leave points on your bench"
-            description="Weekly lineup analysis showing exactly where you left points on the table."
-          />
-          <FeatureCard
-            icon={<Dna className="h-6 w-6 text-primary" />}
-            title="Discover your manager style"
-            description="A profile across trades, drafts, and waivers that reveals how you build rosters."
+            title="Manager Process Score"
+            description="See how you stack up against dynasty managers across leagues."
           />
         </div>
       </section>
