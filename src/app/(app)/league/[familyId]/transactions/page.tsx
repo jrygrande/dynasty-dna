@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
+import { ArrowLeft } from "lucide-react";
 import {
   TransactionCard,
   type TransactionData,
@@ -66,9 +67,10 @@ export default function TransactionsPage() {
           <div className="container mx-auto px-6 py-3 flex items-center gap-4">
             <Link
               href={`/league/${familyId}`}
-              className="text-sm text-muted-foreground hover:text-foreground"
+              className="text-sm text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5"
             >
-              &larr; League
+              <ArrowLeft className="h-4 w-4" />
+              League
             </Link>
             <h1 className="text-lg font-semibold">Transactions</h1>
             {graphEnabled && (

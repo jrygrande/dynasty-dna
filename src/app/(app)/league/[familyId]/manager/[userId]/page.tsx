@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
+import { ArrowLeft } from "lucide-react";
 import { GradeBadge } from "@/components/GradeBadge";
 import { ManagerRadarChart } from "@/components/ManagerRadarChart";
 import { ManagerGradeCard } from "@/components/ManagerGradeCard";
@@ -93,9 +94,10 @@ export default function ManagerPage() {
           <div className="flex items-center gap-3">
             <Link
               href={`/league/${familyId}`}
-              className="text-sm text-muted-foreground hover:text-primary transition-colors"
+              className="text-sm text-muted-foreground hover:text-primary transition-colors inline-flex items-center gap-1.5"
             >
-              &larr; League
+              <ArrowLeft className="h-4 w-4" />
+              League
             </Link>
             <span className="text-muted-foreground">/</span>
             <h1 className="text-lg font-semibold">
