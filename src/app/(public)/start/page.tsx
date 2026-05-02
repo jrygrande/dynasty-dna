@@ -119,21 +119,29 @@ function StartPageInner() {
     []
   );
 
+  // ?switch=1 must reset the page even when it's already mounted (the nav's
+  // "Switch user" routes here while the user is on /start). Run on every
+  // searchParams change, not just first mount.
+  useEffect(() => {
+    if (searchParams?.get("switch") !== "1") return;
+    clearStoredUsername();
+    setUsername("");
+    setResponse(null);
+    setViewState("empty");
+    autoSubmittedRef.current = true;
+    router.replace("/start");
+  }, [searchParams, router]);
+
   useEffect(() => {
     if (autoSubmittedRef.current) return;
+    if (searchParams?.get("switch") === "1") return;
     autoSubmittedRef.current = true;
-    if (searchParams?.get("switch") === "1") {
-      clearStoredUsername();
-      // Strip the query param so refresh doesn't keep clearing.
-      router.replace("/start");
-      return;
-    }
     const stored = getStoredUsername();
     if (stored) {
       setUsername(stored);
       submit(stored, { fromStored: true });
     }
-  }, [searchParams, submit, router]);
+  }, [searchParams, submit]);
 
   function handleSwitchUser() {
     clearStoredUsername();

@@ -50,20 +50,6 @@ export default function LeagueOverviewPage() {
   const [selectedSeason, setSelectedSeason] = useState<string | null>(null);
   const [lineupGrades, setLineupGrades] = useState<RosterGrade[] | null>(null);
   const graphEnabled = useFlag("ASSET_GRAPH_BROWSER");
-  const [showGraphBadge, setShowGraphBadge] = useState(false);
-
-  useEffect(() => {
-    if (typeof window !== "undefined" && graphEnabled) {
-      setShowGraphBadge(!window.localStorage.getItem("graph_button_seen"));
-    }
-  }, [graphEnabled]);
-
-  function handleGraphClick() {
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem("graph_button_seen", "1");
-    }
-    setShowGraphBadge(false);
-  }
 
   useEffect(() => {
     loadLeagueData();
@@ -168,16 +154,10 @@ export default function LeagueOverviewPage() {
               {graphEnabled && (
                 <Link
                   href={`/league/${familyId}/graph?from=overview`}
-                  onClick={handleGraphClick}
                   className="px-3 py-1.5 text-sm rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors inline-flex items-center gap-2 font-medium"
                 >
                   <Network className="h-4 w-4" />
                   Lineage Tracer
-                  {showGraphBadge && (
-                    <span className="px-1.5 py-0.5 text-[10px] font-semibold rounded-full bg-background text-primary">
-                      New
-                    </span>
-                  )}
                 </Link>
               )}
             </div>
