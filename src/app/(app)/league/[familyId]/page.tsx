@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
+import { Network } from "lucide-react";
 import {
   LineupEfficiencyCard,
   type RosterGrade,
@@ -45,7 +46,7 @@ export default function LeagueOverviewPage() {
   const familyId = params.familyId as string;
   const [data, setData] = useState<LeagueOverviewData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [syncing, setSyncing] = useState(false);
+  const [autoSyncing, setAutoSyncing] = useState(false);
   const [selectedSeason, setSelectedSeason] = useState<string | null>(null);
   const [lineupGrades, setLineupGrades] = useState<RosterGrade[] | null>(null);
   const graphEnabled = useFlag("ASSET_GRAPH_BROWSER");
@@ -82,50 +83,39 @@ export default function LeagueOverviewPage() {
         .then((r) => setLineupGrades(r?.rosters || null))
         .catch(() => setLineupGrades(null));
     } else if (res.status === 404) {
-      // League not synced yet — auto-sync it
-      setSyncing(true);
+      // First-time visit for an unseeded family — kick off ingestion in the
+      // background so the page settles into real data without exposing a
+      // manual sync surface to the user.
+      setAutoSyncing(true);
       const syncRes = await fetch("/api/sync/league", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ leagueId: familyId }),
       });
       if (syncRes.ok) {
-        // Reload after sync
         const retryRes = await fetch(`/api/leagues/${familyId}${seasonQuery}`);
         if (retryRes.ok) {
           const result = await retryRes.json();
           setData(result);
         }
       }
-      setSyncing(false);
+      setAutoSyncing(false);
       setLoading(false);
     } else {
       setLoading(false);
     }
   }
 
-  async function handleSync() {
-    if (!data) return;
-    setSyncing(true);
-    await fetch("/api/sync/league", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ leagueId: data.league.id }),
-    });
-    await loadLeagueData();
-    setSyncing(false);
-  }
-
   function handleSeasonClick(season: string) {
     setSelectedSeason(season);
   }
 
-  if (loading || syncing) {
+  if (loading || autoSyncing) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-pulse text-muted-foreground">
-          {syncing
-            ? "Syncing league data from Sleeper..."
+          {autoSyncing
+            ? "Loading league data from Sleeper..."
             : "Loading league..."}
         </div>
       </div>
@@ -152,10 +142,10 @@ export default function LeagueOverviewPage() {
           <div className="container mx-auto px-6 py-3 flex items-center justify-between">
             <div className="flex items-center gap-4">
               <Link
-                href="/dashboard"
+                href="/start"
                 className="text-sm text-muted-foreground hover:text-foreground"
               >
-                &larr; Dashboard
+                &larr; My leagues
               </Link>
               <h1 className="text-lg font-semibold">{data.league.name}</h1>
               <span className="text-sm text-muted-foreground">
@@ -179,23 +169,17 @@ export default function LeagueOverviewPage() {
                 <Link
                   href={`/league/${familyId}/graph?from=overview`}
                   onClick={handleGraphClick}
-                  className="px-3 py-1.5 text-sm rounded-md border hover:bg-secondary transition-colors inline-flex items-center gap-2"
+                  className="px-3 py-1.5 text-sm rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors inline-flex items-center gap-2 font-medium"
                 >
+                  <Network className="h-4 w-4" />
                   Lineage Tracer
                   {showGraphBadge && (
-                    <span className="px-1.5 py-0.5 text-[10px] font-semibold rounded-full bg-primary text-primary-foreground">
+                    <span className="px-1.5 py-0.5 text-[10px] font-semibold rounded-full bg-background text-primary">
                       New
                     </span>
                   )}
                 </Link>
               )}
-              <button
-                onClick={handleSync}
-                disabled={syncing}
-                className="px-3 py-1.5 text-sm rounded-md border hover:bg-secondary transition-colors disabled:opacity-50"
-              >
-                {syncing ? "Syncing..." : "Sync Data"}
-              </button>
             </div>
           </div>
         </div>

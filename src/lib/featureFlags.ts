@@ -67,7 +67,7 @@ export const FLAGS = {
     id: "asset-graph-browser",
     title: "Lineage Tracer",
     description: "Interactive visualization of how players and picks flow between managers",
-    status: "disabled",
+    status: "enabled",
     hypothesis:
       "Visualizing the network of trades as a graph will surface non-obvious patterns that managers find more insightful than a transaction log",
     metrics: [
