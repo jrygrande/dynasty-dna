@@ -1,8 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
-export function useWaitlistCount(): { current: number } {
+export function useWaitlistCount(): {
+  current: number;
+  bump: () => void;
+} {
   const [current, setCurrent] = useState(0);
 
   useEffect(() => {
@@ -22,5 +25,7 @@ export function useWaitlistCount(): { current: number } {
     };
   }, []);
 
-  return { current };
+  const bump = useCallback(() => setCurrent((n) => n + 1), []);
+
+  return { current, bump };
 }

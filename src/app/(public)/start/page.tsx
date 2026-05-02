@@ -10,6 +10,8 @@ import {
   getStoredUsername,
   setStoredUsername,
 } from "@/lib/storedUsername";
+import { WaitlistProgress } from "@/components/WaitlistProgress";
+import { useWaitlistCount } from "@/lib/useWaitlistCount";
 import {
   addWaitlistedLeague,
   getWaitlistedLeagues,
@@ -306,6 +308,7 @@ function LeaguesList({
 }) {
   const inDb = leagues.filter((l) => l.family_id);
   const notInDb = leagues.filter((l) => !l.family_id);
+  const { current, bump } = useWaitlistCount();
 
   return (
     <div className="space-y-6">
@@ -354,7 +357,14 @@ function LeaguesList({
       )}
 
       {notInDb.length > 0 && (
-        <NotInDbList username={username} leagues={notInDb} />
+        <>
+          <WaitlistProgress current={current} target={100} />
+          <NotInDbList
+            username={username}
+            leagues={notInDb}
+            onWaitlistAdded={bump}
+          />
+        </>
       )}
 
       {notInDb.length > 0 && inDb.length === 0 && (
@@ -372,9 +382,11 @@ function LeaguesList({
 function NotInDbList({
   username,
   leagues,
+  onWaitlistAdded,
 }: {
   username: string;
   leagues: FoundLeague[];
+  onWaitlistAdded?: () => void;
 }) {
   const [openLeagueId, setOpenLeagueId] = useState<string | null>(null);
   const [email, setEmail] = useState("");
@@ -428,6 +440,7 @@ function NotInDbList({
         return next;
       });
       setOpenLeagueId(null);
+      onWaitlistAdded?.();
     } catch {
       setError("Network error. Try again.");
     } finally {
