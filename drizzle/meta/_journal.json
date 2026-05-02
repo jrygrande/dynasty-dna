@@ -92,6 +92,13 @@
       "when": 1777752556018,
       "tag": "0012_cute_shatterstar",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1777758087053,
+      "tag": "0013_harsh_havok",
+      "breakpoints": true
     }
   ]
 }

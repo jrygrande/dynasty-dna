@@ -39,6 +39,7 @@ interface LineupEfficiencyCardProps {
 const PARENT_COLUMN_COUNT = 7; // Manager, Grade, Efficiency, Pts Left, Perfect Wks, Insights, expand arrow
 
 import { GradeBadge } from "@/components/GradeBadge";
+import { ManagerName } from "@/components/ManagerName";
 
 function RosterRow({ roster }: { roster: RosterGrade }) {
   const [expanded, setExpanded] = useState(false);
@@ -50,7 +51,14 @@ function RosterRow({ roster }: { roster: RosterGrade }) {
         onClick={() => setExpanded(!expanded)}
       >
         <td className="px-4 py-3">
-          <span className="font-medium">{roster.displayName}</span>
+          <span className="font-medium">
+            <ManagerName
+              userId={roster.ownerId}
+              rosterId={roster.rosterId}
+              displayName={roster.displayName}
+              variant="display-only"
+            />
+          </span>
         </td>
         <td className="px-4 py-3 text-center">
           <GradeBadge grade={roster.grade} />

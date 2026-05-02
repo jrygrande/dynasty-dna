@@ -5,6 +5,8 @@ import { useRouter, usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { Menu, X, ChevronDown } from "lucide-react";
 import { BrandLockup } from "./BrandMark";
+import { DemoChip } from "./DemoIndicators";
+import { useDemoActive } from "@/lib/useDemoMap";
 import {
   STORED_USERNAME_KEY,
   clearStoredUsername,
@@ -24,6 +26,7 @@ export function PublicNav() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [storedUsername, setStoredUsername] = useState<string | null>(null);
   const [hydrated, setHydrated] = useState(false);
+  const { active: demoActive } = useDemoActive();
 
   useEffect(() => {
     setMobileOpen(false);
@@ -92,7 +95,9 @@ export function PublicNav() {
               Keeps SSR markup stable; suppressHydrationWarning narrows the
               warning surface to the swapped node. */}
           <div suppressHydrationWarning>
-            {hydrated && storedUsername ? (
+            {hydrated && demoActive ? (
+              <DemoChip />
+            ) : hydrated && storedUsername ? (
               <UserChip
                 username={storedUsername}
                 onSwitchUser={handleSwitchUser}
@@ -124,7 +129,11 @@ export function PublicNav() {
         <nav className="sm:hidden border-t px-6 py-4 flex flex-col gap-4 bg-background">
           {renderNavLinks(() => setMobileOpen(false))}
           <div suppressHydrationWarning>
-            {hydrated && storedUsername ? (
+            {hydrated && demoActive ? (
+              <div className="pt-2 border-t flex">
+                <DemoChip />
+              </div>
+            ) : hydrated && storedUsername ? (
               <div className="flex flex-col gap-2 pt-2 border-t">
                 <span className="text-sm">
                   @<span className="font-mono">{storedUsername}</span>

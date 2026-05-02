@@ -57,6 +57,7 @@ const POSITION_COLORS: Record<string, string> = {
 };
 
 import { GradeBadge } from "@/components/GradeBadge";
+import { ManagerName } from "@/components/ManagerName";
 
 export default function DraftsPage() {
   const params = useParams();
@@ -179,7 +180,13 @@ function ManagerGradeCards({ grades }: { grades: ManagerGradeSummary[] }) {
           >
             <GradeBadge grade={mg.grade} />
             <div className="min-w-0">
-              <p className="text-sm font-medium truncate">{mg.managerName}</p>
+              <p className="text-sm font-medium truncate">
+                <ManagerName
+                  rosterId={mg.rosterId}
+                  displayName={mg.managerName}
+                  variant="display-only"
+                />
+              </p>
               <p className="text-xs text-muted-foreground">
                 {mg.picksGraded} picks
               </p>
@@ -271,7 +278,11 @@ function DraftBoard({ draft, familyId }: { draft: DraftData; familyId: string })
                           )}
                         </div>
                         <p className="text-xs text-muted-foreground truncate">
-                          {pick.managerName}
+                          <ManagerName
+                            rosterId={pick.rosterId}
+                            displayName={pick.managerName}
+                            variant="display-only"
+                          />
                           {pick.isKeeper && (
                             <span className="ml-1 text-primary">
                               (K)

@@ -1,4 +1,5 @@
 import { PublicNav } from "@/components/PublicNav";
+import { DemoBanner, DemoQueryParamSync } from "@/components/DemoIndicators";
 
 export default function AppLayout({
   children,
@@ -7,7 +8,9 @@ export default function AppLayout({
 }) {
   return (
     <div className="min-h-screen bg-background">
+      <DemoQueryParamSync />
       <PublicNav />
+      <DemoBanner />
       {children}
     </div>
   );

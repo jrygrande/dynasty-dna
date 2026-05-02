@@ -2,6 +2,7 @@ import Link from "next/link";
 import { ArrowRight } from "lucide-react";
 import type { AssetIdentifier } from "./AssetTimeline";
 import { GradeBadge } from "./GradeBadge";
+import { ManagerName } from "./ManagerName";
 import { getRoundSuffix } from "@/lib/utils";
 
 interface TransactionAdd {
@@ -187,7 +188,13 @@ function TradeCard({ tx, familyId, onAssetClick }: { tx: TransactionData; family
         {sides.map((side) => (
           <div key={side.rosterId} className="space-y-2">
             <div className="flex items-center gap-2">
-              <p className="text-sm font-semibold">{side.managerName}</p>
+              <p className="text-sm font-semibold">
+                <ManagerName
+                  rosterId={side.rosterId}
+                  displayName={side.managerName}
+                  variant="display-only"
+                />
+              </p>
               {side.grade?.grade && <GradeBadge grade={side.grade.grade} />}
             </div>
             {side.grade && (
@@ -221,9 +228,15 @@ function TradeCard({ tx, familyId, onAssetClick }: { tx: TransactionData; family
                 {side.picksReceived.map((p, i) => (
                   <p key={i} className="text-sm text-primary">
                     + {p.season} {p.round}{getRoundSuffix(p.round)} Round Pick
-                    {p.originalOwnerName && p.originalOwnerName !== side.managerName && (
+                    {p.originalOwnerName && p.originalRosterId !== side.rosterId && (
                       <span className="text-xs text-muted-foreground ml-1">
-                        ({p.originalOwnerName}&apos;s)
+                        (
+                        <ManagerName
+                          rosterId={p.originalRosterId}
+                          displayName={p.originalOwnerName}
+                          variant="display-only"
+                        />
+                        &apos;s)
                       </span>
                     )}
                     {p.resolvedPlayerName && (
@@ -260,9 +273,15 @@ function TradeCard({ tx, familyId, onAssetClick }: { tx: TransactionData; family
                 {side.picksSent.map((p, i) => (
                   <p key={i} className="text-sm text-muted-foreground">
                     − {p.season} {p.round}{getRoundSuffix(p.round)} Round Pick
-                    {p.originalOwnerName && p.originalOwnerName !== side.managerName && (
+                    {p.originalOwnerName && p.originalRosterId !== side.rosterId && (
                       <span className="text-xs text-muted-foreground ml-1">
-                        ({p.originalOwnerName}&apos;s)
+                        (
+                        <ManagerName
+                          rosterId={p.originalRosterId}
+                          displayName={p.originalOwnerName}
+                          variant="display-only"
+                        />
+                        &apos;s)
                       </span>
                     )}
                     {p.resolvedPlayerName && (
@@ -316,7 +335,11 @@ function SimpleTransactionCard({ tx, familyId }: { tx: TransactionData; familyId
             </span>
             <span className="text-muted-foreground ml-2 inline-flex items-center gap-1 align-middle">
               <ArrowRight className="h-3 w-3" />
-              {a.managerName}
+              <ManagerName
+                rosterId={a.rosterId}
+                displayName={a.managerName}
+                variant="display-only"
+              />
             </span>
           </p>
         ))}
@@ -326,7 +349,12 @@ function SimpleTransactionCard({ tx, familyId }: { tx: TransactionData; familyId
               − <PlayerLink playerId={d.playerId} playerName={d.playerName} familyId={familyId} />
             </span>
             <span className="text-muted-foreground ml-2">
-              from {d.managerName}
+              from{" "}
+              <ManagerName
+                rosterId={d.rosterId}
+                displayName={d.managerName}
+                variant="display-only"
+              />
             </span>
           </p>
         ))}

@@ -65,15 +65,26 @@ export function formatDate(
  *
  * Title varies by txKind; subtitle is always the formatted date,
  * except for drafts where the manager name is folded in.
+ *
+ * `swapName` lets demo mode substitute the per-session pseudonym at render
+ * time. When omitted, real manager names render as-is.
  */
-export function buildTransactionHeader(node: TransactionNode): TransactionHeader {
+export function buildTransactionHeader(
+  node: TransactionNode,
+  swapName?: (userId: string, fallback: string) => string,
+): TransactionHeader {
   const date = formatDate(node.createdAt, node.season, node.week);
-  const managerName = node.managers[0]?.displayName ?? "—";
+  const resolve = (i: number): string => {
+    const m = node.managers[i];
+    if (!m) return "—";
+    return swapName ? swapName(m.userId, m.displayName) : m.displayName;
+  };
+  const managerName = resolve(0);
 
   switch (node.txKind) {
     case "trade": {
-      const a = node.managers[0]?.displayName;
-      const b = node.managers[1]?.displayName;
+      const a = node.managers[0] ? resolve(0) : null;
+      const b = node.managers[1] ? resolve(1) : null;
       const title =
         a && b ? `${a} ↔ ${b}` : a ? a : "Trade";
       return { title, subtitle: date };

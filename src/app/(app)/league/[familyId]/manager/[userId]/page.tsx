@@ -7,6 +7,7 @@ import { ArrowLeft } from "lucide-react";
 import { GradeBadge } from "@/components/GradeBadge";
 import { ManagerRadarChart } from "@/components/ManagerRadarChart";
 import { ManagerGradeCard } from "@/components/ManagerGradeCard";
+import { ManagerName, ManagerSecondaryName } from "@/components/ManagerName";
 import { TypeBadge } from "@/components/TransactionCard";
 import { PILLAR_LABELS } from "@/lib/pillars";
 
@@ -101,13 +102,19 @@ export default function ManagerPage() {
             </Link>
             <span className="text-muted-foreground">/</span>
             <h1 className="text-lg font-semibold">
-              {manager.teamName || manager.displayName}
+              <ManagerName
+                userId={manager.userId}
+                displayName={manager.displayName}
+                teamName={manager.teamName}
+              />
             </h1>
-            {manager.teamName && manager.displayName !== manager.teamName && (
-              <span className="text-sm text-muted-foreground">
-                {manager.displayName}
-              </span>
-            )}
+            <ManagerSecondaryName
+              userId={manager.userId}
+              displayName={manager.displayName}
+              teamName={manager.teamName}
+              parens={false}
+              className="text-sm text-muted-foreground"
+            />
           </div>
         </div>
       </div>

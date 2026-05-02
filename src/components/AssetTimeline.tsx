@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { ArrowRight } from "lucide-react";
 import { TransactionCard, TransactionData } from "./TransactionCard";
 import { StintCard, StintData } from "./StintCard";
+import { ManagerName } from "./ManagerName";
 
 // ============================================================
 // Types
@@ -260,12 +261,21 @@ export function AssetTimeline({
                       <p key={a.playerId} className="text-primary inline-flex items-center gap-1 align-middle">
                         <span>+ {a.playerName}</span>
                         <ArrowRight className="h-3 w-3" />
-                        <span>{a.managerName}</span>
+                        <ManagerName
+                          rosterId={a.rosterId}
+                          displayName={a.managerName}
+                          variant="display-only"
+                        />
                       </p>
                     ))}
                     {event.transaction.drops.map((d) => (
                       <p key={d.playerId} className="text-muted-foreground">
-                        − {d.playerName} from {d.managerName}
+                        − {d.playerName} from{" "}
+                        <ManagerName
+                          rosterId={d.rosterId}
+                          displayName={d.managerName}
+                          variant="display-only"
+                        />
                       </p>
                     ))}
                   </div>
