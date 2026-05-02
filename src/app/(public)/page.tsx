@@ -8,6 +8,7 @@ import {
   BookOpen,
   FlaskConical,
 } from "lucide-react";
+import { LandingWaitlist } from "./LandingWaitlist";
 
 export default function LandingPage() {
   return (
@@ -18,8 +19,15 @@ export default function LandingPage() {
           Decode your dynasty <span className="text-primary">DNA</span>
         </h1>
         <p className="text-lg text-muted-foreground mb-8 max-w-xl mx-auto leading-relaxed">
-          Trace how every decision ripples through your dynasty league.
+          Enter your Sleeper username to find your dynasty leagues.
         </p>
+        <Link
+          href="/start"
+          className="inline-flex items-center gap-2 px-6 py-3 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors font-medium text-lg"
+        >
+          Get started
+        </Link>
+        <LandingWaitlist />
         <p className="text-xs text-muted-foreground mt-6 flex flex-wrap justify-center gap-x-2 gap-y-0.5">
           <span>Only for Sleeper leagues</span>
           <span>&middot; Player valuations by FantasyCalc &middot; NFL data from nflverse</span>

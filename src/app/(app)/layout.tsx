@@ -1,4 +1,4 @@
-import { AppNav } from "@/components/AppNav";
+import { PublicNav } from "@/components/PublicNav";
 
 export default function AppLayout({
   children,
@@ -7,7 +7,7 @@ export default function AppLayout({
 }) {
   return (
     <div className="min-h-screen bg-background">
-      <AppNav />
+      <PublicNav />
       {children}
     </div>
   );
