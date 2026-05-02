@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { ArrowRight } from "lucide-react";
 import { RoadmapCard } from "@/components/RoadmapCard";
 import type { RoadmapIssue } from "@/app/api/roadmap/route";
 import { type FeatureFlag, getActiveExperiments } from "@/lib/featureFlags";
@@ -174,7 +175,7 @@ export default function RoadmapPage() {
               rel="noopener noreferrer"
               className="text-sm text-primary hover:underline"
             >
-              View roadmap on GitHub →
+              <span className="inline-flex items-center gap-1.5">View roadmap on GitHub<ArrowRight className="h-4 w-4" /></span>
             </a>
           </div>
         )}
@@ -264,7 +265,7 @@ export default function RoadmapPage() {
               rel="noopener noreferrer"
               className="text-primary hover:underline"
             >
-              Submit a feature request →
+              <span className="inline-flex items-center gap-1.5">Submit a feature request<ArrowRight className="h-4 w-4" /></span>
             </a>
           </div>
         </footer>

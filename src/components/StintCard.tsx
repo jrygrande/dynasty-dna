@@ -34,7 +34,7 @@ interface StintCardProps {
 function formatStintRange(stint: StintData): string {
   const start = `${stint.startSeason} W${stint.startWeek}`;
   const end = stint.endSeason === "now" ? "Present" : `${stint.endSeason} W${stint.endWeek}`;
-  return `${start} → ${end}`;
+  return `${start} – ${end}`;
 }
 
 export function StintCard({ stint, assetKind, defaultExpanded = false }: StintCardProps) {

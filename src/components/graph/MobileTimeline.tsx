@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo } from "react";
 import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
+import { ArrowDown, ArrowLeft } from "lucide-react";
 
 import type {
   GraphEdge,
@@ -362,8 +362,9 @@ function Connector({
           ))}
         </div>
       ) : (
-        <div className="px-2 py-1 text-[10px] italic text-muted-foreground">
-          &darr; thread continues
+        <div className="px-2 py-1 text-[10px] italic text-muted-foreground inline-flex items-center gap-1">
+          <ArrowDown className="h-3 w-3" />
+          thread continues
         </div>
       )}
       <div className="h-3 w-px bg-border" aria-hidden="true" />

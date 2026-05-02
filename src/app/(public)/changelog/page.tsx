@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { ArrowRight } from "lucide-react";
 import { StatusBadge } from "@/components/StatusBadge";
 import { formatDate } from "@/lib/utils";
 import type { RoadmapIssue } from "@/app/api/roadmap/route";
@@ -158,9 +159,10 @@ export default function ChangelogPage() {
               href="https://github.com/jrygrande/dynasty-dna"
               target="_blank"
               rel="noopener noreferrer"
-              className="text-primary hover:underline"
+              className="text-primary hover:underline inline-flex items-center gap-1.5"
             >
-              View source on GitHub →
+              View source on GitHub
+              <ArrowRight className="h-4 w-4" />
             </a>
           </div>
         </footer>

@@ -301,7 +301,7 @@ function EdgeDetail({ edge, familyId }: { edge: GraphEdge | null; familyId: stri
         <PlayerStintStats familyId={familyId} edge={edge} />
       )}
       <p className="text-xs text-muted-foreground">
-        {edge.startSeason} W{edge.startWeek} → {endLabel}
+        {edge.startSeason} W{edge.startWeek} – {endLabel}
       </p>
       {edge.assetKind === "player" && edge.playerId && (
         <p className="text-[11px] tip-shimmer pt-1 border-t border-border/40">
@@ -633,7 +633,7 @@ function CompareColumnHeader({
       )}
       <p className="text-muted-foreground truncate">{edge.managerName}</p>
       <p className="font-mono text-[10px] text-muted-foreground">
-        {edge.startSeason} W{edge.startWeek} → {endLabel}
+        {edge.startSeason} W{edge.startWeek} – {endLabel}
       </p>
     </div>
   );

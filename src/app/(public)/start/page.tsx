@@ -371,8 +371,9 @@ function LeaguesList({
       {notInDb.length > 0 && inDb.length === 0 && (
         <p className="text-sm text-muted-foreground pt-2">
           None of your leagues are supported yet.{" "}
-          <Link href="/demo" className="text-primary hover:underline">
-            Browse a demo league →
+          <Link href="/demo" className="text-primary hover:underline inline-flex items-center gap-1.5">
+            Browse a demo league
+            <ArrowRight className="h-4 w-4" />
           </Link>
         </p>
       )}

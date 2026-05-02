@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { ArrowRight } from "lucide-react";
 import { TransactionCard, TransactionData } from "./TransactionCard";
 import { StintCard, StintData } from "./StintCard";
 
@@ -256,8 +257,10 @@ export function AssetTimeline({
                 {event.transaction && event.eventType !== "trade" && (
                   <div className="text-sm text-muted-foreground mt-1">
                     {event.transaction.adds.map((a) => (
-                      <p key={a.playerId} className="text-primary">
-                        + {a.playerName} → {a.managerName}
+                      <p key={a.playerId} className="text-primary inline-flex items-center gap-1 align-middle">
+                        <span>+ {a.playerName}</span>
+                        <ArrowRight className="h-3 w-3" />
+                        <span>{a.managerName}</span>
                       </p>
                     ))}
                     {event.transaction.drops.map((d) => (

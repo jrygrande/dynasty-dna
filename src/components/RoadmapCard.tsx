@@ -1,3 +1,4 @@
+import { ArrowRight } from "lucide-react";
 import { StatusBadge } from "./StatusBadge";
 import { formatDate } from "@/lib/utils";
 import type { RoadmapIssue } from "@/app/api/roadmap/route";
@@ -83,8 +84,9 @@ export function RoadmapCard({ issue }: { issue: RoadmapIssue }) {
         {issue.tags.length > 0 && (
           <span>{issue.tags.join(" · ")}</span>
         )}
-        <span className="ml-auto opacity-0 group-hover:opacity-100 transition-opacity">
-          View on GitHub →
+        <span className="ml-auto opacity-0 group-hover:opacity-100 transition-opacity inline-flex items-center gap-1.5">
+          View on GitHub
+          <ArrowRight className="h-3.5 w-3.5" />
         </span>
       </div>
     </a>

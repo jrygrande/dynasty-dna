@@ -189,8 +189,8 @@ export default function DesignSystemPage() {
               <CardHeader>
                 <CardTitle>Grade badges</CardTitle>
                 <CardDescription>
-                  Earned colors: A sage → B dusty blue → C ochre → D
-                  terracotta → F muted red.
+                  Earned colors: A sage, B dusty blue, C ochre, D
+                  terracotta, F muted red.
                 </CardDescription>
               </CardHeader>
               <CardContent className="flex flex-wrap gap-2">
