@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useSession } from "next-auth/react";
 import { useEffect, useState } from "react";
 import { Menu, X } from "lucide-react";
 import { BrandLockup } from "./BrandMark";
@@ -14,12 +13,9 @@ const navLinks = [
 ];
 
 export function PublicNav() {
-  const { status } = useSession();
   const pathname = usePathname();
-  const isAuthed = status === "authenticated";
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  // Auto-close mobile menu on route change (e.g., browser back/forward)
   useEffect(() => {
     setMobileOpen(false);
   }, [pathname]);
@@ -46,13 +42,6 @@ export function PublicNav() {
             {link.label}
           </Link>
         ))}
-        <Link
-          href={isAuthed ? "/dashboard" : "/login"}
-          className="text-sm px-4 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors text-center"
-          onClick={onNavigate}
-        >
-          {isAuthed ? "Dashboard" : "Sign In"}
-        </Link>
       </>
     );
   }

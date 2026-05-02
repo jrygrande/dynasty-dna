@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { AuthCTA } from "@/components/AuthCTA";
 import {
   ArrowRightLeft,
   ClipboardList,
@@ -21,7 +20,6 @@ export default function LandingPage() {
         <p className="text-lg text-muted-foreground mb-8 max-w-xl mx-auto leading-relaxed">
           Trace how every decision ripples through your dynasty league.
         </p>
-        <AuthCTA />
         <p className="text-xs text-muted-foreground mt-6 flex flex-wrap justify-center gap-x-2 gap-y-0.5">
           <span>Only for Sleeper leagues</span>
           <span>&middot; Player valuations by FantasyCalc &middot; NFL data from nflverse</span>
