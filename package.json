@@ -12,6 +12,7 @@
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
+    "notify-waitlist": "tsx scripts/notify-waitlist.ts",
     "test": "jest"
   },
   "dependencies": {
@@ -37,6 +38,7 @@
     "react-dom": "^18.3.1",
     "reactflow": "^11.11.4",
     "recharts": "^3.2.1",
+    "resend": "^6.12.2",
     "tailwind-merge": "^3.3.1",
     "tailwindcss-animate": "^1.0.7",
     "zod": "^3.23.8"

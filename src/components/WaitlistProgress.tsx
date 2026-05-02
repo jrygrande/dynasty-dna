@@ -6,8 +6,6 @@ interface WaitlistProgressProps {
 }
 
 export function WaitlistProgress({ current, target }: WaitlistProgressProps) {
-  if (current < 10) return null;
-
   const goalReached = current >= target;
   const copy = goalReached
     ? "Goal reached — bringing leagues online."

@@ -538,6 +538,30 @@ export const syncJobs = pgTable(
 );
 
 // ============================================================
+// Waitlist
+// ============================================================
+
+export const waitlist = pgTable(
+  "waitlist",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    email: text("email").notNull(),
+    leagueId: text("league_id").notNull(), // Sleeper league_id, not family_id
+    status: text("status").notNull().default("pending"), // pending | notified
+    createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
+    notifiedAt: timestamp("notified_at", { mode: "date" }),
+  },
+  (w) => ({
+    emailLeagueUnique: uniqueIndex("waitlist_email_league_unique").on(
+      w.email,
+      w.leagueId
+    ),
+    leagueIdIdx: index("waitlist_league_id_idx").on(w.leagueId),
+    statusIdx: index("waitlist_status_idx").on(w.status),
+  })
+);
+
+// ============================================================
 // Experiments
 // ============================================================
 

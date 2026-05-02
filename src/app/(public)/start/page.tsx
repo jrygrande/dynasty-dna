@@ -10,6 +10,12 @@ import {
   getStoredUsername,
   setStoredUsername,
 } from "@/lib/storedUsername";
+import { WaitlistProgress } from "@/components/WaitlistProgress";
+import { useWaitlistCount } from "@/lib/useWaitlistCount";
+import {
+  addWaitlistedLeague,
+  getWaitlistedLeagues,
+} from "@/lib/waitlistedLeagues";
 
 type ViewState =
   | "empty"
@@ -28,6 +34,7 @@ interface FoundLeague {
   name: string;
   season: string;
   avatar: string | null;
+  waitlisted?: boolean;
 }
 
 interface FindLeaguesResponse {
@@ -302,6 +309,7 @@ function LeaguesList({
 }) {
   const inDb = leagues.filter((l) => l.family_id);
   const notInDb = leagues.filter((l) => !l.family_id);
+  const { current, bump } = useWaitlistCount();
 
   return (
     <div className="space-y-6">
@@ -350,42 +358,192 @@ function LeaguesList({
       )}
 
       {notInDb.length > 0 && (
-        <div className="space-y-2">
-          <p className="text-xs uppercase tracking-wide text-muted-foreground font-mono">
-            Not yet supported
-          </p>
-          {notInDb.map((l) => (
-            <div
-              key={l.league_id}
-              className="flex items-center justify-between gap-4 p-4 rounded-md border bg-card"
-            >
+        <>
+          <WaitlistProgress current={current} target={100} />
+          <NotInDbList
+            username={username}
+            leagues={notInDb}
+            onWaitlistAdded={bump}
+          />
+        </>
+      )}
+
+      {notInDb.length > 0 && inDb.length === 0 && (
+        <p className="text-sm text-muted-foreground pt-2">
+          None of your leagues are supported yet.{" "}
+          <Link href="/demo" className="text-primary hover:underline">
+            Browse a demo league →
+          </Link>
+        </p>
+      )}
+    </div>
+  );
+}
+
+function NotInDbList({
+  username,
+  leagues,
+  onWaitlistAdded,
+}: {
+  username: string;
+  leagues: FoundLeague[];
+  onWaitlistAdded?: () => void;
+}) {
+  const [openLeagueId, setOpenLeagueId] = useState<string | null>(null);
+  const [email, setEmail] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [persisted, setPersisted] = useState<Set<string>>(() => new Set());
+  const [justAdded, setJustAdded] = useState<Set<string>>(() => new Set());
+
+  useEffect(() => {
+    if (!username) return;
+    const stored = getWaitlistedLeagues(username);
+    if (stored.length > 0) setPersisted(new Set(stored));
+  }, [username]);
+
+  function handleOpen(leagueId: string) {
+    setOpenLeagueId(leagueId);
+    setError(null);
+    track("waitlist_shown", { league_id: leagueId });
+  }
+
+  async function handleSubmit(league: FoundLeague) {
+    setError(null);
+    const trimmed = email.trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
+      setError("Enter a valid email address.");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const res = await fetch("/api/waitlist", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: trimmed,
+          league_id: league.league_id,
+          league_name: league.name,
+        }),
+      });
+      if (res.status === 429) {
+        setError("Too many requests. Try again in a minute.");
+        return;
+      }
+      if (!res.ok) {
+        setError("Something went wrong. Try again.");
+        return;
+      }
+      addWaitlistedLeague(username, league.league_id);
+      setJustAdded((prev) => {
+        const next = new Set(prev);
+        next.add(league.league_id);
+        return next;
+      });
+      setOpenLeagueId(null);
+      onWaitlistAdded?.();
+    } catch {
+      setError("Network error. Try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="space-y-2">
+      <p className="text-xs uppercase tracking-wide text-muted-foreground font-mono">
+        Not yet supported
+      </p>
+      {leagues.map((l) => {
+        const isJustAdded = justAdded.has(l.league_id);
+        const isOnWaitlist =
+          (persisted.has(l.league_id) || l.waitlisted === true) &&
+          !isJustAdded;
+        const isOpen = openLeagueId === l.league_id;
+        return (
+          <div
+            key={l.league_id}
+            className="p-4 rounded-md border bg-card space-y-3"
+          >
+            <div className="flex items-center justify-between gap-4">
               <div className="min-w-0">
                 <p className="font-medium truncate">{l.name}</p>
                 <p className="text-xs text-muted-foreground font-mono">
                   {l.season}
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={() =>
-                  track("waitlist_shown", { league_id: l.league_id })
-                }
-                className="px-4 py-2 rounded-md border border-primary text-primary text-sm font-medium hover:bg-primary/10 transition-colors flex-shrink-0"
-              >
-                Join waitlist
-              </button>
+              {isOnWaitlist && (
+                <span className="text-sm text-primary font-medium flex-shrink-0">
+                  ✓ On waitlist
+                </span>
+              )}
+              {!isOnWaitlist && !isJustAdded && !isOpen && (
+                <button
+                  type="button"
+                  onClick={() => handleOpen(l.league_id)}
+                  className="px-4 py-2 rounded-md border border-primary text-primary text-sm font-medium hover:bg-primary/10 transition-colors flex-shrink-0"
+                >
+                  Join waitlist
+                </button>
+              )}
             </div>
-          ))}
-          {inDb.length === 0 && (
-            <p className="text-sm text-muted-foreground pt-2">
-              None of your leagues are supported yet.{" "}
-              <Link href="/demo" className="text-primary hover:underline">
-                Browse a demo league →
-              </Link>
-            </p>
-          )}
-        </div>
-      )}
+            {isOpen && !isJustAdded && !isOnWaitlist && (
+              <form
+                className="space-y-2"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  handleSubmit(l);
+                }}
+              >
+                <div className="flex gap-2">
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    disabled={submitting}
+                    placeholder="you@example.com"
+                    aria-label="Email address"
+                    autoComplete="email"
+                    required
+                    className="flex-1 px-3 py-2 rounded-md border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-60"
+                  />
+                  {/* Honeypot — hidden from users, bots fill it */}
+                  <input
+                    type="text"
+                    name="hp"
+                    tabIndex={-1}
+                    autoComplete="off"
+                    aria-hidden="true"
+                    style={{
+                      position: "absolute",
+                      left: "-10000px",
+                      width: "1px",
+                      height: "1px",
+                      opacity: 0,
+                    }}
+                  />
+                  <button
+                    type="submit"
+                    disabled={submitting || !email.trim()}
+                    className="px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50 flex-shrink-0"
+                  >
+                    {submitting ? "Submitting..." : "Submit"}
+                  </button>
+                </div>
+                {error && (
+                  <p className="text-xs text-grade-f">{error}</p>
+                )}
+              </form>
+            )}
+            {isJustAdded && (
+              <p className="text-sm text-primary font-medium">
+                ✓ Added to waitlist — we&apos;ll email you when {l.name} is
+                supported.
+              </p>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
