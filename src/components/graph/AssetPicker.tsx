@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { ArrowRight } from "lucide-react";
 import type { AssetsListResponse } from "@/app/api/leagues/[familyId]/assets/route";
 import type { GraphFocus } from "@/lib/assetGraph";
 import { getRoundSuffix } from "@/lib/utils";
@@ -227,9 +228,14 @@ function PickList({
               {p.season} · {p.round}
               {getRoundSuffix(p.round)} round
             </span>
-            <span className="text-xs text-muted-foreground">
+            <span className="text-xs text-muted-foreground inline-flex items-center gap-1 align-middle">
               {p.originalOwnerName ?? "Unknown owner"}
-              {p.resolvedPlayerName ? ` → ${p.resolvedPlayerName}` : ""}
+              {p.resolvedPlayerName && (
+                <>
+                  <ArrowRight className="h-3 w-3" />
+                  {p.resolvedPlayerName}
+                </>
+              )}
             </span>
           </button>
         </li>

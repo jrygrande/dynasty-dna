@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { Network } from "lucide-react";
+import { ArrowLeft, Network } from "lucide-react";
 import {
   LineupEfficiencyCard,
   type RosterGrade,
@@ -129,9 +129,10 @@ export default function LeagueOverviewPage() {
             <div className="flex items-center gap-4">
               <Link
                 href="/start"
-                className="text-sm text-muted-foreground hover:text-foreground"
+                className="text-sm text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5"
               >
-                &larr; My leagues
+                <ArrowLeft className="h-4 w-4" />
+                My leagues
               </Link>
               <h1 className="text-lg font-semibold">{data.league.name}</h1>
               <span className="text-sm text-muted-foreground">

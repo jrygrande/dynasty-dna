@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ArrowRight } from "lucide-react";
 import type { AssetIdentifier } from "./AssetTimeline";
 import { GradeBadge } from "./GradeBadge";
 import { getRoundSuffix } from "@/lib/utils";
@@ -226,8 +227,9 @@ function TradeCard({ tx, familyId, onAssetClick }: { tx: TransactionData; family
                       </span>
                     )}
                     {p.resolvedPlayerName && (
-                      <span className="text-xs text-muted-foreground ml-1">
-                        &rarr; <PlayerLink playerId={p.resolvedPlayerId!} playerName={p.resolvedPlayerName} familyId={familyId} className="text-xs text-muted-foreground" />
+                      <span className="text-xs text-muted-foreground ml-1 inline-flex items-center gap-1 align-middle">
+                        <ArrowRight className="h-3 w-3" />
+                        <PlayerLink playerId={p.resolvedPlayerId!} playerName={p.resolvedPlayerName} familyId={familyId} className="text-xs text-muted-foreground" />
                       </span>
                     )}
                     {onAssetClick && (
@@ -264,8 +266,9 @@ function TradeCard({ tx, familyId, onAssetClick }: { tx: TransactionData; family
                       </span>
                     )}
                     {p.resolvedPlayerName && (
-                      <span className="text-xs text-muted-foreground ml-1">
-                        &rarr; <PlayerLink playerId={p.resolvedPlayerId!} playerName={p.resolvedPlayerName} familyId={familyId} className="text-xs text-muted-foreground" />
+                      <span className="text-xs text-muted-foreground ml-1 inline-flex items-center gap-1 align-middle">
+                        <ArrowRight className="h-3 w-3" />
+                        <PlayerLink playerId={p.resolvedPlayerId!} playerName={p.resolvedPlayerName} familyId={familyId} className="text-xs text-muted-foreground" />
                       </span>
                     )}
                     {onAssetClick && (
@@ -311,8 +314,9 @@ function SimpleTransactionCard({ tx, familyId }: { tx: TransactionData; familyId
             <span className="text-primary font-medium">
               + <PlayerLink playerId={a.playerId} playerName={a.playerName} familyId={familyId} />
             </span>
-            <span className="text-muted-foreground ml-2">
-              &rarr; {a.managerName}
+            <span className="text-muted-foreground ml-2 inline-flex items-center gap-1 align-middle">
+              <ArrowRight className="h-3 w-3" />
+              {a.managerName}
             </span>
           </p>
         ))}

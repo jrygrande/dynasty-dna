@@ -3,6 +3,7 @@
 import { Fragment, useEffect, useState, useMemo } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
+import { ArrowLeft, ArrowRight } from "lucide-react";
 import { useFlag } from "@/lib/useFlag";
 
 interface Manager {
@@ -179,9 +180,10 @@ export default function PlayerDetailPage() {
           <div className="container mx-auto px-6 py-3 flex items-center gap-4">
             <Link
               href={`/league/${familyId}`}
-              className="text-sm text-muted-foreground hover:text-foreground"
+              className="text-sm text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5"
             >
-              &larr; League
+              <ArrowLeft className="h-4 w-4" />
+              League
             </Link>
             <div className="flex-1">
               <h1 className="text-lg font-semibold">{player.name}</h1>
@@ -192,16 +194,18 @@ export default function PlayerDetailPage() {
             <div className="flex items-center gap-4 ml-auto">
               <Link
                 href={`/league/${familyId}/timeline?playerId=${playerId}`}
-                className="text-sm text-muted-foreground hover:text-foreground"
+                className="text-sm text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5"
               >
-                Timeline &rarr;
+                Timeline
+                <ArrowRight className="h-4 w-4" />
               </Link>
               {graphEnabled && (
                 <Link
                   href={`/league/${familyId}/graph?seedPlayerId=${playerId}&from=player`}
-                  className="text-sm text-muted-foreground hover:text-foreground"
+                  className="text-sm text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5"
                 >
-                  Trace lineage &rarr;
+                  Trace lineage
+                  <ArrowRight className="h-4 w-4" />
                 </Link>
               )}
             </div>

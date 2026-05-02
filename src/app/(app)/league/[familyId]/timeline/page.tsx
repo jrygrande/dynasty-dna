@@ -3,6 +3,7 @@
 import { useParams, useSearchParams } from "next/navigation";
 import { useCallback, useRef, useState, useEffect } from "react";
 import Link from "next/link";
+import { ArrowLeft } from "lucide-react";
 import { AssetTimeline, AssetIdentifier } from "@/components/AssetTimeline";
 
 function assetKey(asset: AssetIdentifier): string {
@@ -121,9 +122,10 @@ export default function TimelinePage() {
         <div className="container mx-auto px-6 py-3 flex items-center gap-4">
           <Link
             href={`/league/${familyId}`}
-            className="text-sm text-muted-foreground hover:text-foreground"
+            className="text-sm text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5"
           >
-            &larr; League
+            <ArrowLeft className="h-4 w-4" />
+            League
           </Link>
           <h1 className="text-lg font-semibold">Asset Timeline</h1>
         </div>
