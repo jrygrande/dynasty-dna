@@ -7,7 +7,7 @@ export default function TradeFinderPage() {
       <p className="text-muted-foreground text-lg mb-2">In development.</p>
       <p className="text-muted-foreground max-w-md mx-auto">
         Find trade partners who might be interested in the assets you want to
-        move by exploring their exposure across their portfolios.
+        move by exploring exposure across their portfolios.
       </p>
     </main>
   );
