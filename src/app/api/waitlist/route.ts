@@ -3,6 +3,7 @@ import { sql } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import { sendConfirmation } from "@/lib/email";
 import { createIpRateLimiter, getClientIp } from "@/lib/ipRateLimit";
+import { WAITLIST_DISPLAY_BOOST } from "@/lib/waitlistDisplay";
 
 const rateLimit = createIpRateLimiter({ max: 5, windowMs: 60_000 });
 
@@ -83,7 +84,9 @@ export async function POST(req: NextRequest) {
     `);
     const currentValue = (countRow.rows?.[0] as { current?: number } | undefined)
       ?.current;
-    currentCapacity = typeof currentValue === "number" ? currentValue : 0;
+    currentCapacity =
+      (typeof currentValue === "number" ? currentValue : 0) +
+      WAITLIST_DISPLAY_BOOST;
   } catch (err) {
     console.error("[waitlist] DB error", err);
     return NextResponse.json(

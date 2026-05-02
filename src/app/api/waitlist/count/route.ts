@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { sql } from "drizzle-orm";
 import { getDb, schema } from "@/db";
+import { WAITLIST_DISPLAY_BOOST } from "@/lib/waitlistDisplay";
 
 export const revalidate = 60;
 
@@ -16,8 +17,9 @@ export async function GET() {
            AND league_id NOT IN (SELECT league_id FROM ${schema.leagueFamilyMembers}))
       )::int AS current
     `);
-    const current =
+    const raw =
       (result.rows?.[0] as { current?: number } | undefined)?.current ?? 0;
+    const current = raw + WAITLIST_DISPLAY_BOOST;
     return NextResponse.json(
       { current },
       {

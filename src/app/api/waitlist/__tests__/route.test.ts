@@ -80,7 +80,8 @@ describe("POST /api/waitlist", () => {
     expect(sendConfirmationMock).toHaveBeenCalledWith({
       to: "user@example.com",
       leagueName: "Big & Bold Dynasty",
-      currentCapacity: 17,
+      // 17 from the count query + 20 vanity boost
+      currentCapacity: 37,
     });
   });
 
@@ -167,7 +168,8 @@ describe("POST /api/waitlist", () => {
     expect(sendConfirmationMock).toHaveBeenCalledWith({
       to: "user@example.com",
       leagueName: "<script>alert(1)</script>",
-      currentCapacity: 1,
+      // 1 from the count query + 20 vanity boost
+      currentCapacity: 21,
     });
   });
 });
