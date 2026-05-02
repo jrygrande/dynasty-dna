@@ -34,6 +34,7 @@ interface FoundLeague {
   name: string;
   season: string;
   avatar: string | null;
+  waitlisted?: boolean;
 }
 
 interface FindLeaguesResponse {
@@ -455,7 +456,9 @@ function NotInDbList({
       </p>
       {leagues.map((l) => {
         const isJustAdded = justAdded.has(l.league_id);
-        const isPersisted = persisted.has(l.league_id) && !isJustAdded;
+        const isPersisted =
+          (persisted.has(l.league_id) || l.waitlisted === true) &&
+          !isJustAdded;
         const isOpen = openLeagueId === l.league_id;
         return (
           <div

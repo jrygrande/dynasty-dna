@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import { Sleeper } from "@/lib/sleeper";
 
@@ -9,6 +9,7 @@ interface FoundLeague {
   name: string;
   season: string;
   avatar: string | null;
+  waitlisted: boolean;
 }
 
 interface FindLeaguesResponse {
@@ -137,6 +138,7 @@ export async function POST(req: NextRequest) {
   });
 
   const familyMap = new Map<string, string>();
+  const waitlistedSet = new Set<string>();
   if (dynastyLeagues.length > 0) {
     try {
       const db = getDb();
@@ -150,6 +152,20 @@ export async function POST(req: NextRequest) {
         .where(inArray(schema.leagueFamilyMembers.leagueId, leagueIds));
       for (const row of matched) {
         familyMap.set(row.leagueId, row.familyId);
+      }
+
+      const notInDbIds = leagueIds.filter((id) => !familyMap.has(id));
+      if (notInDbIds.length > 0) {
+        const waitlisted = await db
+          .select({ leagueId: schema.waitlist.leagueId })
+          .from(schema.waitlist)
+          .where(
+            and(
+              eq(schema.waitlist.status, "pending"),
+              inArray(schema.waitlist.leagueId, notInDbIds)
+            )
+          );
+        for (const row of waitlisted) waitlistedSet.add(row.leagueId);
       }
     } catch {
       return NextResponse.json(
@@ -169,6 +185,7 @@ export async function POST(req: NextRequest) {
       season: l.season,
       avatar:
         (l as unknown as { avatar?: string | null }).avatar ?? null,
+      waitlisted: waitlistedSet.has(l.league_id),
     })),
     total_league_count: totalLeagueCount,
   };
