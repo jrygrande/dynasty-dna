@@ -1,8 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { ArrowRight } from "lucide-react";
+import { track } from "@/lib/track";
+import {
+  clearStoredUsername,
+  getStoredUsername,
+  setStoredUsername,
+} from "@/lib/storedUsername";
 
 type ViewState =
   | "empty"
@@ -11,7 +18,9 @@ type ViewState =
   | "error_invalid"
   | "error_stale"
   | "error_empty_leagues"
-  | "error_api_down";
+  | "error_api_down"
+  | "error_rate_limited"
+  | "error_db";
 
 interface FoundLeague {
   league_id: string;
@@ -25,25 +34,113 @@ interface FindLeaguesResponse {
   username: string;
   user_id: string;
   leagues: FoundLeague[];
+  total_league_count: number;
 }
 
-// Mock data matches the response shape of POST /api/start/find-leagues — wired
-// in #82. Toggle MOCK_VIEW_STATE locally to scaffold each state visually.
-const MOCK_RESPONSE: FindLeaguesResponse = {
-  username: "demo_user",
-  user_id: "12345",
-  leagues: [
-    { league_id: "1", family_id: "fam_a", name: "Demo Dynasty League", season: "2025", avatar: null },
-    { league_id: "2", family_id: null, name: "Another Dynasty League", season: "2025", avatar: null },
-  ],
-};
-
-const MOCK_VIEW_STATE: ViewState = "empty";
-
 export default function StartPage() {
-  const [viewState] = useState<ViewState>(MOCK_VIEW_STATE);
+  return (
+    <Suspense fallback={null}>
+      <StartPageInner />
+    </Suspense>
+  );
+}
+
+function StartPageInner() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const [viewState, setViewState] = useState<ViewState>("empty");
   const [username, setUsername] = useState("");
-  const response = MOCK_RESPONSE;
+  const [response, setResponse] = useState<FindLeaguesResponse | null>(null);
+  const autoSubmittedRef = useRef(false);
+  const errorUsername = response?.username ?? username.trim();
+
+  const submit = useCallback(
+    async (rawUsername: string, opts?: { fromStored?: boolean }) => {
+      const trimmed = rawUsername.trim();
+      if (!trimmed) return;
+      const lower = trimmed.toLowerCase();
+      setViewState("loading");
+      try {
+        const res = await fetch("/api/start/find-leagues", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username: lower }),
+        });
+
+        if (res.status === 404) {
+          if (opts?.fromStored) {
+            clearStoredUsername();
+            setUsername("");
+            setViewState("error_stale");
+          } else {
+            setViewState("error_invalid");
+          }
+          return;
+        }
+        if (res.status === 429) {
+          setViewState("error_rate_limited");
+          return;
+        }
+        if (res.status === 502) {
+          setViewState("error_api_down");
+          return;
+        }
+        if (res.status >= 500) {
+          setViewState("error_db");
+          return;
+        }
+        if (!res.ok) {
+          setViewState("error_invalid");
+          return;
+        }
+
+        const data = (await res.json()) as FindLeaguesResponse;
+        setResponse(data);
+
+        const inDbCount = data.leagues.filter((l) => l.family_id).length;
+        track("username_submitted", {
+          had_in_db_match: inDbCount > 0,
+          dynasty_count: data.leagues.length,
+          total_league_count: data.total_league_count,
+        });
+
+        if (data.leagues.length === 0) {
+          setViewState("error_empty_leagues");
+          return;
+        }
+
+        setStoredUsername(data.username);
+        setViewState("leagues");
+        track("leagues_loaded");
+      } catch {
+        setViewState("error_api_down");
+      }
+    },
+    []
+  );
+
+  useEffect(() => {
+    if (autoSubmittedRef.current) return;
+    autoSubmittedRef.current = true;
+    if (searchParams?.get("switch") === "1") {
+      clearStoredUsername();
+      // Strip the query param so refresh doesn't keep clearing.
+      router.replace("/start");
+      return;
+    }
+    const stored = getStoredUsername();
+    if (stored) {
+      setUsername(stored);
+      submit(stored, { fromStored: true });
+    }
+  }, [searchParams, submit, router]);
+
+  function handleSwitchUser() {
+    clearStoredUsername();
+    setUsername("");
+    setResponse(null);
+    setViewState("empty");
+  }
 
   return (
     <main className="container mx-auto px-6 py-16 max-w-xl">
@@ -59,18 +156,21 @@ export default function StartPage() {
         viewState === "error_invalid" ||
         viewState === "error_stale" ||
         viewState === "error_empty_leagues" ||
-        viewState === "error_api_down") && (
+        viewState === "error_api_down" ||
+        viewState === "error_rate_limited" ||
+        viewState === "error_db") && (
         <UsernameInput
           value={username}
           onChange={setUsername}
           disabled={viewState === "loading"}
           showStaleHint={viewState === "error_stale"}
+          onSubmit={() => submit(username)}
         />
       )}
 
       {viewState === "error_invalid" && (
         <div className="mt-6 p-4 rounded-md bg-grade-f/8 border border-grade-f/25 text-grade-f text-sm">
-          We couldn&apos;t find @{username || "{username}"} on Sleeper. Check the spelling and try again.{" "}
+          We couldn&apos;t find @{errorUsername} on Sleeper. Check the spelling and try again.{" "}
           <Link href="/demo" className="underline hover:no-underline">
             Or browse a demo league.
           </Link>
@@ -79,10 +179,10 @@ export default function StartPage() {
 
       {viewState === "error_empty_leagues" && (
         <div className="mt-6 p-4 rounded-md bg-grade-c/8 border border-grade-c/25 text-grade-c text-sm">
-          We didn&apos;t find any dynasty leagues for @{username || "{username}"} on Sleeper.
-          Dynasty DNA only supports true dynasty leagues (Sleeper{" "}
-          <code className="font-mono text-xs">settings.type === 2</code>). Keeper leagues
-          aren&apos;t supported yet. In the meantime,{" "}
+          @{errorUsername} is on Sleeper but has no dynasty leagues this season.
+          Dynasty DNA only supports true dynasty leagues (
+          <code className="font-mono text-xs">settings.type === 2</code>). Keeper
+          leagues aren&apos;t supported yet. In the meantime,{" "}
           <Link href="/demo" className="underline hover:no-underline">
             browse our demo league
           </Link>
@@ -95,10 +195,23 @@ export default function StartPage() {
           <span>Sleeper&apos;s API isn&apos;t responding. Try again in a moment.</span>
           <button
             type="button"
+            onClick={() => submit(username)}
             className="text-xs px-3 py-1.5 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
           >
             Retry
           </button>
+        </div>
+      )}
+
+      {viewState === "error_rate_limited" && (
+        <div className="mt-6 p-4 rounded-md bg-grade-c/8 border border-grade-c/25 text-grade-c text-sm">
+          Too many requests. Try again in a minute.
+        </div>
+      )}
+
+      {viewState === "error_db" && (
+        <div className="mt-6 p-4 rounded-md bg-grade-f/8 border border-grade-f/25 text-grade-f text-sm">
+          Something went wrong on our end. Try refreshing.
         </div>
       )}
 
@@ -110,10 +223,11 @@ export default function StartPage() {
         </div>
       )}
 
-      {viewState === "leagues" && (
+      {viewState === "leagues" && response && (
         <LeaguesList
           username={response.username}
           leagues={response.leagues}
+          onSwitchUser={handleSwitchUser}
         />
       )}
     </main>
@@ -125,14 +239,22 @@ function UsernameInput({
   onChange,
   disabled,
   showStaleHint,
+  onSubmit,
 }: {
   value: string;
   onChange: (value: string) => void;
   disabled: boolean;
   showStaleHint: boolean;
+  onSubmit: () => void;
 }) {
   return (
-    <form className="space-y-3" onSubmit={(e) => e.preventDefault()}>
+    <form
+      className="space-y-3"
+      onSubmit={(e) => {
+        e.preventDefault();
+        onSubmit();
+      }}
+    >
       {showStaleHint && (
         <p className="text-sm text-muted-foreground">
           We couldn&apos;t find that user anymore — try entering a username.
@@ -146,6 +268,7 @@ function UsernameInput({
           disabled={disabled}
           placeholder="Sleeper username"
           aria-label="Sleeper username"
+          autoComplete="username"
           className="flex-1 px-4 py-2.5 rounded-md border border-input bg-background text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-60"
         />
         <button
@@ -163,9 +286,11 @@ function UsernameInput({
 function LeaguesList({
   username,
   leagues,
+  onSwitchUser,
 }: {
   username: string;
   leagues: FoundLeague[];
+  onSwitchUser: () => void;
 }) {
   const inDb = leagues.filter((l) => l.family_id);
   const notInDb = leagues.filter((l) => !l.family_id);
@@ -178,6 +303,7 @@ function LeaguesList({
         </span>
         <button
           type="button"
+          onClick={onSwitchUser}
           className="text-primary hover:underline"
         >
           Switch user
@@ -193,10 +319,18 @@ function LeaguesList({
             >
               <div className="min-w-0">
                 <p className="font-medium truncate">{l.name}</p>
-                <p className="text-xs text-muted-foreground font-mono">{l.season}</p>
+                <p className="text-xs text-muted-foreground font-mono">
+                  {l.season}
+                </p>
               </div>
               <Link
                 href={`/league/${l.family_id}`}
+                onClick={() =>
+                  track("league_selected", {
+                    family_id: l.family_id,
+                    season: l.season,
+                  })
+                }
                 className="inline-flex items-center gap-1.5 px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors flex-shrink-0"
               >
                 Open
@@ -219,10 +353,15 @@ function LeaguesList({
             >
               <div className="min-w-0">
                 <p className="font-medium truncate">{l.name}</p>
-                <p className="text-xs text-muted-foreground font-mono">{l.season}</p>
+                <p className="text-xs text-muted-foreground font-mono">
+                  {l.season}
+                </p>
               </div>
               <button
                 type="button"
+                onClick={() =>
+                  track("waitlist_shown", { league_id: l.league_id })
+                }
                 className="px-4 py-2 rounded-md border border-primary text-primary text-sm font-medium hover:bg-primary/10 transition-colors flex-shrink-0"
               >
                 Join waitlist

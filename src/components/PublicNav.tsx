@@ -5,6 +5,11 @@ import { useRouter, usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { Menu, X, ChevronDown } from "lucide-react";
 import { BrandLockup } from "./BrandMark";
+import {
+  STORED_USERNAME_KEY,
+  clearStoredUsername,
+  getStoredUsername,
+} from "@/lib/storedUsername";
 
 const navLinks: Array<{ href: string; label: string; soon?: boolean }> = [
   { href: "/trade-finder", label: "Trade Finder", soon: true },
@@ -12,8 +17,6 @@ const navLinks: Array<{ href: string; label: string; soon?: boolean }> = [
   { href: "/changelog", label: "Changelog" },
   { href: "/experiments", label: "Experiments" },
 ];
-
-const STORAGE_KEY = "dd_username";
 
 export function PublicNav() {
   const pathname = usePathname();
@@ -28,14 +31,9 @@ export function PublicNav() {
 
   useEffect(() => {
     setHydrated(true);
-    try {
-      const v = window.localStorage.getItem(STORAGE_KEY);
-      setStoredUsername(v && v.trim() ? v : null);
-    } catch {
-      // localStorage unavailable — render unauthenticated CTA
-    }
+    setStoredUsername(getStoredUsername());
     function onStorage(e: StorageEvent) {
-      if (e.key === STORAGE_KEY) {
+      if (e.key === STORED_USERNAME_KEY) {
         setStoredUsername(e.newValue && e.newValue.trim() ? e.newValue : null);
       }
     }
@@ -44,11 +42,7 @@ export function PublicNav() {
   }, []);
 
   function handleSwitchUser() {
-    try {
-      window.localStorage.removeItem(STORAGE_KEY);
-    } catch {
-      // ignore
-    }
+    clearStoredUsername();
     setStoredUsername(null);
     router.push("/start?switch=1");
   }
