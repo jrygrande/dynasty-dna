@@ -2,7 +2,7 @@
 
 export const STORED_USERNAME_KEY = "dd_username";
 
-function safeStorage(): Storage | null {
+export function safeStorage(): Storage | null {
   try {
     return window.localStorage;
   } catch {

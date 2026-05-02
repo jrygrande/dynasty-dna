@@ -57,11 +57,7 @@ describe("notifyWaitlist", () => {
       familyId: "fam-1",
     });
     expect(marked).toEqual(["r1", "r2"]);
-    expect(summary).toEqual({
-      notified: 2,
-      skipped: 0,
-      unsent: [],
-    });
+    expect(summary).toEqual({ notified: 2, unsent: [] });
   });
 
   it("skips already-notified rows because getPending only returns pending", async () => {
@@ -187,7 +183,7 @@ describe("notifyWaitlist", () => {
       sleep: async () => {},
     });
     expect(sendCalls).toBe(0);
-    expect(summary).toEqual({ notified: 0, skipped: 0, unsent: [] });
+    expect(summary).toEqual({ notified: 0, unsent: [] });
   });
 
   it("partial failure: rows sent before a failure stay marked", async () => {

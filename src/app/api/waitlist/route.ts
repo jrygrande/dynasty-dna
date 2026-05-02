@@ -2,50 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { sql } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import { sendConfirmation } from "@/lib/email";
+import { createIpRateLimiter, getClientIp } from "@/lib/ipRateLimit";
 
-const RATE_LIMIT_MAX = 5;
-const RATE_LIMIT_WINDOW_MS = 60_000;
-const SWEEP_THRESHOLD = 1024;
-
-const ipBuckets = new Map<string, { count: number; resetAt: number }>();
-
-function sweepExpired(map: Map<string, { resetAt: number }>, now: number) {
-  if (map.size < SWEEP_THRESHOLD) return;
-  for (const [k, v] of map) {
-    if (v.resetAt < now) map.delete(k);
-  }
-}
-
-function getClientIp(req: NextRequest): string {
-  const forwarded = req.headers.get("x-forwarded-for");
-  if (forwarded) return forwarded.split(",")[0].trim();
-  return req.headers.get("x-real-ip") || "unknown";
-}
-
-function rateLimitCheck(ip: string): { allowed: boolean; retryAfterSec: number } {
-  const now = Date.now();
-  sweepExpired(ipBuckets, now);
-  const bucket = ipBuckets.get(ip);
-  if (!bucket || bucket.resetAt < now) {
-    ipBuckets.set(ip, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
-    return { allowed: true, retryAfterSec: 0 };
-  }
-  if (bucket.count >= RATE_LIMIT_MAX) {
-    return {
-      allowed: false,
-      retryAfterSec: Math.max(1, Math.ceil((bucket.resetAt - now) / 1000)),
-    };
-  }
-  bucket.count += 1;
-  return { allowed: true, retryAfterSec: 0 };
-}
+const rateLimit = createIpRateLimiter({ max: 5, windowMs: 60_000 });
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const LEAGUE_ID_REGEX = /^\d{18,20}$/;
 
 export async function POST(req: NextRequest) {
   const ip = getClientIp(req);
-  const rl = rateLimitCheck(ip);
+  const rl = rateLimit(ip);
   if (!rl.allowed) {
     return NextResponse.json(
       { error: "Too many requests. Try again in a minute." },

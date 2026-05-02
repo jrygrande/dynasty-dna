@@ -456,7 +456,7 @@ function NotInDbList({
       </p>
       {leagues.map((l) => {
         const isJustAdded = justAdded.has(l.league_id);
-        const isPersisted =
+        const isOnWaitlist =
           (persisted.has(l.league_id) || l.waitlisted === true) &&
           !isJustAdded;
         const isOpen = openLeagueId === l.league_id;
@@ -472,11 +472,12 @@ function NotInDbList({
                   {l.season}
                 </p>
               </div>
-              {isPersisted ? (
+              {isOnWaitlist && (
                 <span className="text-sm text-primary font-medium flex-shrink-0">
                   ✓ On waitlist
                 </span>
-              ) : isJustAdded ? null : isOpen ? null : (
+              )}
+              {!isOnWaitlist && !isJustAdded && !isOpen && (
                 <button
                   type="button"
                   onClick={() => handleOpen(l.league_id)}
@@ -486,7 +487,7 @@ function NotInDbList({
                 </button>
               )}
             </div>
-            {isOpen && !isJustAdded && !isPersisted && (
+            {isOpen && !isJustAdded && !isOnWaitlist && (
               <form
                 className="space-y-2"
                 onSubmit={(e) => {

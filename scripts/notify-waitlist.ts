@@ -104,7 +104,7 @@ async function main() {
   });
 
   console.log(
-    `notify-waitlist: ${summary.notified} sent, ${summary.skipped} skipped, ${summary.unsent.length} unsent`
+    `notify-waitlist: ${summary.notified} sent, ${summary.unsent.length} unsent`
   );
   if (summary.unsent.length > 0) {
     console.log("Unsent waitlist row IDs:");

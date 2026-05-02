@@ -29,7 +29,6 @@ export interface NotifyOptions {
 
 export interface NotifySummary {
   notified: number;
-  skipped: number;
   unsent: string[];
 }
 
@@ -81,11 +80,11 @@ export async function notifyWaitlist({
 
   const memberLeagueIds = await db.getMembers(familyId);
   if (memberLeagueIds.length === 0) {
-    return { notified: 0, skipped: 0, unsent: [] };
+    return { notified: 0, unsent: [] };
   }
   const pending = await db.getPending(memberLeagueIds);
   if (pending.length === 0) {
-    return { notified: 0, skipped: 0, unsent: [] };
+    return { notified: 0, unsent: [] };
   }
 
   // Cache league name resolution per leagueId — multiple rows often share one
@@ -99,7 +98,6 @@ export async function notifyWaitlist({
   }
 
   let notified = 0;
-  const skipped = 0;
   const unsent: string[] = [];
 
   for (let i = 0; i < pending.length; i++) {
@@ -126,7 +124,6 @@ export async function notifyWaitlist({
           await doSleep(BACKOFF_MS[attempt]);
           continue;
         }
-        // Non-retryable error: log and move on.
         console.error(
           `[notify-waitlist] send failed for row ${row.id}:`,
           errorMessage(err)
@@ -151,7 +148,6 @@ export async function notifyWaitlist({
     }
 
     if (dailyCapHit) {
-      // Log all remaining IDs as unsent and exit cleanly.
       for (let j = i + 1; j < pending.length; j++) {
         unsent.push(pending[j].id);
       }
@@ -166,5 +162,5 @@ export async function notifyWaitlist({
     }
   }
 
-  return { notified, skipped, unsent };
+  return { notified, unsent };
 }

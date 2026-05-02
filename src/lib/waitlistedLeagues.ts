@@ -1,14 +1,8 @@
 "use client";
 
-const PREFIX = "dd_waitlisted_leagues_";
+import { safeStorage } from "@/lib/storedUsername";
 
-function safeStorage(): Storage | null {
-  try {
-    return window.localStorage;
-  } catch {
-    return null;
-  }
-}
+const PREFIX = "dd_waitlisted_leagues_";
 
 function key(username: string): string {
   return `${PREFIX}${username.toLowerCase()}`;
