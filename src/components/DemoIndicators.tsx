@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import { X } from "lucide-react";
@@ -70,7 +69,6 @@ export function DemoChip() {
 // First-visit sticky banner. Dismissible per session. Only renders inside the
 // demo league family.
 export function DemoBanner() {
-  const router = useRouter();
   const { active } = useDemoActive();
   const [dismissed, setDismissed] = useState(true);
 
@@ -90,15 +88,7 @@ export function DemoBanner() {
     <div className="border-b border-grade-c/25 bg-grade-c/8">
       <div className="container mx-auto px-6 py-2.5 flex items-center justify-between gap-4 text-sm">
         <p className="text-foreground/90">
-          You&apos;re browsing a demo league with anonymized names — explore
-          freely, then…{" "}
-          <Link
-            href="/start"
-            onClick={() => exitDemo()}
-            className="font-medium text-primary hover:underline"
-          >
-            Find your real league →
-          </Link>
+          You&apos;re browsing a real league with anonymized names.
         </p>
         <button
           type="button"

@@ -360,8 +360,11 @@ function LeaguesList({
 
       {notInDb.length > 0 && (
         <>
-          <WaitlistProgress current={current} target={100} />
-          {inDb.length === 0 && <DemoLeagueCallout />}
+          {inDb.length === 0 ? (
+            <DemoLeagueCallout />
+          ) : (
+            <WaitlistProgress current={current} target={100} />
+          )}
           <NotInDbList
             username={username}
             leagues={notInDb}
