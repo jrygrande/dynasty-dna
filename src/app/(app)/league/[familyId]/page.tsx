@@ -4,10 +4,6 @@ import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Network } from "lucide-react";
-import {
-  LineupEfficiencyCard,
-  type RosterGrade,
-} from "@/components/LineupEfficiencyCard";
 import { ManagerName, ManagerSecondaryName } from "@/components/ManagerName";
 import { ChampionshipTrophies } from "@/components/ChampionshipTrophy";
 import { useFlag } from "@/lib/useFlag";
@@ -57,24 +53,16 @@ export default function LeagueOverviewPage() {
   const [data, setData] = useState<LeagueOverviewData | null>(null);
   const [loading, setLoading] = useState(true);
   const [autoSyncing, setAutoSyncing] = useState(false);
-  const [lineupGrades, setLineupGrades] = useState<RosterGrade[] | null>(null);
   const graphEnabled = useFlag("ASSET_GRAPH_BROWSER");
 
   const loadLeagueData = useCallback(async () => {
     setLoading(true);
-    setLineupGrades(null);
     const seasonQuery = `?season=${seasonParam}`;
     const res = await fetch(`/api/leagues/${familyId}${seasonQuery}`);
     if (res.ok) {
       const result = await res.json();
       setData(result);
       setLoading(false);
-      if (seasonParam !== ALL_TIME) {
-        fetch(`/api/leagues/${familyId}/lineup-grades${seasonQuery}`)
-          .then((r) => (r.ok ? r.json() : null))
-          .then((r) => setLineupGrades(r?.rosters || null))
-          .catch(() => setLineupGrades(null));
-      }
     } else if (res.status === 404) {
       // First-time visit for an unseeded family — kick off ingestion in the
       // background so the page settles into real data without exposing a
@@ -331,12 +319,6 @@ export default function LeagueOverviewPage() {
             })}
           </ul>
         </section>
-
-        {!isAllTime && lineupGrades && lineupGrades.length > 0 && (
-          <div className="mt-8">
-            <LineupEfficiencyCard rosters={lineupGrades} />
-          </div>
-        )}
       </main>
     </div>
   );

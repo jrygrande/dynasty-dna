@@ -59,17 +59,24 @@ export async function GET(
       },
       familyId: null,
       seasons: [{ leagueId: league.id, season: league.season }],
-      rosters: rosters.map((r) => ({
-        rosterId: r.rosterId,
-        ownerId: r.ownerId,
-        wins: r.wins || 0,
-        losses: r.losses || 0,
-        ties: r.ties || 0,
-        fpts: r.fpts || 0,
-        fptsAgainst: r.fptsAgainst || 0,
-        seasonsPlayed: 1,
-        championshipYears: [] as string[],
-      })),
+      rosters: rosters
+        .map((r) => ({
+          rosterId: r.rosterId,
+          ownerId: r.ownerId,
+          wins: r.wins || 0,
+          losses: r.losses || 0,
+          ties: r.ties || 0,
+          fpts: r.fpts || 0,
+          fptsAgainst: r.fptsAgainst || 0,
+          seasonsPlayed: 1,
+          championshipYears: [] as string[],
+        }))
+        .sort(
+          (a, b) =>
+            b.championshipYears.length - a.championshipYears.length ||
+            b.wins - a.wins ||
+            b.fpts - a.fpts,
+        ),
       users,
     });
   }
@@ -217,18 +224,25 @@ export async function GET(
     },
     familyId: resolvedFamilyId,
     seasons,
-    rosters: rosters.map((r) => ({
-      rosterId: r.rosterId,
-      ownerId: r.ownerId,
-      wins: r.wins || 0,
-      losses: r.losses || 0,
-      ties: r.ties || 0,
-      fpts: r.fpts || 0,
-      fptsAgainst: r.fptsAgainst || 0,
-      seasonsPlayed: 1,
-      championshipYears:
-        champRosterId === r.rosterId ? [league.season] : [],
-    })),
+    rosters: rosters
+      .map((r) => ({
+        rosterId: r.rosterId,
+        ownerId: r.ownerId,
+        wins: r.wins || 0,
+        losses: r.losses || 0,
+        ties: r.ties || 0,
+        fpts: r.fpts || 0,
+        fptsAgainst: r.fptsAgainst || 0,
+        seasonsPlayed: 1,
+        championshipYears:
+          champRosterId === r.rosterId ? [league.season] : [],
+      }))
+      .sort(
+        (a, b) =>
+          b.championshipYears.length - a.championshipYears.length ||
+          b.wins - a.wins ||
+          b.fpts - a.fpts,
+      ),
     users: demoSwap ? users.map((u) => swapLeagueUser(u, demoSwap)) : users,
   });
 }

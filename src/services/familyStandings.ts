@@ -122,6 +122,9 @@ export async function getAllTimeStandings(
   }
 
   return Array.from(byOwner.values()).sort(
-    (a, b) => b.wins - a.wins || b.fpts - a.fpts,
+    (a, b) =>
+      b.championshipYears.length - a.championshipYears.length ||
+      b.wins - a.wins ||
+      b.fpts - a.fpts,
   );
 }
