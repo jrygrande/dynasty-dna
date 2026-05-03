@@ -170,7 +170,8 @@ export async function GET(
       }
     }
 
-    // Manager Process Score (MPS) — composite all-time score
+    // Manager Process Score (MPS) — composite all-time score.
+    // Stored as `manager_process_score` per #41 (sibling to *_score columns).
     const mpsMetric = myMetrics.find(
       (r) => r.metric === "manager_process_score" && r.scope === "all_time",
     );
