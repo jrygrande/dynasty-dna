@@ -1,13 +1,17 @@
-import { redirect } from "next/navigation";
 import Link from "next/link";
 import { getDemoFamilyId } from "@/lib/demoFamily";
+import { DemoEntryRedirect } from "@/components/DemoEntryRedirect";
 
 export const dynamic = "force-dynamic";
 
+// Server resolves the singleton family, then a tiny client component activates
+// demo mode in sessionStorage BEFORE navigating to /league/{family-id}. This
+// avoids putting `?demo=1` in the URL and the timing race that came with it.
 export default async function DemoPage() {
   const familyId = await getDemoFamilyId();
+
   if (familyId) {
-    redirect(`/league/${familyId}?demo=1`);
+    return <DemoEntryRedirect familyId={familyId} />;
   }
 
   return (
@@ -26,7 +30,7 @@ export default async function DemoPage() {
         href="/start"
         className="inline-flex items-center px-4 py-2 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
       >
-        Find your league →
+        Find your league
       </Link>
     </main>
   );

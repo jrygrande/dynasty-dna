@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, HelpCircle } from "lucide-react";
 import { track } from "@/lib/track";
 import {
   clearStoredUsername,
@@ -11,6 +11,7 @@ import {
   setStoredUsername,
 } from "@/lib/storedUsername";
 import { DemoLeagueCallout } from "@/components/DemoLeagueCallout";
+import { DemoLinkTile } from "@/components/DemoLinkTile";
 import { WaitlistProgress } from "@/components/WaitlistProgress";
 import { useWaitlistCount } from "@/lib/useWaitlistCount";
 import {
@@ -175,13 +176,20 @@ function StartPageInner() {
         viewState === "error_api_down" ||
         viewState === "error_rate_limited" ||
         viewState === "error_db") && (
-        <UsernameInput
-          value={username}
-          onChange={setUsername}
-          disabled={viewState === "loading"}
-          showStaleHint={viewState === "error_stale"}
-          onSubmit={() => submit(username)}
-        />
+        <div className="space-y-3">
+          <UsernameInput
+            value={username}
+            onChange={setUsername}
+            disabled={viewState === "loading"}
+            showStaleHint={viewState === "error_stale"}
+            onSubmit={() => submit(username)}
+          />
+          <DemoLinkTile
+            href="/demo"
+            icon={HelpCircle}
+            label="Don't have a Sleeper account? Check out a real league"
+          />
+        </div>
       )}
 
       {viewState === "error_invalid" && (
