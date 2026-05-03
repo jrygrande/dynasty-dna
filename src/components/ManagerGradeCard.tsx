@@ -1,3 +1,4 @@
+import { Info } from "lucide-react";
 import { GradeBadge } from "@/components/GradeBadge";
 import { PILLAR_LABELS } from "@/lib/pillars";
 import { ordinal } from "@/lib/utils";
@@ -15,14 +16,8 @@ interface ManagerGradeCardProps {
   pillarScores: Record<string, ManagerScore | null>;
 }
 
-function RankLine({ score }: { score: ManagerScore }) {
-  return (
-    <span className="font-mono tabular-nums">
-      {ordinal(score.rank)}
-      <span className="text-muted-foreground"> of {score.total}</span>
-    </span>
-  );
-}
+const MPS_TOOLTIP =
+  "Manager Process Score: A weighted average of your drafting, trading, waiver, and lineup grades — with the moves that have the biggest impact considered most by the model.";
 
 export function ManagerGradeCard({
   mps,
@@ -40,8 +35,13 @@ export function ManagerGradeCard({
     <div className="border rounded-lg p-4 sm:p-6">
       <div className="flex items-baseline gap-2 mb-1">
         <h2 className="text-sm font-semibold">Manager Process Score</h2>
-        <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
+        <span
+          className="inline-flex items-center gap-1 text-[10px] font-mono uppercase tracking-wider text-muted-foreground cursor-help"
+          title={MPS_TOOLTIP}
+        >
           MPS
+          <Info className="h-3 w-3" aria-hidden />
+          <span className="sr-only">{MPS_TOOLTIP}</span>
         </span>
       </div>
       <p className="text-xs text-muted-foreground mb-4">
@@ -72,12 +72,7 @@ export function ManagerGradeCard({
                 {label}
               </span>
               {pillar ? (
-                <div className="flex items-center gap-2 shrink-0">
-                  <span className="text-sm">
-                    <RankLine score={pillar} />
-                  </span>
-                  <GradeBadge grade={pillar.grade} size="xs" />
-                </div>
+                <GradeBadge grade={pillar.grade} size="xs" />
               ) : (
                 <span className="text-xs text-muted-foreground">--</span>
               )}

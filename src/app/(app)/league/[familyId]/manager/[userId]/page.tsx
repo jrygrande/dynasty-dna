@@ -29,7 +29,7 @@ import {
   ChampionshipTrophies,
 } from "@/components/ChampionshipTrophy";
 import { PILLAR_KEYS, PILLAR_LABELS } from "@/lib/pillars";
-import { ordinal } from "@/lib/utils";
+import { getRoundSuffix, ordinal } from "@/lib/utils";
 
 interface RecordRow {
   wins: number;
@@ -67,13 +67,27 @@ interface RosterSnapshot {
   players: RosterPlayer[];
 }
 
+interface PlayerRef {
+  id: string;
+  name: string;
+  position: string | null;
+  team: string | null;
+}
+
+interface PickRef {
+  season: string;
+  round: number;
+}
+
 interface Transaction {
   id: string;
   type: string;
   season: string;
   week: number;
-  adds: Array<{ id: string; name: string; position: string | null; team: string | null }>;
-  drops: Array<{ id: string; name: string; position: string | null; team: string | null }>;
+  adds: PlayerRef[];
+  drops: PlayerRef[];
+  picksReceived: PickRef[];
+  picksSent: PickRef[];
   grade: string | null;
   score: number | null;
   createdAt: number | null;
@@ -600,7 +614,7 @@ function SeasonHistoryTable({
               </td>
               {PILLAR_KEYS.map((key) => (
                 <td key={key} className="px-3 py-2 text-center">
-                  <RankCell score={row.pillars[key]} />
+                  <GradeOnlyCell score={row.pillars[key]} />
                 </td>
               ))}
             </tr>
@@ -626,6 +640,13 @@ function RankCell({ score }: { score: ManagerScore | null }) {
   );
 }
 
+function GradeOnlyCell({ score }: { score: ManagerScore | null }) {
+  if (!score) {
+    return <span className="text-xs text-muted-foreground">--</span>;
+  }
+  return <GradeBadge grade={score.grade} size="xs" />;
+}
+
 // ============================================================
 // Section 5: Roster
 // ============================================================
@@ -641,8 +662,7 @@ function RosterSection({
 }) {
   const [expanded, setExpanded] = useState(false);
 
-  const seasonLabel =
-    selectedSeason === "all" ? "All-time" : selectedSeason;
+  const seasonLabel = selectedSeason === "all" ? "Current" : selectedSeason;
   const asOfLabel = snapshot.asOf
     ? new Date(snapshot.asOf).toLocaleDateString(undefined, {
         month: "short",
@@ -651,11 +671,19 @@ function RosterSection({
       })
     : null;
 
+  // For past seasons, the snapshot reflects the league's last-synced roster —
+  // typically the final roster of that season. For "current", the timestamp
+  // is fresh and worth showing.
+  const subLine =
+    selectedSeason === "all"
+      ? asOfLabel
+        ? `Last synced ${asOfLabel}`
+        : "Last synced"
+      : `Final roster of the ${selectedSeason} season`;
+
   return (
     <section>
-      <h2 className="text-lg font-semibold mb-3">
-        Roster — {seasonLabel}
-      </h2>
+      <h2 className="text-lg font-semibold mb-3">Roster: {seasonLabel}</h2>
       <div className="border rounded-lg overflow-hidden bg-card">
         <button
           type="button"
@@ -674,9 +702,7 @@ function RosterSection({
               {snapshot.players.length !== 1 ? "s" : ""}
             </div>
             <div className="mt-0.5 text-xs text-muted-foreground">
-              {asOfLabel
-                ? `Roster as of last sync · ${asOfLabel}`
-                : "Roster as of last sync"}
+              {subLine}
             </div>
           </div>
         </button>
@@ -786,7 +812,7 @@ function TransactionsSection({
 
   return (
     <section>
-      <h2 className="text-lg font-semibold mb-3">Recent Transactions</h2>
+      <h2 className="text-lg font-semibold mb-3">Transactions</h2>
       <div className="border rounded-lg overflow-hidden bg-card">
         <button
           type="button"
@@ -851,34 +877,8 @@ function TransactionsSection({
             ) : (
               <ul className="divide-y divide-border/60">
                 {transactions.map((tx) => (
-                  <li
-                    key={tx.id}
-                    className="px-3 sm:px-4 py-3 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 sm:gap-4"
-                  >
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1 flex-wrap">
-                        <TypeBadge type={tx.type} />
-                        <span className="text-xs text-muted-foreground font-mono">
-                          {tx.season} W{tx.week}
-                        </span>
-                      </div>
-                      <div className="text-sm">
-                        {tx.adds.length > 0 && (
-                          <span className="text-primary">
-                            +{tx.adds.map((p) => p.name).join(", ")}
-                          </span>
-                        )}
-                        {tx.adds.length > 0 && tx.drops.length > 0 && (
-                          <span className="text-muted-foreground mx-1">/</span>
-                        )}
-                        {tx.drops.length > 0 && (
-                          <span className="text-muted-foreground">
-                            −{tx.drops.map((p) => p.name).join(", ")}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    {tx.grade && <GradeBadge grade={tx.grade} size="xs" />}
+                  <li key={tx.id}>
+                    <TransactionRow tx={tx} />
                   </li>
                 ))}
               </ul>
@@ -887,5 +887,101 @@ function TransactionsSection({
         )}
       </div>
     </section>
+  );
+}
+
+function pickLabel(p: PickRef): string {
+  return `${p.season} ${p.round}${getRoundSuffix(p.round)}`;
+}
+
+function AssetList({
+  players,
+  picks,
+  sign,
+  className,
+}: {
+  players: PlayerRef[];
+  picks: PickRef[];
+  sign: "+" | "−";
+  className: string;
+}) {
+  if (players.length === 0 && picks.length === 0) return null;
+  const items: string[] = [
+    ...players.map((p) => p.name),
+    ...picks.map((p) => `${pickLabel(p)} pick`),
+  ];
+  return (
+    <span className={className}>
+      {sign}
+      {items.join(", ")}
+    </span>
+  );
+}
+
+function TransactionRow({ tx }: { tx: Transaction }) {
+  const isTrade = tx.type === "trade";
+  const hasReceived = tx.adds.length > 0 || tx.picksReceived.length > 0;
+  const hasSent = tx.drops.length > 0 || tx.picksSent.length > 0;
+
+  return (
+    <div className="px-3 sm:px-4 py-3 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 sm:gap-4">
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 mb-1 flex-wrap">
+          <TypeBadge type={tx.type} />
+          <span className="text-xs text-muted-foreground font-mono">
+            {tx.season} W{tx.week}
+          </span>
+        </div>
+        {isTrade ? (
+          <div className="text-sm space-y-0.5">
+            {hasReceived && (
+              <div className="flex gap-2">
+                <span className="text-[10px] font-mono uppercase tracking-wide text-muted-foreground mt-1 shrink-0 w-16">
+                  Received
+                </span>
+                <AssetList
+                  players={tx.adds}
+                  picks={tx.picksReceived}
+                  sign="+"
+                  className="text-primary"
+                />
+              </div>
+            )}
+            {hasSent && (
+              <div className="flex gap-2">
+                <span className="text-[10px] font-mono uppercase tracking-wide text-muted-foreground mt-1 shrink-0 w-16">
+                  Sent
+                </span>
+                <AssetList
+                  players={tx.drops}
+                  picks={tx.picksSent}
+                  sign="−"
+                  className="text-muted-foreground"
+                />
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="text-sm">
+            <AssetList
+              players={tx.adds}
+              picks={tx.picksReceived}
+              sign="+"
+              className="text-primary"
+            />
+            {hasReceived && hasSent && (
+              <span className="text-muted-foreground mx-1">/</span>
+            )}
+            <AssetList
+              players={tx.drops}
+              picks={tx.picksSent}
+              sign="−"
+              className="text-muted-foreground"
+            />
+          </div>
+        )}
+      </div>
+      {tx.grade && <GradeBadge grade={tx.grade} size="xs" />}
+    </div>
   );
 }

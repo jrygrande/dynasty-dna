@@ -105,6 +105,7 @@ export async function GET(
           week: schema.transactions.week,
           adds: schema.transactions.adds,
           drops: schema.transactions.drops,
+          draftPicks: schema.transactions.draftPicks,
           createdAt: schema.transactions.createdAt,
         })
         .from(schema.transactions)
@@ -628,35 +629,67 @@ export async function GET(
       }
     }
 
+    function playerRef(pid: string) {
+      const p = playerById.get(pid);
+      return {
+        id: pid,
+        name: p?.name ?? pid,
+        position: p?.position ?? null,
+        team: p?.team ?? null,
+      };
+    }
+
+    interface PickRef {
+      season: string;
+      round: number;
+    }
+
     const enrichedTx = managerTx.map((tx) => {
       const adds = (tx.adds || {}) as Record<string, number>;
       const drops = (tx.drops || {}) as Record<string, number>;
+      const draftPicks = (tx.draftPicks || []) as Array<{
+        season: string;
+        round: number;
+        roster_id: number;
+        previous_owner_id: number;
+        owner_id: number;
+      }>;
       const season = leagueToSeason.get(tx.leagueId) ?? "";
       const txGrade = gradeMap.get(tx.id);
+      const myRosterId = myRosterByLeague.get(tx.leagueId);
+
+      // Filter to the manager's side of the transaction. For waivers/free
+      // agents this is a no-op (only one side); for trades it strips the
+      // counterparty's assets so the card reads as "what I got / gave up".
+      const myAdds = Object.entries(adds)
+        .filter(([, rid]) => rid === myRosterId)
+        .map(([pid]) => playerRef(pid));
+      const myDrops = Object.entries(drops)
+        .filter(([, rid]) => rid === myRosterId)
+        .map(([pid]) => playerRef(pid));
+
+      const picksReceived: PickRef[] = [];
+      const picksSent: PickRef[] = [];
+      for (const p of draftPicks) {
+        if (p.owner_id === myRosterId && p.previous_owner_id !== myRosterId) {
+          picksReceived.push({ season: p.season, round: p.round });
+        } else if (
+          p.previous_owner_id === myRosterId &&
+          p.owner_id !== myRosterId
+        ) {
+          picksSent.push({ season: p.season, round: p.round });
+        }
+      }
 
       return {
         id: tx.id,
         type: tx.type,
         season,
         week: tx.week,
-        adds: Object.keys(adds).map((pid) => {
-          const p = playerById.get(pid);
-          return {
-            id: pid,
-            name: p?.name ?? pid,
-            position: p?.position ?? null,
-            team: p?.team ?? null,
-          };
-        }),
-        drops: Object.keys(drops).map((pid) => {
-          const p = playerById.get(pid);
-          return {
-            id: pid,
-            name: p?.name ?? pid,
-            position: p?.position ?? null,
-            team: p?.team ?? null,
-          };
-        }),
+        adds: myAdds,
+        drops: myDrops,
+        picksReceived,
+        picksSent,
         grade: txGrade?.grade ?? null,
         score: txGrade?.score ?? null,
         createdAt: tx.createdAt,
