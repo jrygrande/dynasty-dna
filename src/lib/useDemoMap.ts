@@ -22,14 +22,10 @@ function emitStateChange() {
 }
 
 export async function exitDemo() {
-  try {
-    await fetch("/api/demo/exit", { method: "POST" });
-  } catch {
-    // Best-effort; the server failing here just means demo persists until
-    // cookie expiry, which is acceptable.
-  }
-  // Belt + suspenders: also clear via document.cookie in case the server
-  // request failed.
+  // Clear synchronously FIRST so any same-tick navigation (e.g. clicking
+  // "Open" on a real league) issues its API requests without the cookie.
+  // The fetch below is the canonical server-side wipe; fire-and-forget if
+  // the caller doesn't await.
   if (typeof document !== "undefined") {
     document.cookie = `${DEMO_SEED_COOKIE}=; Path=/; Max-Age=0`;
   }
@@ -41,6 +37,11 @@ export async function exitDemo() {
     }
   }
   emitStateChange();
+  try {
+    await fetch("/api/demo/exit", { method: "POST" });
+  } catch {
+    // Best-effort; the document.cookie clear above is the load-bearing step.
+  }
 }
 
 export function dismissDemoBanner() {

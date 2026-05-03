@@ -13,6 +13,7 @@ import {
 import { DemoLeagueCallout } from "@/components/DemoLeagueCallout";
 import { DemoLinkTile } from "@/components/DemoLinkTile";
 import { WaitlistProgress } from "@/components/WaitlistProgress";
+import { exitDemo } from "@/lib/useDemoMap";
 import { useWaitlistCount } from "@/lib/useWaitlistCount";
 import {
   addWaitlistedLeague,
@@ -351,12 +352,16 @@ function LeaguesList({
               </div>
               <Link
                 href={`/league/${l.family_id}`}
-                onClick={() =>
+                onClick={() => {
+                  // The user is asking for a real league — if a demo cookie
+                  // is hanging around from an earlier /demo visit, drop it
+                  // synchronously so the league page renders real names.
+                  void exitDemo();
                   track("league_selected", {
                     family_id: l.family_id,
                     season: l.season,
-                  })
-                }
+                  });
+                }}
                 className="inline-flex items-center gap-1.5 px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors flex-shrink-0"
               >
                 Open
