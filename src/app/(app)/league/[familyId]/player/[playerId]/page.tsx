@@ -2,9 +2,21 @@
 
 import { Fragment, useEffect, useState, useMemo } from "react";
 import { useParams } from "next/navigation";
-import { ManagerName } from "@/components/ManagerName";
+import Link from "next/link";
+import { GitBranch } from "lucide-react";
+import {
+  ManagerName,
+  ManagerAvatar,
+  ManagerSecondaryName,
+} from "@/components/ManagerName";
 import { PositionChip } from "@/components/PositionChip";
+import { FilterChip } from "@/components/FilterChip";
 import { Subheader } from "@/components/Subheader";
+import {
+  CollapsibleSeasonTable,
+  type CollapsibleSection,
+} from "@/components/CollapsibleSeasonTable";
+import { useFlag } from "@/lib/useFlag";
 
 interface Manager {
   userId: string;
@@ -30,6 +42,19 @@ interface PlayerInfo {
   position: string | null;
   team: string | null;
   gsisId: string | null;
+  age: number | null;
+  yearsExp: number | null;
+  status: string | null;
+  injuryStatus: string | null;
+}
+
+interface CurrentManager {
+  userId: string;
+  rosterId: number;
+  displayName: string;
+  teamName: string | null;
+  avatar: string | null;
+  rosteredSince: { season: string; week: number } | null;
 }
 
 interface WeeklyLogData {
@@ -37,6 +62,19 @@ interface WeeklyLogData {
   weeks: WeekEntry[];
   managers: Manager[];
   availableSeasons: string[];
+  currentManager: CurrentManager | null;
+}
+
+// Injury detail (Out/Doubtful/Questionable) takes priority over roster status:
+// it's the more actionable signal for fantasy decisions.
+function playerStatusLabel(
+  status: string | null,
+  injuryStatus: string | null
+): string | null {
+  if (injuryStatus) return injuryStatus;
+  if (status === "Injured Reserve") return "IR";
+  if (status === "Inactive") return "Inactive";
+  return null;
 }
 
 function nflStatusLabel(status: string | null, isByeWeek: boolean): string {
@@ -86,8 +124,8 @@ export default function PlayerDetailPage() {
 
   const [data, setData] = useState<WeeklyLogData | null>(null);
   const [loading, setLoading] = useState(true);
+  const graphEnabled = useFlag("ASSET_GRAPH_BROWSER");
 
-  // Filters
   const [selectedSeason, setSelectedSeason] = useState<string | null>(null);
   const [selectedManager, setSelectedManager] = useState<string | null>(null);
   const [selectedStatus, setSelectedStatus] = useState<"all" | "starter" | "bench">("all");
@@ -110,7 +148,6 @@ export default function PlayerDetailPage() {
     setLoading(false);
   }
 
-  // Client-side filters (manager + starter/bench applied after fetch)
   const filteredWeeks = useMemo(() => {
     if (!data) return [];
     let weeks = data.weeks;
@@ -125,34 +162,68 @@ export default function PlayerDetailPage() {
     return weeks;
   }, [data, selectedManager, selectedStatus]);
 
-  // Summary stats
   const stats = useMemo(() => {
     if (filteredWeeks.length === 0) return null;
     const totalWeeks = filteredWeeks.length;
     const starterWeeks = filteredWeeks.filter((w) => w.fantasyStatus === "starter").length;
-    const benchWeeks = totalWeeks - starterWeeks;
     const totalPoints = filteredWeeks.reduce((sum, w) => sum + w.points, 0);
-    const starterPoints = filteredWeeks
-      .filter((w) => w.fantasyStatus === "starter")
-      .reduce((sum, w) => sum + w.points, 0);
     const ppgAll = totalPoints / totalWeeks;
-    const ppgStarter = starterWeeks > 0 ? starterPoints / starterWeeks : 0;
-
-    return { totalWeeks, starterWeeks, benchWeeks, totalPoints, ppgAll, ppgStarter };
+    return { totalWeeks, starterWeeks, ppgAll };
   }, [filteredWeeks]);
 
-  // Group weeks by season for dividers
-  const groupedWeeks = useMemo(() => {
-    const groups: { season: string; weeks: WeekEntry[] }[] = [];
-    let currentSeason = "";
+  const sections: CollapsibleSection[] = useMemo(() => {
+    type Stint = {
+      key: string;
+      managerDisplayName: string | null;
+      weeks: WeekEntry[];
+      starterWeeks: number;
+      totalPoints: number;
+    };
+    const map = new Map<string, Map<string, Stint>>();
     for (const w of filteredWeeks) {
-      if (w.season !== currentSeason) {
-        currentSeason = w.season;
-        groups.push({ season: currentSeason, weeks: [] });
+      const userKey = w.manager?.userId ?? "__unrostered";
+      if (!map.has(w.season)) map.set(w.season, new Map());
+      const seasonMap = map.get(w.season)!;
+      let stint = seasonMap.get(userKey);
+      if (!stint) {
+        stint = {
+          key: `${w.season}|${userKey}`,
+          managerDisplayName: w.manager?.displayName ?? null,
+          weeks: [],
+          starterWeeks: 0,
+          totalPoints: 0,
+        };
+        seasonMap.set(userKey, stint);
       }
-      groups[groups.length - 1].weeks.push(w);
+      stint.weeks.push(w);
+      if (w.fantasyStatus === "starter") stint.starterWeeks++;
+      stint.totalPoints += w.points;
     }
-    return groups;
+    return [...map.entries()]
+      .sort(([a], [b]) => parseInt(b, 10) - parseInt(a, 10))
+      .map(([season, stintMap]) => ({
+        key: season,
+        heading: `${season} Season`,
+        rows: [...stintMap.values()]
+          .sort((a, b) => b.totalPoints - a.totalPoints)
+          .map((stint) => {
+            const totalWeeks = stint.weeks.length;
+            const ppgAll = totalWeeks ? stint.totalPoints / totalWeeks : 0;
+            return {
+              key: stint.key,
+              title: stint.managerDisplayName ?? "Unrostered",
+              meta: (
+                <>
+                  <span>{totalWeeks} wks</span>
+                  <span>{stint.starterWeeks} started</span>
+                  <span>{stint.totalPoints.toFixed(1)} pts</span>
+                  <span>{ppgAll.toFixed(1)} ppg</span>
+                </>
+              ),
+              detail: <WeeklyDetail weeks={stint.weeks} />,
+            };
+          }),
+      }));
   }, [filteredWeeks]);
 
   if (loading) {
@@ -171,73 +242,117 @@ export default function PlayerDetailPage() {
     );
   }
 
-  const { player } = data;
+  const { player, currentManager } = data;
+  const statusLabel = playerStatusLabel(player.status, player.injuryStatus);
+  const metaParts: string[] = [];
+  if (player.team) metaParts.push(player.team);
+  if (player.age != null) metaParts.push(`${player.age} yo`);
+  if (player.yearsExp != null) {
+    metaParts.push(
+      player.yearsExp === 0 ? "Rookie" : `${player.yearsExp}y exp`
+    );
+  }
 
   return (
-      <div>
-        <Subheader
-          title={
-            <div className="min-w-0 flex items-center gap-2">
-              <PositionChip position={player.position} />
-              <h1 className="text-base sm:text-lg md:text-xl font-semibold line-clamp-1">
-                {player.name}
-              </h1>
-              {player.team && (
-                <span className="text-sm text-muted-foreground shrink-0">
-                  {player.team}
-                </span>
+    <div>
+      <Subheader
+        title={
+          <div className="min-w-0 flex items-center gap-2">
+            <PositionChip position={player.position} />
+            <h1 className="text-base sm:text-lg md:text-xl font-semibold line-clamp-1">
+              {player.name}
+            </h1>
+            {player.team && (
+              <span className="text-sm text-muted-foreground shrink-0">
+                {player.team}
+              </span>
+            )}
+          </div>
+        }
+      />
+
+      <div className="border-b bg-card">
+        <div className="container mx-auto px-4 sm:px-6 py-5 sm:py-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4 md:gap-6">
+          <div className="min-w-0">
+            <h2 className="text-2xl sm:text-3xl font-semibold tracking-tight truncate">
+              {player.name}
+            </h2>
+            <div className="mt-1 text-sm text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-1">
+              {metaParts.map((part, i) => (
+                <Fragment key={`meta-${i}`}>
+                  {i > 0 && <span aria-hidden className="text-muted-foreground/50">·</span>}
+                  <span>{part}</span>
+                </Fragment>
+              ))}
+              {statusLabel && (
+                <>
+                  {metaParts.length > 0 && (
+                    <span aria-hidden className="text-muted-foreground/50">·</span>
+                  )}
+                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-grade-d/10 text-grade-d">
+                    {statusLabel}
+                  </span>
+                </>
               )}
             </div>
-          }
-        />
+            {graphEnabled && (
+              <Link
+                href={`/league/${familyId}/graph?seedPlayerId=${playerId}&from=player`}
+                className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-full bg-primary/10 text-primary hover:bg-primary/15 transition-colors"
+              >
+                <GitBranch className="h-3.5 w-3.5" />
+                Trace lineage
+              </Link>
+            )}
+          </div>
 
-        <main className="container mx-auto px-6 py-8">
-        {/* Summary Stats */}
+          <CurrentManagerBlock
+            familyId={familyId}
+            currentManager={currentManager}
+          />
+        </div>
+      </div>
+
+      <main className="container mx-auto px-4 sm:px-6 py-6 sm:py-8">
         {stats && (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
+          <div className="grid grid-cols-3 gap-3 sm:gap-4 mb-8">
             <StatCard label="Weeks Rostered" value={stats.totalWeeks} />
             <StatCard label="Weeks Started" value={stats.starterWeeks} />
-            <StatCard label="Weeks Benched" value={stats.benchWeeks} />
-            <StatCard label="Total Points" value={stats.totalPoints.toFixed(1)} />
-            <StatCard label="PPG (Started)" value={stats.ppgStarter.toFixed(1)} />
-            <StatCard label="PPG (All)" value={stats.ppgAll.toFixed(1)} />
+            <StatCard label="PPG" value={stats.ppgAll.toFixed(1)} />
           </div>
         )}
 
-        {/* Filters */}
-        <div className="flex flex-wrap gap-4 mb-6">
-          {/* Season filter */}
+        <div className="flex flex-wrap gap-x-4 gap-y-3 mb-6">
           {data.availableSeasons.length > 1 && (
-            <div className="flex gap-2">
-              <FilterButton
+            <div className="flex flex-wrap gap-2">
+              <FilterChip
                 active={!selectedSeason}
                 onClick={() => setSelectedSeason(null)}
               >
                 All Seasons
-              </FilterButton>
+              </FilterChip>
               {data.availableSeasons.map((s) => (
-                <FilterButton
+                <FilterChip
                   key={s}
                   active={selectedSeason === s}
                   onClick={() => setSelectedSeason(s)}
                 >
                   {s}
-                </FilterButton>
+                </FilterChip>
               ))}
             </div>
           )}
 
-          {/* Manager filter */}
           {data.managers.length > 1 && (
-            <div className="flex gap-2">
-              <FilterButton
+            <div className="flex flex-wrap gap-2">
+              <FilterChip
                 active={!selectedManager}
                 onClick={() => setSelectedManager(null)}
               >
                 All Managers
-              </FilterButton>
+              </FilterChip>
               {data.managers.map((m) => (
-                <FilterButton
+                <FilterChip
                   key={m.userId}
                   active={selectedManager === m.userId}
                   onClick={() => setSelectedManager(m.userId)}
@@ -247,114 +362,150 @@ export default function PlayerDetailPage() {
                     displayName={m.displayName}
                     variant="display-only"
                   />
-                </FilterButton>
+                </FilterChip>
               ))}
             </div>
           )}
 
-          {/* Status filter */}
-          <div className="flex gap-2">
-            <FilterButton
+          <div className="flex flex-wrap gap-2">
+            <FilterChip
               active={selectedStatus === "all"}
               onClick={() => setSelectedStatus("all")}
             >
               All
-            </FilterButton>
-            <FilterButton
+            </FilterChip>
+            <FilterChip
               active={selectedStatus === "starter"}
               onClick={() => setSelectedStatus("starter")}
             >
               Started
-            </FilterButton>
-            <FilterButton
+            </FilterChip>
+            <FilterChip
               active={selectedStatus === "bench"}
               onClick={() => setSelectedStatus("bench")}
             >
               Benched
-            </FilterButton>
+            </FilterChip>
           </div>
         </div>
 
-        {/* Weekly Log Table */}
-        {filteredWeeks.length === 0 ? (
-          <p className="text-muted-foreground text-center py-8">
-            No weekly data found for this player
-          </p>
-        ) : (
-          <div className="border rounded-lg overflow-hidden">
-            <table className="w-full">
-              <thead className="bg-muted/50">
-                <tr className="text-left text-sm">
-                  <th className="px-4 py-3 font-medium">Week</th>
-                  <th className="px-4 py-3 font-medium">Manager</th>
-                  <th className="px-4 py-3 font-medium">Status</th>
-                  <th className="px-4 py-3 font-medium">NFL</th>
-                  <th className="px-4 py-3 font-medium text-right">Points</th>
-                </tr>
-              </thead>
-              <tbody>
-                {groupedWeeks.map((group) => (
-                  <Fragment key={`group-${group.season}`}>
-                    {/* Season divider */}
-                    {data.availableSeasons.length > 1 && (
-                      <tr>
-                        <td
-                          colSpan={5}
-                          className="px-4 py-2 bg-muted/30 text-xs font-semibold text-muted-foreground uppercase tracking-wider"
-                        >
-                          {group.season} Season
-                        </td>
-                      </tr>
-                    )}
-                    {group.weeks.map((w) => {
-                      const badge = fantasyStatusBadge(w);
-                      return (
-                        <tr
-                          key={`${w.leagueId}-${w.season}-${w.week}`}
-                          className="border-t hover:bg-muted/30 transition-colors"
-                        >
-                          <td className="px-4 py-3 text-sm font-mono">
-                            W{w.week}
-                          </td>
-                          <td className="px-4 py-3 text-sm">
-                            {w.manager ? (
-                              <ManagerName
-                                userId={w.manager.userId}
-                                rosterId={w.manager.rosterId}
-                                displayName={w.manager.displayName}
-                                variant="display-only"
-                                fallback="—"
-                              />
-                            ) : (
-                              "—"
-                            )}
-                          </td>
-                          <td className="px-4 py-3">
-                            <span
-                              className={`inline-block px-2 py-0.5 text-xs font-medium rounded-full ${badge.className}`}
-                            >
-                              {badge.label}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3">
-                            <span className={`text-sm ${nflStatusColor(w.nflStatus, w.isByeWeek)}`}>
-                              {nflStatusLabel(w.nflStatus, w.isByeWeek)}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 text-right font-mono text-sm">
-                            {w.points.toFixed(1)}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </Fragment>
-                ))}
-              </tbody>
-            </table>
+        <CollapsibleSeasonTable
+          sections={sections}
+          emptyMessage="No weekly data found for this player"
+        />
+      </main>
+    </div>
+  );
+}
+
+function WeeklyDetail({ weeks }: { weeks: WeekEntry[] }) {
+  return (
+    <div className="border-t bg-muted/10 overflow-x-auto">
+      <table className="w-full text-sm border-collapse">
+        <thead className="bg-muted/30 text-left">
+          <tr>
+            <th className="sticky left-0 z-10 bg-muted/30 px-3 py-2 font-medium font-mono text-xs uppercase tracking-wide shadow-[1px_0_0_0_var(--border)]">
+              Week
+            </th>
+            <th className="px-3 py-2 font-medium font-mono text-xs uppercase tracking-wide">
+              Lineup
+            </th>
+            <th className="px-3 py-2 font-medium font-mono text-xs uppercase tracking-wide">
+              Status
+            </th>
+            <th className="px-3 py-2 font-medium font-mono text-xs uppercase tracking-wide text-right">
+              Points
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {weeks.map((w) => {
+            const badge = fantasyStatusBadge(w);
+            return (
+              <tr
+                key={`${w.leagueId}-${w.season}-${w.week}`}
+                className="border-t border-border/60"
+              >
+                <td className="sticky left-0 z-10 bg-card px-3 py-2 font-mono shadow-[1px_0_0_0_var(--border)]">
+                  W{w.week}
+                </td>
+                <td className="px-3 py-2">
+                  <span
+                    className={`inline-block px-2 py-0.5 text-xs font-medium rounded-full ${badge.className}`}
+                  >
+                    {badge.label}
+                  </span>
+                </td>
+                <td className="px-3 py-2">
+                  <span
+                    className={`${nflStatusColor(w.nflStatus, w.isByeWeek)}`}
+                  >
+                    {nflStatusLabel(w.nflStatus, w.isByeWeek)}
+                  </span>
+                </td>
+                <td className="px-3 py-2 text-right font-mono">
+                  {w.points.toFixed(1)}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function CurrentManagerBlock({
+  familyId,
+  currentManager,
+}: {
+  familyId: string;
+  currentManager: CurrentManager | null;
+}) {
+  if (!currentManager) {
+    return (
+      <div className="md:text-right text-sm text-muted-foreground inline-flex md:flex-col md:items-end items-center gap-1">
+        <span className="uppercase tracking-wide text-[11px] font-mono text-muted-foreground/70">
+          Currently
+        </span>
+        <span>Free agent</span>
+      </div>
+    );
+  }
+
+  const teamLabel = currentManager.teamName || currentManager.displayName;
+
+  return (
+    <Link
+      href={`/league/${familyId}/manager/${currentManager.userId}`}
+      className="group flex items-center md:flex-row-reverse gap-3 rounded-lg p-2 -m-2 hover:bg-muted/50 transition-colors min-w-0"
+    >
+      <ManagerAvatar
+        displayName={currentManager.displayName}
+        avatarUrl={currentManager.avatar}
+        size={44}
+      />
+      <div className="min-w-0 md:text-right">
+        <div className="text-[11px] font-mono uppercase tracking-wide text-muted-foreground">
+          Currently rostered by
+        </div>
+        <div className="font-semibold text-foreground truncate group-hover:text-primary transition-colors">
+          {teamLabel}
+        </div>
+        <ManagerSecondaryName
+          displayName={currentManager.displayName}
+          teamName={currentManager.teamName}
+          parens={false}
+          className="block text-xs text-muted-foreground truncate"
+        />
+        {currentManager.rosteredSince && (
+          <div className="text-xs text-muted-foreground mt-0.5">
+            Since W{currentManager.rosteredSince.week}{" "}
+            {currentManager.rosteredSince.season}
           </div>
         )}
-      </main>
       </div>
+    </Link>
   );
 }
 
@@ -364,28 +515,5 @@ function StatCard({ label, value }: { label: string; value: string | number }) {
       <div className="text-2xl font-bold">{value}</div>
       <div className="text-xs text-muted-foreground">{label}</div>
     </div>
-  );
-}
-
-function FilterButton({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={`px-3 py-1 text-sm rounded-full transition-colors ${
-        active
-          ? "bg-primary text-primary-foreground"
-          : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
-      }`}
-    >
-      {children}
-    </button>
   );
 }
