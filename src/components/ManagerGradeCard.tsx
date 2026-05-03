@@ -1,5 +1,5 @@
-import { Info } from "lucide-react";
 import { GradeBadge } from "@/components/GradeBadge";
+import { InfoTooltip } from "@/components/InfoTooltip";
 import { PILLAR_LABELS } from "@/lib/pillars";
 import { ordinal } from "@/lib/utils";
 
@@ -35,12 +35,13 @@ export function ManagerGradeCard({
     <div className="border rounded-lg p-4 sm:p-6">
       <div className="flex items-baseline gap-2 mb-1">
         <h2 className="text-sm font-semibold">Manager Process Score</h2>
-        <span
-          className="inline-flex items-center gap-1 text-[10px] font-mono uppercase tracking-wider text-muted-foreground cursor-help"
-          title={MPS_TOOLTIP}
-        >
+        <span className="inline-flex items-center gap-1 text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
           MPS
-          <Info className="h-3 w-3" aria-hidden />
+          <InfoTooltip
+            content={MPS_TOOLTIP}
+            label="What is MPS?"
+            className="text-muted-foreground hover:text-foreground transition-colors"
+          />
         </span>
       </div>
       <p className="text-xs text-muted-foreground mb-4">

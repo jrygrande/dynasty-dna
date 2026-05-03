@@ -8,7 +8,7 @@ import {
 } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { ChevronDown, GitBranch, IdCard } from "lucide-react";
+import { ChevronDown, GitBranch, IdCard, Minus, Plus } from "lucide-react";
 import { GradeBadge } from "@/components/GradeBadge";
 import { ManagerRadarChart } from "@/components/ManagerRadarChart";
 import {
@@ -350,7 +350,7 @@ function ManagerPageContent({
         }
       />
 
-      <main className="container mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6 sm:space-y-8">
+      <main className="max-w-4xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6 sm:space-y-8">
         {/* Section 1: Record / Points For / League Rank */}
         <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
           <RecordTile stats={headerStats} />
@@ -985,12 +985,12 @@ function pickLabel(p: PickRef): string {
 function AssetList({
   players,
   picks,
-  sign,
+  kind,
   className,
 }: {
   players: PlayerRef[];
   picks: PickRef[];
-  sign: "+" | "−";
+  kind: "add" | "drop";
   className: string;
 }) {
   if (players.length === 0 && picks.length === 0) return null;
@@ -998,10 +998,11 @@ function AssetList({
     ...players.map((p) => p.name),
     ...picks.map((p) => `${pickLabel(p)} pick`),
   ];
+  const Icon = kind === "add" ? Plus : Minus;
   return (
-    <span className={className}>
-      {sign}
-      {items.join(", ")}
+    <span className={`inline-flex items-baseline gap-1 ${className}`}>
+      <Icon className="h-3 w-3 self-center shrink-0" aria-hidden />
+      <span className="min-w-0">{items.join(", ")}</span>
     </span>
   );
 }
@@ -1020,7 +1021,7 @@ function TransactionRow({
   return (
     <Link
       href={`/league/${familyId}/graph?seedTransactionId=${tx.id}&from=manager`}
-      className="px-3 sm:px-4 py-3 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 sm:gap-4 hover:bg-muted/30 transition-colors"
+      className="px-3 sm:px-4 py-3 flex items-start gap-3 hover:bg-muted/30 transition-colors"
     >
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 mb-1 flex-wrap">
@@ -1033,52 +1034,53 @@ function TransactionRow({
           <div className="text-sm space-y-0.5">
             {hasReceived && (
               <div className="flex gap-2">
-                <span className="text-[10px] font-mono uppercase tracking-wide text-muted-foreground mt-1 shrink-0 w-16">
+                <span className="text-[10px] font-mono uppercase tracking-wide text-muted-foreground mt-0.5 shrink-0 w-16">
                   Received
                 </span>
                 <AssetList
                   players={tx.adds}
                   picks={tx.picksReceived}
-                  sign="+"
+                  kind="add"
                   className="text-primary"
                 />
               </div>
             )}
             {hasSent && (
               <div className="flex gap-2">
-                <span className="text-[10px] font-mono uppercase tracking-wide text-muted-foreground mt-1 shrink-0 w-16">
+                <span className="text-[10px] font-mono uppercase tracking-wide text-muted-foreground mt-0.5 shrink-0 w-16">
                   Sent
                 </span>
                 <AssetList
                   players={tx.drops}
                   picks={tx.picksSent}
-                  sign="−"
+                  kind="drop"
                   className="text-muted-foreground"
                 />
               </div>
             )}
           </div>
         ) : (
-          <div className="text-sm">
+          <div className="text-sm flex flex-wrap items-baseline gap-x-2">
             <AssetList
               players={tx.adds}
               picks={tx.picksReceived}
-              sign="+"
+              kind="add"
               className="text-primary"
             />
-            {hasReceived && hasSent && (
-              <span className="text-muted-foreground mx-1">/</span>
-            )}
             <AssetList
               players={tx.drops}
               picks={tx.picksSent}
-              sign="−"
+              kind="drop"
               className="text-muted-foreground"
             />
           </div>
         )}
       </div>
-      {tx.grade && <GradeBadge grade={tx.grade} size="xs" />}
+      {tx.grade && (
+        <div className="shrink-0 self-start mt-0.5">
+          <GradeBadge grade={tx.grade} size="xs" />
+        </div>
+      )}
     </Link>
   );
 }
@@ -1210,12 +1212,14 @@ function DraftRow({
   const player = draft.player;
 
   const body = (
-    <div className="px-3 sm:px-4 py-3 flex items-center justify-between gap-3 hover:bg-muted/30 transition-colors min-h-[44px]">
+    <div className="group px-3 sm:px-4 py-3 flex items-center justify-between gap-3 hover:bg-muted/30 transition-colors min-h-[44px]">
       <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
         <PositionChip position={player?.position ?? null} />
         <div className="flex-1 min-w-0">
           <div className="text-sm font-medium truncate">
-            {player?.name ?? "Unselected"}
+            <span className="group-hover:text-primary transition-colors">
+              {player?.name ?? "Unselected"}
+            </span>
             {draft.isKeeper && (
               <span className="ml-2 text-[10px] font-mono uppercase tracking-wide text-muted-foreground">
                 Keeper
