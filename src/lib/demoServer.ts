@@ -3,13 +3,14 @@ import { and, desc, eq, inArray } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import {
   buildDemoMap,
+  DEMO_SEED_COOKIE,
   type DemoMap,
   type ManagerInput,
   type RosterInput,
 } from "@/lib/demoAnonymize";
 import { getDemoFamilyId } from "@/lib/demoFamily";
 
-export const DEMO_SEED_COOKIE = "dd_demo_seed";
+export { DEMO_SEED_COOKIE };
 // Cookie outlives a tab close (sessionStorage didn't). 24h is long enough
 // for a typical browse session and short enough that a stale flag doesn't
 // hang around forever.

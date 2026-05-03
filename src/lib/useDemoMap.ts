@@ -2,9 +2,9 @@
 
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { useParams } from "next/navigation";
+import { DEMO_SEED_COOKIE } from "@/lib/demoAnonymize";
 
 export const DEMO_BANNER_DISMISSED_KEY = "dd_demo_banner_dismissed";
-export const DEMO_SEED_COOKIE_NAME = "dd_demo_seed";
 const DEMO_STATE_EVENT = "dd:demo-state";
 
 function readCookie(name: string): string | null {
@@ -31,7 +31,7 @@ export async function exitDemo() {
   // Belt + suspenders: also clear via document.cookie in case the server
   // request failed.
   if (typeof document !== "undefined") {
-    document.cookie = `${DEMO_SEED_COOKIE_NAME}=; Path=/; Max-Age=0`;
+    document.cookie = `${DEMO_SEED_COOKIE}=; Path=/; Max-Age=0`;
   }
   if (typeof window !== "undefined") {
     try {
@@ -53,11 +53,10 @@ export function dismissDemoBanner() {
   emitStateChange();
 }
 
-let lastSeed: string | null = null;
+// useSyncExternalStore compares snapshots with Object.is, and strings
+// compare by value — no caching layer needed.
 function getDemoSeedSnapshot(): string | null {
-  const next = readCookie(DEMO_SEED_COOKIE_NAME);
-  if (next !== lastSeed) lastSeed = next;
-  return lastSeed;
+  return readCookie(DEMO_SEED_COOKIE);
 }
 
 function subscribeToDemoState(callback: () => void): () => void {

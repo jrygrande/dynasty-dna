@@ -5,6 +5,10 @@
 // All functions are pure: they take real names + a seed and return a mapping.
 // No React, no fetching, no side effects — see useDemoMap() for the hook.
 
+// Single source of truth for the demo session cookie name. Imported by both
+// the server (demoServer.ts) and the client (useDemoMap.ts).
+export const DEMO_SEED_COOKIE = "dd_demo_seed";
+
 export const COACHES_ELITE = [
   "Bill Belichick",
   "Vince Lombardi",
