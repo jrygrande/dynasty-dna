@@ -71,6 +71,10 @@ export async function GET(
         position: playerRows[0].position,
         team: playerRows[0].team,
         gsisId: playerRows[0].gsisId,
+        age: playerRows[0].age,
+        yearsExp: playerRows[0].yearsExp,
+        status: playerRows[0].status,
+        injuryStatus: playerRows[0].injuryStatus,
       }
     : null;
 
@@ -330,10 +334,72 @@ export async function GET(
     ...new Set(members.map((m) => m.season)),
   ].sort((a, b) => parseInt(b, 10) - parseInt(a, 10));
 
+  let currentManager: {
+    userId: string;
+    rosterId: number;
+    displayName: string;
+    teamName: string | null;
+    avatar: string | null;
+    rosteredSince: { season: string; week: number } | null;
+  } | null = null;
+
+  const sortedMembers = [...members].sort(
+    (a, b) => parseInt(b.season, 10) - parseInt(a.season, 10)
+  );
+  const currentLeagueId = sortedMembers[0]?.leagueId;
+
+  if (currentLeagueId) {
+    const currentLeagueRosters = rosterRows.filter(
+      (r) => r.leagueId === currentLeagueId
+    );
+    const owningRoster = currentLeagueRosters.find((r) => {
+      const players = (r.players as string[] | null) ?? [];
+      return players.includes(playerId);
+    });
+
+    if (owningRoster?.ownerId) {
+      const userRow = userRows.find(
+        (u) =>
+          u.leagueId === currentLeagueId && u.userId === owningRoster.ownerId
+      );
+      const swapped = demoSwap
+        ? lookupSwap(demoSwap, owningRoster.ownerId)
+        : undefined;
+      const displayName =
+        swapped?.displayName ?? userRow?.displayName ?? owningRoster.ownerId;
+      const teamName = swapped?.teamName ?? userRow?.teamName ?? null;
+      const avatar = demoSwap ? null : userRow?.avatar ?? null;
+
+      const sortedDesc = [...weeks].sort((a, b) => {
+        const seasonDiff = parseInt(b.season, 10) - parseInt(a.season, 10);
+        if (seasonDiff !== 0) return seasonDiff;
+        return b.week - a.week;
+      });
+      let rosteredSince: { season: string; week: number } | null = null;
+      for (const w of sortedDesc) {
+        if (w.manager?.userId === owningRoster.ownerId) {
+          rosteredSince = { season: w.season, week: w.week };
+        } else {
+          break;
+        }
+      }
+
+      currentManager = {
+        userId: owningRoster.ownerId,
+        rosterId: owningRoster.rosterId,
+        displayName,
+        teamName,
+        avatar,
+        rosteredSince,
+      };
+    }
+  }
+
   return NextResponse.json({
     player,
     weeks,
     managers: Array.from(managersMap.values()),
     availableSeasons,
+    currentManager,
   });
 }
