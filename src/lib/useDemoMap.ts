@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { useParams } from "next/navigation";
 import {
   buildDemoMap,
@@ -56,9 +56,11 @@ function writeSession(key: string, value: string | null) {
 }
 
 function emitStateChange() {
-  if (typeof window !== "undefined") {
-    window.dispatchEvent(new Event(DEMO_STATE_EVENT));
-  }
+  if (typeof window === "undefined") return;
+  // Defer to a microtask so subscribers from sibling effects have time to
+  // attach. Without this, an activation triggered from a sibling's useEffect
+  // can fire the event before useSyncExternalStore subscriptions are wired.
+  queueMicrotask(() => window.dispatchEvent(new Event(DEMO_STATE_EVENT)));
 }
 
 async function fetchDemoData(): Promise<DemoData> {
@@ -114,34 +116,40 @@ function useCurrentFamilyId(): string | null {
   return Array.isArray(raw) ? raw[0] ?? null : raw;
 }
 
-// Tracks the (active flag, seed) tuple from sessionStorage and re-renders when
-// it changes. State is the storage value itself — no proxy `tick` needed.
-function useDemoSession(): { flag: string | null; seed: string | null } {
-  const [snapshot, setSnapshot] = useState<{
-    flag: string | null;
-    seed: string | null;
-  }>(() => ({
-    flag: readSession(DEMO_ACTIVE_KEY),
-    seed: readSession(DEMO_SEED_KEY),
-  }));
+// External-store snapshot of (active flag, seed). Cached by string key so
+// useSyncExternalStore sees stable references when nothing has changed.
+type SessionSnapshot = { flag: string | null; seed: string | null };
+let lastSessionKey = "|";
+let lastSessionSnapshot: SessionSnapshot = { flag: null, seed: null };
+const SSR_SESSION_SNAPSHOT: SessionSnapshot = { flag: null, seed: null };
 
-  useEffect(() => {
-    function refresh() {
-      setSnapshot((prev) => {
-        const next = {
-          flag: readSession(DEMO_ACTIVE_KEY),
-          seed: readSession(DEMO_SEED_KEY),
-        };
-        if (prev.flag === next.flag && prev.seed === next.seed) return prev;
-        return next;
-      });
-    }
-    refresh();
-    window.addEventListener(DEMO_STATE_EVENT, refresh);
-    return () => window.removeEventListener(DEMO_STATE_EVENT, refresh);
-  }, []);
+function getSessionSnapshot(): SessionSnapshot {
+  const flag = readSession(DEMO_ACTIVE_KEY);
+  const seed = readSession(DEMO_SEED_KEY);
+  const key = `${flag ?? ""}|${seed ?? ""}`;
+  if (key !== lastSessionKey) {
+    lastSessionKey = key;
+    lastSessionSnapshot = { flag, seed };
+  }
+  return lastSessionSnapshot;
+}
 
-  return snapshot;
+function subscribeToSession(callback: () => void): () => void {
+  if (typeof window === "undefined") return () => {};
+  window.addEventListener(DEMO_STATE_EVENT, callback);
+  return () => window.removeEventListener(DEMO_STATE_EVENT, callback);
+}
+
+// Reads (active flag, seed) from sessionStorage with proper external-store
+// semantics: snapshot is read fresh on every render, subscriptions are
+// installed during commit so cross-component activation events can't be
+// missed by a slow listener attachment.
+function useDemoSession(): SessionSnapshot {
+  return useSyncExternalStore(
+    subscribeToSession,
+    getSessionSnapshot,
+    () => SSR_SESSION_SNAPSHOT
+  );
 }
 
 export function useDemoMap(): DemoState {
