@@ -41,6 +41,10 @@ export const leagueFamilies = pgTable(
     // pick the latest season instead.
     rootLeagueId: text("root_league_id").notNull(),
     name: text("name").notNull(),
+    // Singleton flag enforced by the partial unique index
+    // `league_families_demo_singleton` (hand-authored in migration). At most
+    // one row may have demo_eligible = true at any time.
+    demoEligible: boolean("demo_eligible").notNull().default(false),
     createdAt: timestamp("created_at", { mode: "date" }).defaultNow().notNull(),
   },
   (lf) => ({

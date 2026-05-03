@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb, schema } from "@/db";
 import { eq, and, inArray, sql } from "drizzle-orm";
 import { resolveFamily } from "@/lib/familyResolution";
+import { getDemoSwapForRequest } from "@/lib/demoServer";
+import { lookupSwap } from "@/lib/demoAnonymize";
 
 /**
  * GET /api/leagues/[familyId]/player/[playerId]/weekly-log
@@ -145,10 +147,18 @@ export async function GET(
     .from(schema.leagueUsers)
     .where(inArray(schema.leagueUsers.leagueId, leagueIds));
 
-  // leagueId → userId → displayName
+  const demoSwap = await getDemoSwapForRequest(req, resolvedFamilyId);
+
+  // leagueId → userId → displayName (already pseudonymized when demo is on)
   const userNameMap = new Map<string, string>();
   for (const u of userRows) {
-    userNameMap.set(`${u.leagueId}|${u.userId}`, u.displayName || u.userId);
+    const swapped = demoSwap
+      ? lookupSwap(demoSwap, u.userId)?.displayName
+      : undefined;
+    userNameMap.set(
+      `${u.leagueId}|${u.userId}`,
+      swapped ?? u.displayName ?? u.userId
+    );
   }
 
   // leagueId → rosterId → { ownerId, displayName }

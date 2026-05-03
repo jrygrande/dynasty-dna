@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { ManagerName } from "./ManagerName";
 
 interface StintStats {
   totalWeeks: number;
@@ -57,7 +58,15 @@ export function StintCard({ stint, assetKind, defaultExpanded = false }: StintCa
       >
         <div className="flex items-center justify-between">
           <span className={`text-sm font-medium ${isFreeAgent ? "text-muted-foreground italic" : ""}`}>
-            {isFreeAgent ? "Free Agent" : stint.managerName || "Unknown"}
+            {isFreeAgent ? (
+              "Free Agent"
+            ) : (
+              <ManagerName
+                rosterId={stint.rosterId}
+                displayName={stint.managerName}
+                variant="display-only"
+              />
+            )}
           </span>
           <div className="flex items-center gap-2">
             <span className="text-xs text-muted-foreground">

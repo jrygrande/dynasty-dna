@@ -7,6 +7,8 @@
 import { getDb, schema } from "@/db";
 import { inArray } from "drizzle-orm";
 import { findOriginalSlot, calculatePickNumber, resolveDraftPicks } from "@/lib/draft";
+import type { DemoMap } from "@/lib/demoAnonymize";
+import { lookupSwap } from "@/lib/demoAnonymize";
 
 // ============================================================
 // Types (matches TransactionData in TransactionCard.tsx)
@@ -63,6 +65,7 @@ export type RawTransaction = typeof schema.transactions.$inferSelect;
 
 export async function buildRosterOwnerMap(
   allLeagueIds: string[],
+  demoSwap?: DemoMap | null,
 ): Promise<Map<string, Map<number, string>>> {
   const db = getDb();
   const rosterOwnerMap = new Map<string, Map<number, string>>();
@@ -86,7 +89,11 @@ export async function buildRosterOwnerMap(
     if (!r.ownerId) continue;
     if (!rosterOwnerMap.has(r.leagueId)) rosterOwnerMap.set(r.leagueId, new Map());
     const userMap = usersByLeague.get(r.leagueId);
-    rosterOwnerMap.get(r.leagueId)!.set(r.rosterId, userMap?.get(r.ownerId) || r.ownerId);
+    const realName = userMap?.get(r.ownerId) || r.ownerId;
+    const swapped = demoSwap
+      ? lookupSwap(demoSwap, r.ownerId, r.rosterId)?.displayName
+      : undefined;
+    rosterOwnerMap.get(r.leagueId)!.set(r.rosterId, swapped ?? realName);
   }
 
   return rosterOwnerMap;

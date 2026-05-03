@@ -15,6 +15,7 @@ import { trackEvent } from "@/lib/analytics";
 
 import { AssetPicker } from "./AssetPicker";
 import { CopyLinkButton } from "./CopyLinkButton";
+import { ManagerName } from "@/components/ManagerName";
 import {
   TransactionCardChrome,
   type TransactionCardChromeData,
@@ -357,7 +358,11 @@ function Connector({
             <div key={edge.id} className="flex items-center gap-1">
               <span className="font-mono">{edgeAssetLabel(edge)}</span>
               <span aria-hidden>·</span>
-              <span>{edge.managerName}</span>
+              <ManagerName
+                userId={edge.managerUserId}
+                displayName={edge.managerName}
+                variant="display-only"
+              />
             </div>
           ))}
         </div>

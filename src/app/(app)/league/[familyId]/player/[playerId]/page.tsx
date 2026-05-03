@@ -4,6 +4,7 @@ import { Fragment, useEffect, useState, useMemo } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, ArrowRight } from "lucide-react";
+import { ManagerName } from "@/components/ManagerName";
 import { useFlag } from "@/lib/useFlag";
 
 interface Manager {
@@ -263,7 +264,11 @@ export default function PlayerDetailPage() {
                   active={selectedManager === m.userId}
                   onClick={() => setSelectedManager(m.userId)}
                 >
-                  {m.displayName}
+                  <ManagerName
+                    userId={m.userId}
+                    displayName={m.displayName}
+                    variant="display-only"
+                  />
                 </FilterButton>
               ))}
             </div>
@@ -334,7 +339,17 @@ export default function PlayerDetailPage() {
                             W{w.week}
                           </td>
                           <td className="px-4 py-3 text-sm">
-                            {w.manager?.displayName || "—"}
+                            {w.manager ? (
+                              <ManagerName
+                                userId={w.manager.userId}
+                                rosterId={w.manager.rosterId}
+                                displayName={w.manager.displayName}
+                                variant="display-only"
+                                fallback="—"
+                              />
+                            ) : (
+                              "—"
+                            )}
                           </td>
                           <td className="px-4 py-3">
                             <span

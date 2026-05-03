@@ -3,6 +3,7 @@ import { getDb, schema } from "@/db";
 import { eq, and, inArray, sql } from "drizzle-orm";
 import { enrichTransactions, buildRosterOwnerMap } from "@/lib/transactionEnrichment";
 import { resolveFamily } from "@/lib/familyResolution";
+import { getDemoSwapForRequest } from "@/lib/demoServer";
 
 // ============================================================
 // Types
@@ -119,7 +120,8 @@ export async function GET(
     );
 
   // Build roster owner map
-  const rosterOwnerMap = await buildRosterOwnerMap(allLeagueIds);
+  const demoSwap = await getDemoSwapForRequest(req, resolvedFamilyId);
+  const rosterOwnerMap = await buildRosterOwnerMap(allLeagueIds, demoSwap);
 
   // Helper to get display name for a roster ID across leagues
   function getManagerName(rosterId: number | null): string | null {

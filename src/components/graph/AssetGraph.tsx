@@ -394,6 +394,7 @@ function AssetGraphInner({
           style: { width: ROSTER_WIDTH, height: ROSTER_HEIGHT },
           zIndex: NODE_Z,
           data: {
+            userId: n.userId,
             displayName: n.displayName,
             avatar: n.avatar,
             selected: isSelected,

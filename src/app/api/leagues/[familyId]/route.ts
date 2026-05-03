@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb, schema } from "@/db";
 import { eq } from "drizzle-orm";
 import { resolveFamily } from "@/lib/familyResolution";
+import { DEMO_LEAGUE_NAME, getDemoSwapForRequest } from "@/lib/demoServer";
+import { swapLeagueUser } from "@/lib/demoTransforms";
 
 export async function GET(
   req: NextRequest,
@@ -107,10 +109,18 @@ export async function GET(
     .from(schema.leagueUsers)
     .where(eq(schema.leagueUsers.leagueId, currentLeagueId));
 
+  const demoSwap = await getDemoSwapForRequest(req, resolvedFamilyId);
+  const renderedUsers = users.map((u) => ({
+    userId: u.userId,
+    displayName: u.displayName,
+    teamName: u.teamName,
+    avatar: u.avatar,
+  }));
+
   return NextResponse.json({
     league: {
       id: league.id,
-      name: league.name,
+      name: demoSwap ? DEMO_LEAGUE_NAME : league.name,
       season: league.season,
       totalRosters: league.totalRosters,
       status: league.status,
@@ -126,11 +136,8 @@ export async function GET(
       fpts: r.fpts || 0,
       fptsAgainst: r.fptsAgainst || 0,
     })),
-    users: users.map((u) => ({
-      userId: u.userId,
-      displayName: u.displayName,
-      teamName: u.teamName,
-      avatar: u.avatar,
-    })),
+    users: demoSwap
+      ? renderedUsers.map((u) => swapLeagueUser(u, demoSwap))
+      : renderedUsers,
   });
 }

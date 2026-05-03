@@ -8,6 +8,7 @@ import {
   LineupEfficiencyCard,
   type RosterGrade,
 } from "@/components/LineupEfficiencyCard";
+import { ManagerName, ManagerSecondaryName } from "@/components/ManagerName";
 import { useFlag } from "@/lib/useFlag";
 
 interface Roster {
@@ -216,13 +217,20 @@ export default function LeagueOverviewPage() {
                           href={`/league/${familyId}/manager/${roster.ownerId}`}
                           className="font-medium hover:text-primary transition-colors"
                         >
-                          {user?.teamName || user?.displayName || "Unknown"}
+                          <ManagerName
+                            userId={roster.ownerId}
+                            rosterId={roster.rosterId}
+                            displayName={user?.displayName}
+                            teamName={user?.teamName}
+                          />
                         </Link>
-                        {user?.teamName && (
-                          <span className="text-sm text-muted-foreground ml-2">
-                            ({user.displayName})
-                          </span>
-                        )}
+                        <ManagerSecondaryName
+                          userId={roster.ownerId}
+                          rosterId={roster.rosterId}
+                          displayName={user?.displayName}
+                          teamName={user?.teamName}
+                          className="text-sm text-muted-foreground ml-2"
+                        />
                       </td>
                       <td className="px-4 py-3 text-right font-mono text-sm">
                         {roster.wins}

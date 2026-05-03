@@ -16,6 +16,7 @@ import {
 
 import { cn } from "@/lib/utils";
 import type { TransactionKind } from "@/lib/assetGraph";
+import { ManagerName } from "@/components/ManagerName";
 import { NODE_WIDTH } from "./layout";
 import type { TransactionHeader } from "./transactionHeader";
 
@@ -287,7 +288,11 @@ export function TransactionCardChrome({
               <div className="flex items-center gap-1 px-3 py-1">
                 <ArrowRight aria-hidden className="h-2.5 w-2.5 text-muted-foreground shrink-0" />
                 <span className="font-mono text-[10px] uppercase tracking-wide font-medium text-muted-foreground truncate">
-                  {bucket.displayName}
+                  <ManagerName
+                    userId={bucket.userId}
+                    displayName={bucket.displayName}
+                    variant="display-only"
+                  />
                 </span>
               </div>
               {bucket.assets.map((asset) => {

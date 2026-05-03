@@ -6,6 +6,7 @@ import { ArrowRight, X } from "lucide-react";
 import type { GraphEdge, GraphNode, GraphSelection } from "@/lib/assetGraph";
 import type { EnrichedTransaction } from "@/lib/transactionEnrichment";
 import { TransactionCard, type TransactionData } from "@/components/TransactionCard";
+import { ManagerName } from "@/components/ManagerName";
 import { trackEvent } from "@/lib/analytics";
 
 function toTransactionData(tx: EnrichedTransaction): TransactionData {
@@ -195,7 +196,13 @@ function NodeDetail({
           <p className="font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
             Current roster
           </p>
-          <p className="text-sm font-semibold">{node.displayName}</p>
+          <p className="text-sm font-semibold">
+            <ManagerName
+              userId={node.userId}
+              displayName={node.displayName}
+              variant="display-only"
+            />
+          </p>
         </div>
         <p className="text-xs text-muted-foreground">
           Assets currently held by this manager. Each incoming stint is a player
@@ -221,7 +228,16 @@ function NodeDetail({
         <div>
           <p className="text-xs text-muted-foreground">Manager</p>
           <p className="text-sm font-semibold">
-            {node.managers.map((m) => m.displayName).join(" · ")}
+            {node.managers.map((m, i) => (
+              <span key={m.userId}>
+                {i > 0 && " · "}
+                <ManagerName
+                  userId={m.userId}
+                  displayName={m.displayName}
+                  variant="display-only"
+                />
+              </span>
+            ))}
           </p>
         </div>
       )}
@@ -295,7 +311,13 @@ function EdgeDetail({ edge, familyId }: { edge: GraphEdge | null; familyId: stri
       )}
       <div>
         <p className="text-xs text-muted-foreground">Manager</p>
-        <p className="text-sm">{edge.managerName}</p>
+        <p className="text-sm">
+          <ManagerName
+            userId={edge.managerUserId}
+            displayName={edge.managerName}
+            variant="display-only"
+          />
+        </p>
       </div>
       {edge.assetKind === "player" && edge.playerId && (
         <PlayerStintStats familyId={familyId} edge={edge} />
@@ -631,7 +653,13 @@ function CompareColumnHeader({
       ) : (
         <p className="pr-5 font-semibold leading-tight">{edge.pickLabel}</p>
       )}
-      <p className="text-muted-foreground truncate">{edge.managerName}</p>
+      <p className="text-muted-foreground truncate">
+        <ManagerName
+          userId={edge.managerUserId}
+          displayName={edge.managerName}
+          variant="display-only"
+        />
+      </p>
       <p className="font-mono text-[10px] text-muted-foreground">
         {edge.startSeason} W{edge.startWeek} – {endLabel}
       </p>

@@ -3,14 +3,17 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, HelpCircle } from "lucide-react";
 import { track } from "@/lib/track";
 import {
   clearStoredUsername,
   getStoredUsername,
   setStoredUsername,
 } from "@/lib/storedUsername";
+import { DemoLeagueCallout } from "@/components/DemoLeagueCallout";
+import { DemoLinkTile } from "@/components/DemoLinkTile";
 import { WaitlistProgress } from "@/components/WaitlistProgress";
+import { exitDemo } from "@/lib/useDemoMap";
 import { useWaitlistCount } from "@/lib/useWaitlistCount";
 import {
   addWaitlistedLeague,
@@ -174,13 +177,21 @@ function StartPageInner() {
         viewState === "error_api_down" ||
         viewState === "error_rate_limited" ||
         viewState === "error_db") && (
-        <UsernameInput
-          value={username}
-          onChange={setUsername}
-          disabled={viewState === "loading"}
-          showStaleHint={viewState === "error_stale"}
-          onSubmit={() => submit(username)}
-        />
+        <div className="space-y-2">
+          <UsernameInput
+            value={username}
+            onChange={setUsername}
+            disabled={viewState === "loading"}
+            showStaleHint={viewState === "error_stale"}
+            onSubmit={() => submit(username)}
+          />
+          <DemoLinkTile
+            href="/demo"
+            icon={HelpCircle}
+            label="Don't have a Sleeper account? Check out a real league"
+            variant="compact"
+          />
+        </div>
       )}
 
       {viewState === "error_invalid" && (
@@ -341,12 +352,16 @@ function LeaguesList({
               </div>
               <Link
                 href={`/league/${l.family_id}`}
-                onClick={() =>
+                onClick={() => {
+                  // The user is asking for a real league — if a demo cookie
+                  // is hanging around from an earlier /demo visit, drop it
+                  // synchronously so the league page renders real names.
+                  void exitDemo();
                   track("league_selected", {
                     family_id: l.family_id,
                     season: l.season,
-                  })
-                }
+                  });
+                }}
                 className="inline-flex items-center gap-1.5 px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors flex-shrink-0"
               >
                 Open
@@ -359,23 +374,17 @@ function LeaguesList({
 
       {notInDb.length > 0 && (
         <>
-          <WaitlistProgress current={current} target={100} />
+          {inDb.length === 0 ? (
+            <DemoLeagueCallout />
+          ) : (
+            <WaitlistProgress current={current} target={100} />
+          )}
           <NotInDbList
             username={username}
             leagues={notInDb}
             onWaitlistAdded={bump}
           />
         </>
-      )}
-
-      {notInDb.length > 0 && inDb.length === 0 && (
-        <p className="text-sm text-muted-foreground pt-2">
-          None of your leagues are supported yet.{" "}
-          <Link href="/demo" className="text-primary hover:underline inline-flex items-center gap-1.5">
-            Browse a demo league
-            <ArrowRight className="h-4 w-4" />
-          </Link>
-        </p>
       )}
     </div>
   );

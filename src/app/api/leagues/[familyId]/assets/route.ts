@@ -8,12 +8,14 @@
  * Public-by-design (matches /graph and other family routes).
  */
 
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getDb, schema } from "@/db";
 import { and, eq, inArray, isNotNull } from "drizzle-orm";
 import { resolveFamily } from "@/lib/familyResolution";
 import { resolveDraftPicks, findOriginalSlot, calculatePickNumber } from "@/lib/draft";
 import { pickKey } from "@/lib/assetGraph";
+import { getDemoSwapForRequest } from "@/lib/demoServer";
+import { lookupSwap } from "@/lib/demoAnonymize";
 
 export interface AssetsListResponse {
   players: Array<{
@@ -34,7 +36,7 @@ export interface AssetsListResponse {
 }
 
 export async function GET(
-  _req: Request,
+  req: NextRequest,
   { params }: { params: { familyId: string } },
 ) {
   const db = getDb();
@@ -123,11 +125,17 @@ export async function GET(
       .where(inArray(schema.leagueUsers.leagueId, allLeagueIds)),
   ]);
 
-  // userId -> displayName (prefer non-empty)
+  const demoSwap = await getDemoSwapForRequest(req, resolvedFamilyId);
+
+  // userId -> displayName (prefer non-empty; pseudonymized in demo mode)
   const userIdToName = new Map<string, string>();
   for (const u of users) {
-    if (!u.displayName) continue;
-    if (!userIdToName.has(u.userId)) userIdToName.set(u.userId, u.displayName);
+    const swapped = demoSwap
+      ? lookupSwap(demoSwap, u.userId)?.displayName
+      : undefined;
+    const name = swapped ?? u.displayName;
+    if (!name) continue;
+    if (!userIdToName.has(u.userId)) userIdToName.set(u.userId, name);
   }
   // (leagueId:rosterId) -> userId
   const rosterToUser = new Map<string, string>();
