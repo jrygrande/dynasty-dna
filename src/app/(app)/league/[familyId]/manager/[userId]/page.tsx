@@ -35,7 +35,7 @@ interface ManagerData {
     teamName: string | null;
     avatar: string | null;
   };
-  overallScore: { value: number; grade: string; percentile: number } | null;
+  mps: { value: number; grade: string; percentile: number } | null;
   pillarScores: Record<string, { value: number; grade: string; percentile: number } | null>;
   seasonHistory: SeasonRow[];
   recentTransactions: Transaction[];
@@ -85,7 +85,7 @@ export default function ManagerPage() {
     );
   }
 
-  const { manager, overallScore, pillarScores, seasonHistory, recentTransactions } = data;
+  const { manager, mps, pillarScores, seasonHistory, recentTransactions } = data;
 
   return (
     <div>
@@ -123,7 +123,7 @@ export default function ManagerPage() {
         {/* Top section: Grade card + Radar chart */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <ManagerGradeCard
-            overallScore={overallScore}
+            mps={mps}
             pillarScores={pillarScores}
           />
           <div className="border rounded-lg p-4">

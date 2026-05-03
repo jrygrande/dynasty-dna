@@ -56,7 +56,7 @@ export interface AlgorithmConfig {
   // Trade grading config
   defaultRoundAverages: Record<number, number>;
 
-  // Overall score pillar weights
+  // MPS pillar weights
   pillarWeights: {
     trade_score: number;
     draft_score: number;

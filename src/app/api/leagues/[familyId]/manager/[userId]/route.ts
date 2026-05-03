@@ -170,20 +170,20 @@ export async function GET(
       }
     }
 
-    // Overall score
-    const overallMetric = myMetrics.find(
-      (r) => r.metric === "overall_score" && r.scope === "all_time",
+    // Manager Process Score (MPS) — composite all-time score
+    const mpsMetric = myMetrics.find(
+      (r) => r.metric === "manager_process_score" && r.scope === "all_time",
     );
-    const overallScore = overallMetric
+    const mps = mpsMetric
       ? {
-          value: overallMetric.value,
+          value: mpsMetric.value,
           grade: percentileToGrade(
-            globalPercentile("overall_score", "all_time", overallMetric.value),
+            globalPercentile("manager_process_score", "all_time", mpsMetric.value),
           ),
           percentile: globalPercentile(
-            "overall_score",
+            "manager_process_score",
             "all_time",
-            overallMetric.value,
+            mpsMetric.value,
           ),
         }
       : null;
@@ -313,7 +313,7 @@ export async function GET(
         teamName: swap?.teamName ?? user.teamName,
         avatar: swap ? null : user.avatar,
       },
-      overallScore,
+      mps,
       pillarScores,
       seasonHistory,
       recentTransactions: enrichedTx,

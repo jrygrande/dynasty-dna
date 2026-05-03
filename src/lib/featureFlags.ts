@@ -47,7 +47,7 @@ export const FLAGS = {
   MANAGER_DNA_PROFILE: {
     id: "manager-dna-profile",
     title: "Manager DNA Profile",
-    description: "Composite DNA score combining draft, trade, and lineup grades",
+    description: "Manager Process Score (MPS) combining draft, trade, waiver, and lineup grades",
     status: "disabled",
     hypothesis:
       "A single composite score increases engagement with individual analytics features by giving managers a 'headline number' to improve",

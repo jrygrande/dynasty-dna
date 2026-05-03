@@ -8,7 +8,7 @@ function ordinal(n: number): string {
 }
 
 interface ManagerGradeCardProps {
-  overallScore: {
+  mps: {
     value: number;
     grade: string;
     percentile: number;
@@ -20,13 +20,13 @@ interface ManagerGradeCardProps {
 }
 
 export function ManagerGradeCard({
-  overallScore,
+  mps,
   pillarScores,
 }: ManagerGradeCardProps) {
-  if (!overallScore) {
+  if (!mps) {
     return (
       <div className="border rounded-lg p-6 text-center text-muted-foreground text-sm">
-        No overall score yet — sync league data to generate grades
+        No MPS yet — sync league data to generate grades
       </div>
     );
   }
@@ -34,11 +34,11 @@ export function ManagerGradeCard({
   return (
     <div className="border rounded-lg p-6">
       <div className="flex items-center gap-4 mb-6">
-        <div className="text-5xl font-bold">{ordinal(Math.round(overallScore.percentile))}</div>
+        <div className="text-5xl font-bold">{ordinal(Math.round(mps.percentile))}</div>
         <div>
-          <GradeBadge grade={overallScore.grade} size="sm" />
+          <GradeBadge grade={mps.grade} size="sm" />
           <div className="text-xs text-muted-foreground mt-1">
-            Score: {overallScore.value}
+            MPS: {mps.value}
           </div>
         </div>
       </div>
