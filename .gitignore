@@ -34,3 +34,6 @@ data/*.sqlite*
 
 # Generated calibration output
 docs/trade-grade-calibration.md
+
+# Claude Code agent worktrees + local config
+.claude/
