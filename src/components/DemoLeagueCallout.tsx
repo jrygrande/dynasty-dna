@@ -32,21 +32,18 @@ export function DemoLeagueCallout() {
 
       <Link
         href="/demo"
-        className="group flex items-center gap-3 rounded-lg border border-primary/30 bg-card px-4 py-2.5 shadow-sm transition-all hover:border-primary hover:bg-primary/5 hover:shadow-md"
+        className="group flex items-center gap-3 rounded-lg border border-primary/30 bg-card px-4 py-2.5 shadow-sm"
       >
         <span
           aria-hidden
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/15 text-primary"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/15 text-primary group-hover:bg-primary/25 transition-[transform,background-color] [transition-duration:350ms] [transition-timing-function:cubic-bezier(0.34,1.56,0.64,1)] motion-reduce:transition-none"
         >
-          <Sparkles className="h-4 w-4" />
+          <Sparkles className="h-4 w-4 transition-transform [transition-duration:350ms] [transition-timing-function:cubic-bezier(0.34,1.56,0.64,1)] group-hover:scale-[1.08] group-hover:-rotate-[4deg] motion-reduce:transition-none motion-reduce:transform-none" />
         </span>
         <span className="flex-1 text-sm font-semibold text-foreground">
           Browse a real, anonymized league
         </span>
-        <ArrowRight
-          aria-hidden
-          className="h-4 w-4 text-primary transition-transform group-hover:translate-x-0.5"
-        />
+        <ArrowRight aria-hidden className="h-4 w-4 text-primary" />
       </Link>
 
       <div className="border-t border-primary/15 pt-5 space-y-3">
