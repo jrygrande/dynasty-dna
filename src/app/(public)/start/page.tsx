@@ -10,6 +10,7 @@ import {
   getStoredUsername,
   setStoredUsername,
 } from "@/lib/storedUsername";
+import { DemoLeagueCallout } from "@/components/DemoLeagueCallout";
 import { WaitlistProgress } from "@/components/WaitlistProgress";
 import { useWaitlistCount } from "@/lib/useWaitlistCount";
 import {
@@ -360,22 +361,13 @@ function LeaguesList({
       {notInDb.length > 0 && (
         <>
           <WaitlistProgress current={current} target={100} />
+          {inDb.length === 0 && <DemoLeagueCallout />}
           <NotInDbList
             username={username}
             leagues={notInDb}
             onWaitlistAdded={bump}
           />
         </>
-      )}
-
-      {notInDb.length > 0 && inDb.length === 0 && (
-        <p className="text-sm text-muted-foreground pt-2">
-          None of your leagues are supported yet.{" "}
-          <Link href="/demo" className="text-primary hover:underline inline-flex items-center gap-1.5">
-            Browse a demo league
-            <ArrowRight className="h-4 w-4" />
-          </Link>
-        </p>
       )}
     </div>
   );
