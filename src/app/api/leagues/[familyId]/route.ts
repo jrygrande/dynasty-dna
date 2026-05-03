@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb, schema } from "@/db";
 import { eq } from "drizzle-orm";
 import { resolveFamily } from "@/lib/familyResolution";
-import { getDemoSwapForRequest } from "@/lib/demoServer";
+import { DEMO_LEAGUE_NAME, getDemoSwapForRequest } from "@/lib/demoServer";
 import { swapLeagueUser } from "@/lib/demoTransforms";
 
 export async function GET(
@@ -120,7 +120,7 @@ export async function GET(
   return NextResponse.json({
     league: {
       id: league.id,
-      name: league.name,
+      name: demoSwap ? DEMO_LEAGUE_NAME : league.name,
       season: league.season,
       totalRosters: league.totalRosters,
       status: league.status,

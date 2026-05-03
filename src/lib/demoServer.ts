@@ -15,6 +15,10 @@ export const DEMO_SEED_COOKIE = "dd_demo_seed";
 // hang around forever.
 export const DEMO_COOKIE_MAX_AGE = 60 * 60 * 24;
 
+// What the league is called when demo mode is active. Plays on AA + the
+// NFL-coach pseudonyms — sounds like a real dynasty league with a wink.
+export const DEMO_LEAGUE_NAME = "Coaches Anonymous";
+
 interface DemoInputs {
   familyId: string;
   managers: ManagerInput[];
