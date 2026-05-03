@@ -188,10 +188,12 @@ export async function GET(
     }
   }
 
-  // --- Build bye week map from nfl_schedule ---
-  // For each (season, team), find weeks where team has no game
+  // teamScheduleMap: "{season}|{team}" → week → { opponent, isAway }
+  // Drives both bye-week detection (team has no game that week) and the
+  // Opponent column on the weekly log.
   const relevantSeasons = [...new Set(members.map((m) => parseInt(m.season, 10)))].filter((n) => !isNaN(n));
-  const byeWeekMap = new Map<string, Set<number>>(); // "season|team" → bye week numbers
+  const teamScheduleMap = new Map<string, Map<number, { opponent: string; isAway: boolean }>>();
+  const seasonAllWeeks = new Map<number, Set<number>>();
 
   if (relevantSeasons.length > 0) {
     const scheduleRows = await db
@@ -199,47 +201,40 @@ export async function GET(
       .from(schema.nflSchedule)
       .where(inArray(schema.nflSchedule.season, relevantSeasons));
 
-    // Group schedule by season
-    const schedBySeason = new Map<number, typeof scheduleRows>();
-    for (const row of scheduleRows) {
-      const arr = schedBySeason.get(row.season) || [];
-      arr.push(row);
-      schedBySeason.set(row.season, arr);
-    }
+    for (const g of scheduleRows) {
+      if (!seasonAllWeeks.has(g.season)) seasonAllWeeks.set(g.season, new Set());
+      seasonAllWeeks.get(g.season)!.add(g.week);
 
-    for (const season of relevantSeasons) {
-      const games = schedBySeason.get(season) || [];
-      if (games.length === 0) continue;
-
-      // All weeks in this season's schedule
-      const allWeeks = new Set(games.map((g) => g.week));
-      // Teams playing each week
-      const teamWeeks = new Map<string, Set<number>>();
-      for (const g of games) {
-        if (!teamWeeks.has(g.homeTeam)) teamWeeks.set(g.homeTeam, new Set());
-        if (!teamWeeks.has(g.awayTeam)) teamWeeks.set(g.awayTeam, new Set());
-        teamWeeks.get(g.homeTeam)!.add(g.week);
-        teamWeeks.get(g.awayTeam)!.add(g.week);
-      }
-
-      for (const [team, weeks] of teamWeeks) {
-        const byes = new Set<number>();
-        for (const week of allWeeks) {
-          if (!weeks.has(week)) byes.add(week);
-        }
-        if (byes.size > 0) {
-          byeWeekMap.set(`${season}|${team}`, byes);
-        }
-      }
+      const homeKey = `${g.season}|${g.homeTeam}`;
+      const awayKey = `${g.season}|${g.awayTeam}`;
+      if (!teamScheduleMap.has(homeKey)) teamScheduleMap.set(homeKey, new Map());
+      if (!teamScheduleMap.has(awayKey)) teamScheduleMap.set(awayKey, new Map());
+      teamScheduleMap.get(homeKey)!.set(g.week, { opponent: g.awayTeam, isAway: false });
+      teamScheduleMap.get(awayKey)!.set(g.week, { opponent: g.homeTeam, isAway: true });
     }
   }
 
-  // --- Assemble weekly log ---
+  // Player's NFL team for a given (season, week). Falls back to nearby
+  // weeks for traded/inactive players, then to player's current Sleeper
+  // team — needed for bye detection and opponent lookup.
+  function resolveTeam(seasonNum: number, week: number): string | null {
+    const direct = nflStatusMap.get(`${seasonNum}|${week}`)?.team;
+    if (direct) return direct;
+    if (player?.gsisId) {
+      for (let delta = 1; delta <= 18; delta++) {
+        const before = nflStatusMap.get(`${seasonNum}|${week - delta}`);
+        if (before?.team) return before.team;
+        const after = nflStatusMap.get(`${seasonNum}|${week + delta}`);
+        if (after?.team) return after.team;
+      }
+    }
+    return player?.team ?? null;
+  }
+
   const weeks = scores.map((s) => {
     const season = leagueSeasonMap.get(s.leagueId) || "";
     const seasonNum = parseInt(season, 10);
 
-    // Lineup slot derivation
     const matchupKey = `${s.leagueId}|${s.week}|${s.rosterId}`;
     const starters = matchupMap.get(matchupKey) || [];
     const rosterPositions = leagueRosterPositions.get(s.leagueId) || [];
@@ -251,41 +246,23 @@ export async function GET(
       }
     }
 
-    // Manager info
     const ownerKey = `${s.leagueId}|${s.rosterId}`;
     const owner = rosterOwnerMap.get(ownerKey);
 
-    // NFL status
-    const nflKey = `${seasonNum}|${s.week}`;
-    const nflStatus = nflStatusMap.get(nflKey);
+    const nflStatus = nflStatusMap.get(`${seasonNum}|${s.week}`);
 
-    // Bye week detection: use team from roster status for this week,
-    // or infer from nearest adjacent week (handles traded players + bye weeks where no roster row exists)
+    const team = resolveTeam(seasonNum, s.week);
+    let opponent: string | null = null;
+    let isAway = false;
     let isByeWeek = false;
-    if (player?.gsisId && !nflStatus) {
-      // No roster status row — could be bye week or missing data
-      // Infer team from nearest adjacent week's roster status
-      let inferredTeam: string | null = null;
-      for (let delta = 1; delta <= 18; delta++) {
-        const before = nflStatusMap.get(`${seasonNum}|${s.week - delta}`);
-        if (before?.team) { inferredTeam = before.team; break; }
-        const after = nflStatusMap.get(`${seasonNum}|${s.week + delta}`);
-        if (after?.team) { inferredTeam = after.team; break; }
+    if (team) {
+      const game = teamScheduleMap.get(`${seasonNum}|${team}`)?.get(s.week);
+      if (game) {
+        opponent = game.opponent;
+        isAway = game.isAway;
+      } else if (seasonAllWeeks.get(seasonNum)?.has(s.week)) {
+        isByeWeek = true;
       }
-      if (inferredTeam) {
-        const teamByes = byeWeekMap.get(`${seasonNum}|${inferredTeam}`);
-        if (teamByes?.has(s.week)) isByeWeek = true;
-      }
-    } else if (nflStatus?.team) {
-      // Has roster status — check if this week is a bye for that team
-      // (shouldn't happen since bye = no roster row, but defensive)
-      const teamByes = byeWeekMap.get(`${seasonNum}|${nflStatus.team}`);
-      if (teamByes?.has(s.week)) isByeWeek = true;
-    } else if (!player?.gsisId && player?.team) {
-      // Fallback: no gsis_id at all — use player's current team from Sleeper
-      // Won't handle mid-season trades, but better than no bye detection
-      const teamByes = byeWeekMap.get(`${seasonNum}|${player.team}`);
-      if (teamByes?.has(s.week)) isByeWeek = true;
     }
 
     return {
@@ -301,6 +278,8 @@ export async function GET(
       nflStatus: nflStatus?.status || null,
       nflStatusAbbr: nflStatus?.statusAbbr || null,
       isByeWeek,
+      opponent,
+      isAway,
     };
   });
 

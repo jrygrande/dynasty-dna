@@ -34,6 +34,8 @@ interface WeekEntry {
   nflStatus: string | null;
   nflStatusAbbr: string | null;
   isByeWeek: boolean;
+  opponent: string | null;
+  isAway: boolean;
 }
 
 interface PlayerInfo {
@@ -400,6 +402,12 @@ export default function PlayerDetailPage() {
   );
 }
 
+function opponentLabel(w: WeekEntry): string {
+  if (w.isByeWeek) return "BYE";
+  if (!w.opponent) return "—";
+  return w.isAway ? `@${w.opponent}` : w.opponent;
+}
+
 function WeeklyDetail({ weeks }: { weeks: WeekEntry[] }) {
   return (
     <div className="border-t bg-muted/10 overflow-x-auto">
@@ -414,6 +422,10 @@ function WeeklyDetail({ weeks }: { weeks: WeekEntry[] }) {
             </th>
             <th className="px-3 py-2 font-medium font-mono text-xs uppercase tracking-wide">
               Status
+            </th>
+            <th className="px-3 py-2 font-medium font-mono text-xs uppercase tracking-wide">
+              <span className="hidden md:inline">Opponent</span>
+              <span className="md:hidden">Opp</span>
             </th>
             <th className="px-3 py-2 font-medium font-mono text-xs uppercase tracking-wide text-right">
               Points
@@ -445,6 +457,7 @@ function WeeklyDetail({ weeks }: { weeks: WeekEntry[] }) {
                     {nflStatusLabel(w.nflStatus, w.isByeWeek)}
                   </span>
                 </td>
+                <td className="px-3 py-2 font-mono">{opponentLabel(w)}</td>
                 <td className="px-3 py-2 text-right font-mono">
                   {w.points.toFixed(1)}
                 </td>
