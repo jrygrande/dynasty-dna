@@ -215,20 +215,13 @@ export async function GET(
     for (const ev of draftSelectedEvents) {
       if (!ev.playerId || ev.pickSeason === null) continue;
       const draftInfo = draftByLeagueSeason.get(`${ev.leagueId}:${ev.pickSeason}`);
-      if (!draftInfo?.slotToRosterId) continue;
-
-      const slot = draftSlotLookup.get(`${draftInfo.id}:${ev.playerId}`);
-      if (slot == null) continue;
-
-      const trueOriginal = draftInfo.slotToRosterId[String(slot)];
-      if (trueOriginal != null && trueOriginal !== ev.pickOriginalRosterId) {
-        ev.pickOriginalRosterId = trueOriginal;
-      }
+      if (!draftInfo) continue;
 
       // Surface pickInRound on the event so the card header can render
-      // "2024  3.04". Stored in details (jsonb) since it's derived metadata,
-      // not a column. Wrap-around arithmetic handles snake drafts the same
-      // as linear since pick ordering is by global pickNo regardless.
+      // "2024  3.04". Independent of the slot-remap below since pick
+      // ordering is by global pickNo — derives correctly even when
+      // draft_slot is null on the draft_picks row (and therefore the slot
+      // remap is skipped).
       const details = (ev.details ?? {}) as Record<string, unknown>;
       const pickNo = typeof details.pickNo === "number" ? details.pickNo : null;
       if (pickNo !== null && draftInfo.draftSize > 0) {
@@ -236,6 +229,16 @@ export async function GET(
           ...details,
           pickInRound: ((pickNo - 1) % draftInfo.draftSize) + 1,
         };
+      }
+
+      // Slot remap (Sleeper's draft_selected uses the drafter's roster, not
+      // the original owner — fix it for traded picks).
+      if (!draftInfo.slotToRosterId) continue;
+      const slot = draftSlotLookup.get(`${draftInfo.id}:${ev.playerId}`);
+      if (slot == null) continue;
+      const trueOriginal = draftInfo.slotToRosterId[String(slot)];
+      if (trueOriginal != null && trueOriginal !== ev.pickOriginalRosterId) {
+        ev.pickOriginalRosterId = trueOriginal;
       }
     }
   }
