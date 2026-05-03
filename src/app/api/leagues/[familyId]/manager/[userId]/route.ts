@@ -6,11 +6,6 @@ import { percentileToGrade } from "@/services/gradingCore";
 import { getDemoSwapForRequest } from "@/lib/demoServer";
 import { lookupSwap } from "@/lib/demoAnonymize";
 
-// Cache-busting marker — Vercel was serving a stale compiled bundle for
-// this route after the overall_score → manager_process_score rename
-// (#41) shipped. Substantial source touch forces a fresh function hash.
-export const dynamic = "force-dynamic";
-
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ familyId: string; userId: string }> },
@@ -177,22 +172,22 @@ export async function GET(
 
     // Manager Process Score (MPS) — composite all-time score.
     // Stored as `manager_process_score` per #41 (sibling to *_score columns).
-    const MPS_METRIC = "manager_process_score" as const;
-    const ALL_TIME = "all_time" as const;
-    const mpsRow = myMetrics.find(
-      (r) => r.metric === MPS_METRIC && r.scope === ALL_TIME,
+    const mpsMetric = myMetrics.find(
+      (r) => r.metric === "manager_process_score" && r.scope === "all_time",
     );
-    const mpsPercentile = mpsRow
-      ? globalPercentile(MPS_METRIC, ALL_TIME, mpsRow.value)
+    const mps = mpsMetric
+      ? {
+          value: mpsMetric.value,
+          grade: percentileToGrade(
+            globalPercentile("manager_process_score", "all_time", mpsMetric.value),
+          ),
+          percentile: globalPercentile(
+            "manager_process_score",
+            "all_time",
+            mpsMetric.value,
+          ),
+        }
       : null;
-    const mps =
-      mpsRow && mpsPercentile !== null
-        ? {
-            value: mpsRow.value,
-            grade: percentileToGrade(mpsPercentile),
-            percentile: mpsPercentile,
-          }
-        : null;
 
     // Season history — group season-scoped metrics by season
     const seasonMetrics = myMetrics.filter((r) =>
