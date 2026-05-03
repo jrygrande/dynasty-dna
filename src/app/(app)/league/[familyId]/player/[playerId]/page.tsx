@@ -189,14 +189,17 @@ export default function PlayerDetailPage() {
   // Started/Rostered ratio is identity-level (ignores status filter).
   // PPG follows the status filter — Started/Benched switches the denominator
   // so the headline number reflects what the user is looking at.
+  // Bye weeks are excluded from every calc — a bye is not a fantasy
+  // opportunity, so counting it inflates "rostered" and drags PPG down.
   const stats = useMemo(() => {
-    if (scopedWeeks.length === 0) return null;
-    const totalWeeks = scopedWeeks.length;
-    const starterWeeks = scopedWeeks.filter((w) => w.fantasyStatus === "starter").length;
+    const playedWeeks = scopedWeeks.filter((w) => !w.isByeWeek);
+    if (playedWeeks.length === 0) return null;
+    const totalWeeks = playedWeeks.length;
+    const starterWeeks = playedWeeks.filter((w) => w.fantasyStatus === "starter").length;
     const ppgWeeks =
       selectedStatus === "all"
-        ? scopedWeeks
-        : scopedWeeks.filter((w) => w.fantasyStatus === selectedStatus);
+        ? playedWeeks
+        : playedWeeks.filter((w) => w.fantasyStatus === selectedStatus);
     const ppg = ppgWeeks.length
       ? ppgWeeks.reduce((s, w) => s + w.points, 0) / ppgWeeks.length
       : 0;
@@ -209,13 +212,14 @@ export default function PlayerDetailPage() {
     return { totalWeeks, starterWeeks, ppg, ppgLabel };
   }, [scopedWeeks, selectedStatus, selectedLocation]);
 
+  // Per-stint aggregates exclude byes so "wks", "started", "pts", "ppg"
+  // all describe playable weeks. The detail table still renders all
+  // weeks (including bye rows) — exclusion is for calcs, not display.
   const sections: CollapsibleSection[] = useMemo(() => {
     type Stint = {
       key: string;
       managerDisplayName: string | null;
       weeks: WeekEntry[];
-      starterWeeks: number;
-      totalPoints: number;
     };
     const map = new Map<string, Map<string, Stint>>();
     for (const w of filteredWeeks) {
@@ -228,39 +232,44 @@ export default function PlayerDetailPage() {
           key: `${w.season}|${userKey}`,
           managerDisplayName: w.manager?.displayName ?? null,
           weeks: [],
-          starterWeeks: 0,
-          totalPoints: 0,
         };
         seasonMap.set(userKey, stint);
       }
       stint.weeks.push(w);
-      if (w.fantasyStatus === "starter") stint.starterWeeks++;
-      stint.totalPoints += w.points;
     }
+
+    function aggregate(weeks: WeekEntry[]) {
+      const played = weeks.filter((w) => !w.isByeWeek);
+      const totalPoints = played.reduce((s, w) => s + w.points, 0);
+      return {
+        totalWeeks: played.length,
+        starterWeeks: played.filter((w) => w.fantasyStatus === "starter").length,
+        totalPoints,
+        ppg: played.length ? totalPoints / played.length : 0,
+      };
+    }
+
     return [...map.entries()]
       .sort(([a], [b]) => parseInt(b, 10) - parseInt(a, 10))
       .map(([season, stintMap]) => ({
         key: season,
         heading: `${season} Season`,
         rows: [...stintMap.values()]
-          .sort((a, b) => b.totalPoints - a.totalPoints)
-          .map((stint) => {
-            const totalWeeks = stint.weeks.length;
-            const ppgAll = totalWeeks ? stint.totalPoints / totalWeeks : 0;
-            return {
-              key: stint.key,
-              title: stint.managerDisplayName ?? "Unrostered",
-              meta: (
-                <>
-                  <span>{totalWeeks} wks</span>
-                  <span>{stint.starterWeeks} started</span>
-                  <span>{stint.totalPoints.toFixed(1)} pts</span>
-                  <span>{ppgAll.toFixed(1)} ppg</span>
-                </>
-              ),
-              detail: <WeeklyDetail weeks={stint.weeks} />,
-            };
-          }),
+          .map((stint) => ({ stint, agg: aggregate(stint.weeks) }))
+          .sort((a, b) => b.agg.totalPoints - a.agg.totalPoints)
+          .map(({ stint, agg }) => ({
+            key: stint.key,
+            title: stint.managerDisplayName ?? "Unrostered",
+            meta: (
+              <>
+                <span>{agg.totalWeeks} wks</span>
+                <span>{agg.starterWeeks} started</span>
+                <span>{agg.totalPoints.toFixed(1)} pts</span>
+                <span>{agg.ppg.toFixed(1)} ppg</span>
+              </>
+            ),
+            detail: <WeeklyDetail weeks={stint.weeks} />,
+          })),
       }));
   }, [filteredWeeks]);
 
