@@ -26,35 +26,27 @@ export function DemoLeagueCallout() {
         </h2>
         <p className="text-sm text-muted-foreground mt-1">
           Your leagues aren&apos;t supported yet — but you can browse a real
-          seeded league with anonymized names while you wait.
+          seeded league with anonymized names to check it out.
         </p>
       </div>
 
       <Link
         href="/demo"
-        className="group relative block overflow-hidden rounded-lg border border-primary/40 bg-card px-5 py-4 shadow-sm transition-all hover:border-primary hover:shadow-md"
+        className="group flex items-center gap-3 rounded-lg border border-primary/30 bg-card px-4 py-2.5 shadow-sm transition-all hover:border-primary hover:bg-primary/5 hover:shadow-md"
       >
-        {/* Sheen overlay — slow translate sweep across the tile. Pointer
-            events disabled so it never blocks the link click. */}
         <span
           aria-hidden
-          className="pointer-events-none absolute inset-y-0 left-0 w-1/3 -skew-x-12 bg-gradient-to-r from-transparent via-primary/15 to-transparent motion-safe:animate-demo-sheen motion-reduce:hidden"
-        />
-        <span className="relative flex items-center gap-3">
-          <span
-            aria-hidden
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-primary/15 text-primary"
-          >
-            <Sparkles className="h-4 w-4" />
-          </span>
-          <span className="flex-1 text-sm font-semibold text-foreground">
-            Browse a real, anonymized league
-          </span>
-          <ArrowRight
-            aria-hidden
-            className="h-4 w-4 text-primary transition-transform group-hover:translate-x-0.5"
-          />
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/15 text-primary"
+        >
+          <Sparkles className="h-4 w-4" />
         </span>
+        <span className="flex-1 text-sm font-semibold text-foreground">
+          Browse a real, anonymized league
+        </span>
+        <ArrowRight
+          aria-hidden
+          className="h-4 w-4 text-primary transition-transform group-hover:translate-x-0.5"
+        />
       </Link>
 
       <div className="border-t border-primary/15 pt-5 space-y-3">
