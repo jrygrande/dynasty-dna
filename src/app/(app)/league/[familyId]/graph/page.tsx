@@ -203,6 +203,21 @@ export default function GraphPage() {
     });
   }, [seedPlayerId, response, seed.length, updateUrl]);
 
+  // Resolve seedTransactionId → the tx:* node directly. Transactions are
+  // graph nodes themselves (id = `tx:${transactionId}`), so we can seed
+  // straight to that node and let the user pivot from there.
+  const seedTransactionId = searchParams.get("seedTransactionId");
+  useEffect(() => {
+    if (!seedTransactionId || !response || seed.length > 0) return;
+    const nodeId = `tx:${seedTransactionId}`;
+    const exists = response.nodes.some((n) => n.id === nodeId);
+    if (!exists) {
+      updateUrl({ seedTransactionId: null });
+      return;
+    }
+    updateUrl({ seed: nodeId });
+  }, [seedTransactionId, response, seed.length, updateUrl]);
+
   // Resolve seedPickKey → concrete seed node ids (same pattern as seedPlayerId).
   const seedPickKey = searchParams.get("seedPickKey");
   useEffect(() => {

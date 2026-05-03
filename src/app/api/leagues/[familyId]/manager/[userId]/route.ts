@@ -5,6 +5,43 @@ import { resolveFamily } from "@/lib/familyResolution";
 import { percentileToGrade } from "@/services/gradingCore";
 import { getDemoSwapForRequest } from "@/lib/demoServer";
 import { lookupSwap } from "@/lib/demoAnonymize";
+import { getAllTimeStandings } from "@/services/familyStandings";
+import { getActiveConfig } from "@/services/algorithmConfig";
+import { PILLAR_KEYS } from "@/lib/pillars";
+
+interface ScoreWithRank {
+  value: number;
+  grade: string;
+  percentile: number;
+  rank: number;
+  total: number;
+}
+
+interface RecordRow {
+  wins: number;
+  losses: number;
+  ties: number;
+  fpts: number;
+  recordRank: number;
+  fptsRank: number;
+  total: number;
+}
+
+interface RosterPlayer {
+  id: string;
+  name: string;
+  position: string | null;
+  team: string | null;
+  age: number | null;
+  ppg: number | null;
+  startPct: number | null;
+}
+
+interface RosterSnapshot {
+  season: string;
+  asOf: number | null;
+  players: RosterPlayer[];
+}
 
 export async function GET(
   req: NextRequest,
@@ -39,18 +76,23 @@ export async function GET(
     const seasonsNewestFirst = [...members].sort(
       (a, b) => Number(b.season) - Number(a.season),
     );
+    const mostRecentLeagueId = seasonsNewestFirst[0].leagueId;
+    const mostRecentSeason = seasonsNewestFirst[0].season;
 
-    // Load user info, metrics, transactions, and rosters in parallel
-    const [users, allMetrics, recentTx, rosters] = await Promise.all([
+    const algoConfig = await getActiveConfig();
+    const pillarWeights = algoConfig.pillarWeights as Record<string, number>;
+
+    const [
+      users,
+      allMetrics,
+      recentTx,
+      allRosters,
+      leagueRows,
+    ] = await Promise.all([
       db
         .select()
         .from(schema.leagueUsers)
-        .where(
-          and(
-            inArray(schema.leagueUsers.leagueId, leagueIds),
-            eq(schema.leagueUsers.userId, userId),
-          ),
-        ),
+        .where(inArray(schema.leagueUsers.leagueId, leagueIds)),
       db
         .select()
         .from(schema.managerMetrics)
@@ -63,6 +105,7 @@ export async function GET(
           week: schema.transactions.week,
           adds: schema.transactions.adds,
           drops: schema.transactions.drops,
+          draftPicks: schema.transactions.draftPicks,
           createdAt: schema.transactions.createdAt,
         })
         .from(schema.transactions)
@@ -76,27 +119,24 @@ export async function GET(
             ]),
           ),
         )
-        .orderBy(desc(schema.transactions.createdAt))
-        .limit(200),
+        .orderBy(desc(schema.transactions.createdAt)),
+      db
+        .select()
+        .from(schema.rosters)
+        .where(inArray(schema.rosters.leagueId, leagueIds)),
       db
         .select({
-          leagueId: schema.rosters.leagueId,
-          rosterId: schema.rosters.rosterId,
+          id: schema.leagues.id,
+          settings: schema.leagues.settings,
+          winnersBracket: schema.leagues.winnersBracket,
+          lastSyncedAt: schema.leagues.lastSyncedAt,
         })
-        .from(schema.rosters)
-        .where(
-          and(
-            inArray(schema.rosters.leagueId, leagueIds),
-            eq(schema.rosters.ownerId, userId),
-          ),
-        ),
+        .from(schema.leagues)
+        .where(inArray(schema.leagues.id, leagueIds)),
     ]);
 
-    // Walk seasons newest-first; first matching row wins. Avoids leaking a
-    // stale teamName from an older season when the user has no current-season
-    // row (e.g. left the league after season rollover).
     const user = seasonsNewestFirst
-      .map((m) => users.find((u) => u.leagueId === m.leagueId))
+      .map((m) => users.find((u) => u.leagueId === m.leagueId && u.userId === userId))
       .find(Boolean);
     if (!user) {
       return NextResponse.json(
@@ -105,12 +145,235 @@ export async function GET(
       );
     }
 
+    // Track this manager's rosters across leagues
+    const myRosterByLeague = new Map<string, number>();
+    for (const r of allRosters) {
+      if (r.ownerId === userId) {
+        myRosterByLeague.set(r.leagueId, r.rosterId);
+      }
+    }
     const managerRosterIds = new Set(
-      rosters.map((r) => `${r.leagueId}:${r.rosterId}`),
+      [...myRosterByLeague.entries()].map(([lid, rid]) => `${lid}:${rid}`),
     );
 
-    // Filter transactions to those involving this manager
-    const managerTx = recentTx.filter((tx) => {
+    // ============================================================
+    // Section 1: Stats header — record + PF + ranks
+    // ============================================================
+
+    // Per-season standings: rank within each season's roster set.
+    const rostersByLeague = new Map<string, typeof allRosters>();
+    for (const r of allRosters) {
+      const list = rostersByLeague.get(r.leagueId) ?? [];
+      list.push(r);
+      rostersByLeague.set(r.leagueId, list);
+    }
+
+    const seasonStats: Record<string, RecordRow & { leagueId: string }> = {};
+    for (const member of members) {
+      const rs = rostersByLeague.get(member.leagueId) ?? [];
+      const myRow = rs.find((r) => r.ownerId === userId);
+      if (!myRow) continue;
+      const sortedByWins = [...rs].sort(
+        (a, b) => (b.wins ?? 0) - (a.wins ?? 0) || (b.fpts ?? 0) - (a.fpts ?? 0),
+      );
+      const sortedByFpts = [...rs].sort(
+        (a, b) => (b.fpts ?? 0) - (a.fpts ?? 0) || (b.wins ?? 0) - (a.wins ?? 0),
+      );
+      const recordRank =
+        sortedByWins.findIndex((r) => r.rosterId === myRow.rosterId) + 1;
+      const fptsRank =
+        sortedByFpts.findIndex((r) => r.rosterId === myRow.rosterId) + 1;
+      seasonStats[member.season] = {
+        leagueId: member.leagueId,
+        wins: myRow.wins ?? 0,
+        losses: myRow.losses ?? 0,
+        ties: myRow.ties ?? 0,
+        fpts: myRow.fpts ?? 0,
+        recordRank,
+        fptsRank,
+        total: rs.length,
+      };
+    }
+
+    // All-time aggregate: sum across seasons; rank by sum of wins (the
+    // confirmed convention) within all family managers.
+    const allTimeStandings = await getAllTimeStandings(members);
+    const allTimeByOwner = new Map(allTimeStandings.map((s) => [s.ownerId, s]));
+    const myAllTime = allTimeByOwner.get(userId);
+    const sortedByAllTimeWins = [...allTimeStandings].sort(
+      (a, b) => b.wins - a.wins || b.fpts - a.fpts,
+    );
+    const sortedByAllTimeFpts = [...allTimeStandings].sort(
+      (a, b) => b.fpts - a.fpts || b.wins - a.wins,
+    );
+    const allTimeRecordRank = myAllTime
+      ? sortedByAllTimeWins.findIndex((s) => s.ownerId === userId) + 1
+      : 0;
+    const allTimeFptsRank = myAllTime
+      ? sortedByAllTimeFpts.findIndex((s) => s.ownerId === userId) + 1
+      : 0;
+    const allTimeTotal = allTimeStandings.length;
+
+    const allTime: RecordRow = {
+      wins: myAllTime?.wins ?? 0,
+      losses: myAllTime?.losses ?? 0,
+      ties: myAllTime?.ties ?? 0,
+      fpts: myAllTime?.fpts ?? 0,
+      recordRank: allTimeRecordRank,
+      fptsRank: allTimeFptsRank,
+      total: allTimeTotal,
+    };
+
+    const championshipYears = myAllTime?.championshipYears ?? [];
+
+    // ============================================================
+    // Sections 2 + 3: MPS / pillar scores with rank framing.
+    //
+    // Pre-bucket allMetrics once instead of `filter`/`find` per call —
+    // the season-MPS loop multiplies `seasons × managers × pillars` and
+    // a naive O(n) scan per cell is the slowest thing on the page.
+    // ============================================================
+
+    const peersSortedAsc = new Map<string, number[]>(); // `${metric}|${scope}` → ascending
+    const myMetricByKey = new Map<string, number>(); // `${metric}|${scope}` → my value
+    const valueByMgrKey = new Map<string, number>(); // `${metric}|${scope}|${managerId}` → value
+    const seasonScopes = new Set<string>();
+    const managerIdsInScope = new Set<string>();
+
+    for (const m of allMetrics) {
+      const ms = `${m.metric}|${m.scope}`;
+      const list = peersSortedAsc.get(ms) ?? [];
+      list.push(m.value);
+      peersSortedAsc.set(ms, list);
+      valueByMgrKey.set(`${ms}|${m.managerId}`, m.value);
+      if (m.managerId === userId) myMetricByKey.set(ms, m.value);
+      if (m.scope.startsWith("season:")) seasonScopes.add(m.scope);
+      managerIdsInScope.add(m.managerId);
+    }
+    for (const arr of peersSortedAsc.values()) arr.sort((a, b) => a - b);
+
+    function scoreFromPeers(
+      sortedAsc: number[] | undefined,
+      managerValue: number,
+    ): ScoreWithRank {
+      const peers = sortedAsc ?? [];
+      const lower = peers.filter((v) => v < managerValue).length;
+      const equalOrLower = peers.filter((v) => v <= managerValue).length;
+      const percentile =
+        peers.length <= 1
+          ? 50
+          : Math.round((lower / (peers.length - 1)) * 1000) / 10;
+      // Dense rank, 1-based, higher value = better rank.
+      const rank = peers.length - equalOrLower + 1;
+      return {
+        value: managerValue,
+        grade: percentileToGrade(percentile),
+        percentile,
+        rank: Math.max(1, rank),
+        total: peers.length,
+      };
+    }
+
+    function buildScoreWithRank(
+      metric: string,
+      scope: string,
+      managerValue: number,
+    ): ScoreWithRank {
+      return scoreFromPeers(peersSortedAsc.get(`${metric}|${scope}`), managerValue);
+    }
+
+    const pillarScores: Record<string, ScoreWithRank | null> = {};
+    for (const pillar of PILLAR_KEYS) {
+      const v = myMetricByKey.get(`${pillar}|all_time`);
+      pillarScores[pillar] = v !== undefined
+        ? buildScoreWithRank(pillar, "all_time", v)
+        : null;
+    }
+
+    const mpsAllTimeValue = myMetricByKey.get("manager_process_score|all_time");
+    const mps = mpsAllTimeValue !== undefined
+      ? buildScoreWithRank("manager_process_score", "all_time", mpsAllTimeValue)
+      : null;
+
+    // Season MPS = weighted avg of pillar percentiles in that season.
+    const seasonMpsByManager = new Map<string, Map<string, number>>();
+    for (const scope of seasonScopes) {
+      const mpsMap = new Map<string, number>();
+      for (const mgrId of managerIdsInScope) {
+        let weightedSum = 0;
+        let totalWeight = 0;
+        for (const pillar of PILLAR_KEYS) {
+          const v = valueByMgrKey.get(`${pillar}|${scope}|${mgrId}`);
+          if (v === undefined) continue;
+          const peers = peersSortedAsc.get(`${pillar}|${scope}`);
+          const pctl = peers && peers.length > 1
+            ? Math.round(
+                (peers.filter((p) => p < v).length / (peers.length - 1)) * 1000,
+              ) / 10
+            : 50;
+          const w = pillarWeights[pillar] ?? 1;
+          weightedSum += pctl * w;
+          totalWeight += w;
+        }
+        if (totalWeight === 0) continue;
+        mpsMap.set(mgrId, Math.round((weightedSum / totalWeight) * 10) / 10);
+      }
+      if (mpsMap.size > 0) seasonMpsByManager.set(scope, mpsMap);
+    }
+
+    const seasonHistory = Array.from(seasonScopes)
+      .map((scope) => {
+        const season = scope.replace("season:", "");
+        const stats = seasonStats[season];
+        const pillars: Record<string, ScoreWithRank | null> = {};
+        for (const pillar of PILLAR_KEYS) {
+          const v = valueByMgrKey.get(`${pillar}|${scope}|${userId}`);
+          pillars[pillar] = v !== undefined
+            ? buildScoreWithRank(pillar, scope, v)
+            : null;
+        }
+
+        const mpsMap = seasonMpsByManager.get(scope);
+        const myMps = mpsMap?.get(userId);
+        const seasonMpsScore = myMps !== undefined && mpsMap
+          ? scoreFromPeers([...mpsMap.values()].sort((a, b) => a - b), myMps)
+          : null;
+
+        return {
+          season,
+          wins: stats?.wins ?? 0,
+          losses: stats?.losses ?? 0,
+          ties: stats?.ties ?? 0,
+          fpts: stats?.fpts ?? 0,
+          mps: seasonMpsScore,
+          pillars,
+        };
+      })
+      .sort((a, b) => b.season.localeCompare(a.season));
+
+    // ============================================================
+    // Section 5: Roster snapshots with PPG + Start% (bye-excluded)
+    // ============================================================
+
+    function rosterPlayersFor(leagueId: string): string[] {
+      const myRow = (rostersByLeague.get(leagueId) ?? []).find(
+        (r) => r.ownerId === userId,
+      );
+      const ids = (myRow?.players as string[] | null) ?? [];
+      return ids.filter(Boolean);
+    }
+
+    // Collect every player ID we'll need metadata for in one shot —
+    // displayed roster snapshots + add/drop/pick players in transactions
+    // the manager touched. Avoids a second player-fetch round-trip later.
+    const rosterDisplayedPlayerIds = new Set<string>();
+    for (const member of members) {
+      for (const pid of rosterPlayersFor(member.leagueId)) {
+        rosterDisplayedPlayerIds.add(pid);
+      }
+    }
+
+    const earlyManagerTx = recentTx.filter((tx) => {
       const adds = (tx.adds || {}) as Record<string, number>;
       const drops = (tx.drops || {}) as Record<string, number>;
       for (const rid of Object.values(adds)) {
@@ -119,136 +382,229 @@ export async function GET(
       for (const rid of Object.values(drops)) {
         if (managerRosterIds.has(`${tx.leagueId}:${rid}`)) return true;
       }
+      const picks = (tx.draftPicks || []) as Array<{
+        owner_id: number;
+        previous_owner_id: number;
+      }>;
+      for (const p of picks) {
+        if (managerRosterIds.has(`${tx.leagueId}:${p.owner_id}`)) return true;
+        if (managerRosterIds.has(`${tx.leagueId}:${p.previous_owner_id}`)) {
+          return true;
+        }
+      }
       return false;
-    }).slice(0, 10);
+    });
+    const allDisplayedPlayerIds = new Set(rosterDisplayedPlayerIds);
+    for (const tx of earlyManagerTx) {
+      const adds = (tx.adds || {}) as Record<string, number>;
+      const drops = (tx.drops || {}) as Record<string, number>;
+      for (const pid of Object.keys(adds)) allDisplayedPlayerIds.add(pid);
+      for (const pid of Object.keys(drops)) allDisplayedPlayerIds.add(pid);
+    }
 
-    // Parse metrics — compute global percentiles across all managers
-    const pillarTypes = [
-      "trade_score",
-      "draft_score",
-      "waiver_score",
-      "lineup_score",
+    const myRosterIdList = [...new Set(allRosters
+      .filter((r) => r.ownerId === userId)
+      .map((r) => r.rosterId))];
+
+    const seasonsAsNumbers = members
+      .map((m) => Number(m.season))
+      .filter((s) => !Number.isNaN(s));
+
+    const [myScoreRows, snapshotPlayers] = await Promise.all([
+      rosterDisplayedPlayerIds.size > 0 && myRosterIdList.length > 0
+        ? db
+            .select()
+            .from(schema.playerScores)
+            .where(
+              and(
+                inArray(schema.playerScores.leagueId, leagueIds),
+                inArray(schema.playerScores.rosterId, myRosterIdList),
+                inArray(
+                  schema.playerScores.playerId,
+                  [...rosterDisplayedPlayerIds],
+                ),
+              ),
+            )
+        : Promise.resolve([]),
+      allDisplayedPlayerIds.size > 0
+        ? db
+            .select()
+            .from(schema.players)
+            .where(inArray(schema.players.id, [...allDisplayedPlayerIds]))
+        : Promise.resolve([]),
+    ]);
+
+    // Belt-and-braces: roster IDs aren't unique across leagues, but the
+    // (leagueId, rosterId) pair must belong to this manager.
+    const myScoreRowsFiltered = myScoreRows.filter((r) =>
+      managerRosterIds.has(`${r.leagueId}:${r.rosterId}`),
+    );
+
+    const playerById = new Map(snapshotPlayers.map((p) => [p.id, p]));
+
+    // Bye detection only needs status rows for the displayed roster's
+    // players. Without this filter we'd pull the full NFL weekly status
+    // table (~3K player-weeks × seasons) on every request.
+    const rosterGsisIds = [
+      ...new Set(snapshotPlayers.map((p) => p.gsisId).filter((g): g is string => !!g)),
     ];
 
-    // Build global score distributions per metric+scope for percentile ranking
-    const globalScores = new Map<string, number[]>(); // "metric:scope" -> sorted values
-    for (const m of allMetrics) {
-      const key = `${m.metric}:${m.scope}`;
-      if (!globalScores.has(key)) globalScores.set(key, []);
-      globalScores.get(key)!.push(m.value);
-    }
-    for (const arr of globalScores.values()) arr.sort((a, b) => a - b);
+    const [statusRows, scheduleRows] = await Promise.all([
+      seasonsAsNumbers.length > 0 && rosterGsisIds.length > 0
+        ? db
+            .select()
+            .from(schema.nflWeeklyRosterStatus)
+            .where(
+              and(
+                inArray(schema.nflWeeklyRosterStatus.season, seasonsAsNumbers),
+                inArray(schema.nflWeeklyRosterStatus.gsisId, rosterGsisIds),
+              ),
+            )
+        : Promise.resolve([]),
+      seasonsAsNumbers.length > 0
+        ? db
+            .select()
+            .from(schema.nflSchedule)
+            .where(inArray(schema.nflSchedule.season, seasonsAsNumbers))
+        : Promise.resolve([]),
+    ]);
 
-    function globalPercentile(metric: string, scope: string, value: number): number {
-      const sorted = globalScores.get(`${metric}:${scope}`);
-      if (!sorted || sorted.length <= 1) return 50;
-      const rank = sorted.filter((v) => v < value).length;
-      return Math.round((rank / (sorted.length - 1)) * 1000) / 10;
-    }
-
-    // Filter to this manager's metrics
-    const myMetrics = allMetrics.filter((r) => r.managerId === userId);
-
-    // All-time pillar scores with global percentile grades
-    const pillarScores: Record<
-      string,
-      { value: number; grade: string; percentile: number } | null
-    > = {};
-    for (const pillar of pillarTypes) {
-      const m = myMetrics.find(
-        (r) => r.metric === pillar && r.scope === "all_time",
-      );
-      if (m) {
-        const pctl = globalPercentile(pillar, "all_time", m.value);
-        pillarScores[pillar] = {
-          value: m.value,
-          grade: percentileToGrade(pctl),
-          percentile: pctl,
-        };
-      } else {
-        pillarScores[pillar] = null;
-      }
+    const playerTeamByWeek = new Map<string, string>(); // `${gsisId}|${season}|${week}` → team
+    for (const r of statusRows) {
+      if (!r.team) continue;
+      playerTeamByWeek.set(`${r.gsisId}|${r.season}|${r.week}`, r.team);
     }
 
-    // Manager Process Score (MPS) — composite all-time score.
-    // Stored as `manager_process_score` per #41 (sibling to *_score columns).
-    const mpsMetric = myMetrics.find(
-      (r) => r.metric === "manager_process_score" && r.scope === "all_time",
-    );
-    const mps = mpsMetric
-      ? {
-          value: mpsMetric.value,
-          grade: percentileToGrade(
-            globalPercentile("manager_process_score", "all_time", mpsMetric.value),
-          ),
-          percentile: globalPercentile(
-            "manager_process_score",
-            "all_time",
-            mpsMetric.value,
-          ),
+    const teamPlayedWeeks = new Map<string, Set<number>>(); // `${season}|${team}` → weeks
+    for (const g of scheduleRows) {
+      const addTeam = (team: string) => {
+        const key = `${g.season}|${team}`;
+        const set = teamPlayedWeeks.get(key) ?? new Set<number>();
+        set.add(g.week);
+        teamPlayedWeeks.set(key, set);
+      };
+      addTeam(g.homeTeam);
+      addTeam(g.awayTeam);
+    }
+
+    function isBye(playerId: string, season: string, week: number): boolean {
+      const gsisId = playerById.get(playerId)?.gsisId;
+      if (!gsisId) return false;
+      // Status rows occasionally drop mid-season; fall back to the nearest
+      // week with data so we don't misclassify byes.
+      let team = playerTeamByWeek.get(`${gsisId}|${season}|${week}`) ?? null;
+      if (!team) {
+        for (let delta = 1; delta <= 18 && !team; delta++) {
+          team =
+            playerTeamByWeek.get(`${gsisId}|${season}|${week - delta}`) ??
+            playerTeamByWeek.get(`${gsisId}|${season}|${week + delta}`) ??
+            null;
         }
-      : null;
+      }
+      if (!team) return false;
+      const weeksPlayed = teamPlayedWeeks.get(`${season}|${team}`);
+      if (!weeksPlayed) return false;
+      return !weeksPlayed.has(week);
+    }
 
-    // Season history — group season-scoped metrics by season
-    const seasonMetrics = myMetrics.filter((r) =>
-      r.scope.startsWith("season:"),
-    );
+    interface PlayerStat {
+      starts: number;
+      total: number;
+      points: number;
+    }
 
-    const seasonMap = new Map<
-      string,
-      Record<string, { value: number; grade: string; percentile: number }>
-    >();
-    for (const m of seasonMetrics) {
-      const season = m.scope.replace("season:", "");
-      if (!seasonMap.has(season)) seasonMap.set(season, {});
-      const pctl = globalPercentile(m.metric, m.scope, m.value);
-      seasonMap.get(season)![m.metric] = {
-        value: m.value,
-        grade: percentileToGrade(pctl),
-        percentile: pctl,
+    // Snapshots iterate over a small subset of leagues each — pre-bucket
+    // scores by leagueId so we don't re-scan every score row per snapshot.
+    const scoresByLeague = new Map<string, typeof myScoreRowsFiltered>();
+    for (const r of myScoreRowsFiltered) {
+      const list = scoresByLeague.get(r.leagueId) ?? [];
+      list.push(r);
+      scoresByLeague.set(r.leagueId, list);
+    }
+
+    function aggregatePlayerStats(
+      playerIds: Set<string>,
+      scopeLeagueIds: Iterable<string>,
+    ): Map<string, PlayerStat> {
+      const out = new Map<string, PlayerStat>();
+      for (const pid of playerIds) out.set(pid, { starts: 0, total: 0, points: 0 });
+      for (const lid of scopeLeagueIds) {
+        const rows = scoresByLeague.get(lid);
+        if (!rows) continue;
+        const season = leagueToSeason.get(lid);
+        if (!season) continue;
+        for (const r of rows) {
+          if (!playerIds.has(r.playerId)) continue;
+          if (isBye(r.playerId, season, r.week)) continue;
+          const stat = out.get(r.playerId)!;
+          stat.total += 1;
+          if (r.isStarter) stat.starts += 1;
+          stat.points += r.points ?? 0;
+        }
+      }
+      return out;
+    }
+
+    const leagueById = new Map(leagueRows.map((l) => [l.id, l]));
+
+    function computeRosterSnapshot(
+      season: string,
+      leagueId: string,
+      scopeLeagueIds: Iterable<string>,
+    ): RosterSnapshot {
+      const lastSync = leagueById.get(leagueId)?.lastSyncedAt;
+      const ids = new Set(rosterPlayersFor(leagueId));
+      const stats = aggregatePlayerStats(ids, scopeLeagueIds);
+      const list: RosterPlayer[] = [];
+      for (const pid of ids) {
+        const p = playerById.get(pid);
+        const s = stats.get(pid)!;
+        list.push({
+          id: pid,
+          name: p?.name ?? pid,
+          position: p?.position ?? null,
+          team: p?.team ?? null,
+          age: p?.age ?? null,
+          ppg: s.total > 0 ? Math.round((s.points / s.total) * 10) / 10 : null,
+          startPct: s.total > 0 ? Math.round((s.starts / s.total) * 1000) / 10 : null,
+        });
+      }
+      list.sort((a, b) => {
+        const ap = positionOrder(a.position);
+        const bp = positionOrder(b.position);
+        if (ap !== bp) return ap - bp;
+        return (b.ppg ?? 0) - (a.ppg ?? 0);
+      });
+      return {
+        season,
+        asOf: lastSync ? lastSync.getTime() : null,
+        players: list,
       };
     }
 
-    const seasonHistory = Array.from(seasonMap.entries())
-      .map(([season, metrics]) => ({ season, ...metrics }))
-      .sort((a, b) => b.season.localeCompare(a.season));
-
-    // Load player names for transaction display
-    const playerIds = new Set<string>();
-    for (const tx of managerTx) {
-      const adds = (tx.adds || {}) as Record<string, number>;
-      const drops = (tx.drops || {}) as Record<string, number>;
-      for (const pid of Object.keys(adds)) playerIds.add(pid);
-      for (const pid of Object.keys(drops)) playerIds.add(pid);
+    // The "all-time" snapshot uses the most-recent roster but aggregates
+    // PPG/Start% across every family league the manager played in.
+    const rosters: Record<string, RosterSnapshot> = {
+      "all-time": computeRosterSnapshot(
+        mostRecentSeason,
+        mostRecentLeagueId,
+        leagueIds,
+      ),
+    };
+    for (const member of members) {
+      rosters[member.season] = computeRosterSnapshot(
+        member.season,
+        member.leagueId,
+        [member.leagueId],
+      );
     }
 
-    const players =
-      playerIds.size > 0
-        ? await db
-            .select({
-              id: schema.players.id,
-              firstName: schema.players.firstName,
-              lastName: schema.players.lastName,
-              position: schema.players.position,
-              team: schema.players.team,
-            })
-            .from(schema.players)
-            .where(inArray(schema.players.id, [...playerIds]))
-        : [];
+    // ============================================================
+    // Transactions enrichment (filter computed earlier so we could batch
+    // the players query into the main Promise.all)
+    // ============================================================
 
-    const playerMap = new Map(
-      players.map((p) => [
-        p.id,
-        {
-          id: p.id,
-          name: [p.firstName, p.lastName].filter(Boolean).join(" ") || p.id,
-          position: p.position,
-          team: p.team,
-        },
-      ]),
-    );
-
-    // Load trade + waiver grades for these transactions
+    const managerTx = earlyManagerTx;
     const txIds = managerTx.map((tx) => tx.id);
     const [tradeGrades, waiverGrades] =
       txIds.length > 0
@@ -286,19 +642,67 @@ export async function GET(
       }
     }
 
+    function playerRef(pid: string) {
+      const p = playerById.get(pid);
+      return {
+        id: pid,
+        name: p?.name ?? pid,
+        position: p?.position ?? null,
+        team: p?.team ?? null,
+      };
+    }
+
+    interface PickRef {
+      season: string;
+      round: number;
+    }
+
     const enrichedTx = managerTx.map((tx) => {
       const adds = (tx.adds || {}) as Record<string, number>;
       const drops = (tx.drops || {}) as Record<string, number>;
+      const draftPicks = (tx.draftPicks || []) as Array<{
+        season: string;
+        round: number;
+        roster_id: number;
+        previous_owner_id: number;
+        owner_id: number;
+      }>;
       const season = leagueToSeason.get(tx.leagueId) ?? "";
       const txGrade = gradeMap.get(tx.id);
+      const myRosterId = myRosterByLeague.get(tx.leagueId);
+
+      // Filter to the manager's side of the transaction. For waivers/free
+      // agents this is a no-op (only one side); for trades it strips the
+      // counterparty's assets so the card reads as "what I got / gave up".
+      const myAdds = Object.entries(adds)
+        .filter(([, rid]) => rid === myRosterId)
+        .map(([pid]) => playerRef(pid));
+      const myDrops = Object.entries(drops)
+        .filter(([, rid]) => rid === myRosterId)
+        .map(([pid]) => playerRef(pid));
+
+      const picksReceived: PickRef[] = [];
+      const picksSent: PickRef[] = [];
+      for (const p of draftPicks) {
+        if (p.owner_id === myRosterId && p.previous_owner_id !== myRosterId) {
+          picksReceived.push({ season: p.season, round: p.round });
+        } else if (
+          p.previous_owner_id === myRosterId &&
+          p.owner_id !== myRosterId
+        ) {
+          picksSent.push({ season: p.season, round: p.round });
+        }
+      }
 
       return {
         id: tx.id,
         type: tx.type,
         season,
         week: tx.week,
-        adds: Object.keys(adds).map((pid) => playerMap.get(pid) ?? { id: pid, name: pid, position: null, team: null }),
-        drops: Object.keys(drops).map((pid) => playerMap.get(pid) ?? { id: pid, name: pid, position: null, team: null }),
+        adds: myAdds,
+        drops: myDrops,
+        picksReceived,
+        picksSent,
         grade: txGrade?.grade ?? null,
         score: txGrade?.score ?? null,
         createdAt: tx.createdAt,
@@ -307,6 +711,7 @@ export async function GET(
 
     const demoSwap = await getDemoSwapForRequest(req, familyId);
     const swap = demoSwap ? lookupSwap(demoSwap, user.userId) : undefined;
+
     return NextResponse.json({
       manager: {
         userId: user.userId,
@@ -314,9 +719,13 @@ export async function GET(
         teamName: swap?.teamName ?? user.teamName,
         avatar: swap ? null : user.avatar,
       },
+      allTime,
+      seasonStats,
+      championshipYears,
       mps,
       pillarScores,
       seasonHistory,
+      rosters,
       recentTransactions: enrichedTx,
       seasons: members
         .map((m) => ({ leagueId: m.leagueId, season: m.season }))
@@ -330,3 +739,17 @@ export async function GET(
     );
   }
 }
+
+const POSITION_ORDER: Record<string, number> = {
+  QB: 0,
+  RB: 1,
+  WR: 2,
+  TE: 3,
+  K: 4,
+  DEF: 5,
+};
+function positionOrder(position: string | null): number {
+  if (!position) return 99;
+  return POSITION_ORDER[position] ?? 50;
+}
+

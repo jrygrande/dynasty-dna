@@ -12,6 +12,12 @@ export function getRoundSuffix(round: number): string {
   return "th";
 }
 
+export function ordinal(n: number): string {
+  const s = ["th", "st", "nd", "rd"];
+  const v = n % 100;
+  return n + (s[(v - 20) % 10] || s[v] || s[0]);
+}
+
 export function formatDate(
   input: string | number | null,
   style: "compact" | "short" | "long" = "short"
