@@ -295,13 +295,24 @@ function ManagerPageContent({
       ),
     [data.draftSelections],
   );
-  const draftRounds = useMemo(
-    () =>
-      [...new Set(data.draftSelections.map((d) => d.round))].sort(
-        (a, b) => a - b,
-      ),
-    [data.draftSelections],
-  );
+  // Round chips exclude the startup draft's deeper rounds — startup drafts
+  // are typically 25+ rounds while rookie drafts are 4–5. Showing 27 chips
+  // is unusable, so we cap chips at the max round of every draft EXCEPT the
+  // longest one (the startup). Picks beyond the cap still appear under
+  // "All Rounds".
+  const draftRounds = useMemo(() => {
+    const maxRoundBySeason = new Map<string, number>();
+    for (const d of data.draftSelections) {
+      const cur = maxRoundBySeason.get(d.season) ?? 0;
+      if (d.round > cur) maxRoundBySeason.set(d.season, d.round);
+    }
+    const perSeasonMax = [...maxRoundBySeason.values()].sort((a, b) => b - a);
+    const cap =
+      perSeasonMax.length > 1 ? perSeasonMax[1] : (perSeasonMax[0] ?? 0);
+    const rounds: number[] = [];
+    for (let r = 1; r <= cap; r++) rounds.push(r);
+    return rounds;
+  }, [data.draftSelections]);
   const filteredDrafts = useMemo(() => {
     return data.draftSelections.filter((d) => {
       if (selectedDraftSeason !== "all" && d.season !== selectedDraftSeason)
