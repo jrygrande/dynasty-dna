@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useState, useMemo } from "react";
+import { type ReactNode, useEffect, useState, useMemo } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { GitBranch } from "lucide-react";
@@ -167,14 +167,28 @@ export default function PlayerDetailPage() {
     return scopedWeeks;
   }, [scopedWeeks, selectedStatus]);
 
+  // Started/Rostered ratio is identity-level (ignores status filter).
+  // PPG follows the status filter — Started/Benched switches the denominator
+  // so the headline number reflects what the user is looking at.
   const stats = useMemo(() => {
     if (scopedWeeks.length === 0) return null;
     const totalWeeks = scopedWeeks.length;
     const starterWeeks = scopedWeeks.filter((w) => w.fantasyStatus === "starter").length;
-    const totalPoints = scopedWeeks.reduce((sum, w) => sum + w.points, 0);
-    const ppgAll = totalPoints / totalWeeks;
-    return { totalWeeks, starterWeeks, ppgAll };
-  }, [scopedWeeks]);
+    const ppgWeeks =
+      selectedStatus === "all"
+        ? scopedWeeks
+        : scopedWeeks.filter((w) => w.fantasyStatus === selectedStatus);
+    const ppg = ppgWeeks.length
+      ? ppgWeeks.reduce((s, w) => s + w.points, 0) / ppgWeeks.length
+      : 0;
+    const ppgLabel =
+      selectedStatus === "starter"
+        ? "PPG when Started"
+        : selectedStatus === "bench"
+          ? "PPG on Bench"
+          : "PPG";
+    return { totalWeeks, starterWeeks, ppg, ppgLabel };
+  }, [scopedWeeks, selectedStatus]);
 
   const sections: CollapsibleSection[] = useMemo(() => {
     type Stint = {
@@ -280,8 +294,8 @@ export default function PlayerDetailPage() {
       />
 
       <main className="container mx-auto px-4 sm:px-6 py-6 sm:py-8">
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 mb-8">
-          <PlayerMetaTile
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 mb-8">
+          <SituationTile
             team={player.team}
             age={player.age}
             yearsExp={player.yearsExp}
@@ -291,7 +305,12 @@ export default function PlayerDetailPage() {
             familyId={familyId}
             currentManager={currentManager}
           />
-          {stats && <PlayerStatsTile stats={stats} />}
+          {stats && (
+            <ProductionTile
+              stats={stats}
+              className="sm:row-span-2 lg:row-span-1"
+            />
+          )}
         </div>
 
         <div className="flex flex-wrap gap-x-4 gap-y-3 mb-6">
@@ -427,7 +446,39 @@ function WeeklyDetail({ weeks }: { weeks: WeekEntry[] }) {
   );
 }
 
-function PlayerMetaTile({
+function TileLabel({ children }: { children: ReactNode }) {
+  return (
+    <div className="text-[11px] font-mono uppercase tracking-wide text-muted-foreground">
+      {children}
+    </div>
+  );
+}
+
+function StatBlock({
+  value,
+  label,
+  tooltip,
+  className,
+}: {
+  value: ReactNode;
+  label: ReactNode;
+  tooltip?: string;
+  className?: string;
+}) {
+  const valueClass = tooltip
+    ? "text-2xl font-bold font-mono tabular-nums underline decoration-dotted decoration-muted-foreground/40 underline-offset-4 cursor-help"
+    : "text-2xl font-bold font-mono tabular-nums";
+  return (
+    <div className={`min-w-0 flex-1 ${className ?? ""}`}>
+      <div className={valueClass} title={tooltip}>
+        {value}
+      </div>
+      <div className="text-xs text-muted-foreground mt-0.5">{label}</div>
+    </div>
+  );
+}
+
+function SituationTile({
   team,
   age,
   yearsExp,
@@ -438,37 +489,41 @@ function PlayerMetaTile({
   yearsExp: number | null;
   statusLabel: string | null;
 }) {
-  const parts: string[] = [];
-  if (team) parts.push(team);
-  if (age != null) parts.push(`${age} yo`);
+  const facts: { label: string; value: ReactNode }[] = [];
+  if (team) facts.push({ label: "Team", value: team });
+  if (age != null) facts.push({ label: "Age", value: age });
   if (yearsExp != null) {
-    parts.push(yearsExp === 0 ? "Rookie" : `${yearsExp}y exp`);
+    facts.push({
+      label: "Exp",
+      value: yearsExp === 0 ? "Rookie" : `${yearsExp}y`,
+    });
+  }
+  if (statusLabel) {
+    facts.push({
+      label: "Status",
+      value: (
+        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-grade-d/10 text-grade-d">
+          {statusLabel}
+        </span>
+      ),
+    });
   }
 
   return (
-    <div className="border rounded-lg p-4 flex flex-col gap-1">
-      <div className="text-[11px] font-mono uppercase tracking-wide text-muted-foreground">
-        Player
-      </div>
-      <div className="text-sm flex flex-wrap items-center gap-x-2 gap-y-1">
-        {parts.map((part, i) => (
-          <Fragment key={`meta-${i}`}>
-            {i > 0 && (
-              <span aria-hidden className="text-muted-foreground/50">·</span>
-            )}
-            <span>{part}</span>
-          </Fragment>
+    <div className="border rounded-lg p-4 flex flex-col gap-3">
+      <TileLabel>Situation</TileLabel>
+      <div className="flex items-center divide-x divide-border/60">
+        {facts.map((f, i) => (
+          <div
+            key={i}
+            className="px-3 first:pl-0 last:pr-0 min-w-0 flex-1"
+          >
+            <div className="text-base font-semibold truncate">{f.value}</div>
+            <div className="text-[10px] font-mono uppercase tracking-wide text-muted-foreground mt-0.5">
+              {f.label}
+            </div>
+          </div>
         ))}
-        {statusLabel && (
-          <>
-            {parts.length > 0 && (
-              <span aria-hidden className="text-muted-foreground/50">·</span>
-            )}
-            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-grade-d/10 text-grade-d">
-              {statusLabel}
-            </span>
-          </>
-        )}
       </div>
     </div>
   );
@@ -483,10 +538,8 @@ function CurrentManagerTile({
 }) {
   if (!currentManager) {
     return (
-      <div className="border rounded-lg p-4 flex flex-col gap-1">
-        <div className="text-[11px] font-mono uppercase tracking-wide text-muted-foreground">
-          Currently
-        </div>
+      <div className="border rounded-lg p-4 flex flex-col gap-3">
+        <TileLabel>Currently</TileLabel>
         <div className="text-sm text-muted-foreground">Free agent</div>
       </div>
     );
@@ -499,16 +552,9 @@ function CurrentManagerTile({
       href={`/league/${familyId}/manager/${currentManager.userId}`}
       className="group border rounded-lg p-4 flex items-center gap-3 hover:bg-muted/30 transition-colors min-w-0"
     >
-      <ManagerAvatar
-        displayName={currentManager.displayName}
-        avatarUrl={currentManager.avatar}
-        size={40}
-      />
       <div className="min-w-0 flex-1">
-        <div className="text-[11px] font-mono uppercase tracking-wide text-muted-foreground">
-          Currently rostered by
-        </div>
-        <div className="text-sm font-semibold text-foreground truncate group-hover:text-primary transition-colors">
+        <TileLabel>Currently rostered by</TileLabel>
+        <div className="mt-1 text-sm font-semibold text-foreground truncate group-hover:text-primary transition-colors">
           {teamLabel}
         </div>
         <ManagerSecondaryName
@@ -524,31 +570,43 @@ function CurrentManagerTile({
           </div>
         )}
       </div>
+      <ManagerAvatar
+        displayName={currentManager.displayName}
+        avatarUrl={currentManager.avatar}
+        size={40}
+      />
     </Link>
   );
 }
 
-function PlayerStatsTile({
+function ProductionTile({
   stats,
+  className,
 }: {
-  stats: { totalWeeks: number; starterWeeks: number; ppgAll: number };
+  stats: {
+    totalWeeks: number;
+    starterWeeks: number;
+    ppg: number;
+    ppgLabel: string;
+  };
+  className?: string;
 }) {
   return (
-    <div className="border rounded-lg p-4 flex items-center gap-6">
-      <div className="min-w-0">
+    <div
+      className={`border rounded-lg p-4 flex flex-col gap-3 ${className ?? ""}`}
+    >
+      <TileLabel>Production</TileLabel>
+      <div className="flex-1 flex flex-row sm:flex-col lg:flex-row sm:justify-center gap-4 sm:gap-3 lg:gap-4">
+        <StatBlock
+          value={`${stats.starterWeeks}/${stats.totalWeeks}`}
+          label="Weeks Started"
+          tooltip={`Started ${stats.starterWeeks} of ${stats.totalWeeks} weeks rostered`}
+        />
         <div
-          className="text-2xl font-bold font-mono tabular-nums underline decoration-dotted decoration-muted-foreground/40 underline-offset-4 cursor-help"
-          title={`Started ${stats.starterWeeks} of ${stats.totalWeeks} weeks rostered`}
-        >
-          {stats.starterWeeks}/{stats.totalWeeks}
-        </div>
-        <div className="text-xs text-muted-foreground">Weeks Started</div>
-      </div>
-      <div className="min-w-0">
-        <div className="text-2xl font-bold font-mono tabular-nums">
-          {stats.ppgAll.toFixed(1)}
-        </div>
-        <div className="text-xs text-muted-foreground">PPG</div>
+          aria-hidden
+          className="border-l sm:border-l-0 sm:border-t lg:border-t-0 lg:border-l border-border/60"
+        />
+        <StatBlock value={stats.ppg.toFixed(1)} label={stats.ppgLabel} />
       </div>
     </div>
   );
