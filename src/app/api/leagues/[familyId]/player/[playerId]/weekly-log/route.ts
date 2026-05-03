@@ -368,7 +368,10 @@ export async function GET(
       const displayName =
         swapped?.displayName ?? userRow?.displayName ?? owningRoster.ownerId;
       const teamName = swapped?.teamName ?? userRow?.teamName ?? null;
-      const avatar = demoSwap ? null : userRow?.avatar ?? null;
+      const avatarHash = demoSwap ? null : userRow?.avatar ?? null;
+      const avatar = avatarHash
+        ? `https://sleepercdn.com/avatars/thumbs/${avatarHash}`
+        : null;
 
       const sortedDesc = [...weeks].sort((a, b) => {
         const seasonDiff = parseInt(b.season, 10) - parseInt(a.season, 10);

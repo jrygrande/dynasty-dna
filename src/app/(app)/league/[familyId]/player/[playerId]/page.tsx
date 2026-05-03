@@ -3,7 +3,7 @@
 import { Fragment, useEffect, useState, useMemo } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, ArrowRight } from "lucide-react";
+import { ArrowLeft, ChevronDown, GitBranch } from "lucide-react";
 import {
   ManagerName,
   ManagerAvatar,
@@ -162,30 +162,91 @@ export default function PlayerDetailPage() {
     if (filteredWeeks.length === 0) return null;
     const totalWeeks = filteredWeeks.length;
     const starterWeeks = filteredWeeks.filter((w) => w.fantasyStatus === "starter").length;
-    const benchWeeks = totalWeeks - starterWeeks;
     const totalPoints = filteredWeeks.reduce((sum, w) => sum + w.points, 0);
-    const starterPoints = filteredWeeks
-      .filter((w) => w.fantasyStatus === "starter")
-      .reduce((sum, w) => sum + w.points, 0);
     const ppgAll = totalPoints / totalWeeks;
-    const ppgStarter = starterWeeks > 0 ? starterPoints / starterWeeks : 0;
-
-    return { totalWeeks, starterWeeks, benchWeeks, totalPoints, ppgAll, ppgStarter };
+    return { totalWeeks, starterWeeks, ppgAll };
   }, [filteredWeeks]);
 
-  // Group weeks by season for dividers
-  const groupedWeeks = useMemo(() => {
-    const groups: { season: string; weeks: WeekEntry[] }[] = [];
-    let currentSeason = "";
+  // Group filtered weeks by (season, manager). Each stint is the unit of
+  // analysis on a player page: "what did this player do for THIS manager in
+  // THIS season". Multi-manager seasons (mid-season trades) get one row per
+  // manager.
+  const seasonGroups = useMemo(() => {
+    type Stint = {
+      key: string;
+      season: string;
+      managerUserId: string | null;
+      managerDisplayName: string | null;
+      managerRosterId: number | null;
+      weeks: WeekEntry[];
+      totalWeeks: number;
+      starterWeeks: number;
+      totalPoints: number;
+      ppgAll: number;
+      ppgStarter: number;
+    };
+    const map = new Map<string, Map<string, Stint>>();
     for (const w of filteredWeeks) {
-      if (w.season !== currentSeason) {
-        currentSeason = w.season;
-        groups.push({ season: currentSeason, weeks: [] });
+      const userKey = w.manager?.userId ?? "__unrostered";
+      if (!map.has(w.season)) map.set(w.season, new Map());
+      const seasonMap = map.get(w.season)!;
+      if (!seasonMap.has(userKey)) {
+        seasonMap.set(userKey, {
+          key: `${w.season}|${userKey}`,
+          season: w.season,
+          managerUserId: w.manager?.userId ?? null,
+          managerDisplayName: w.manager?.displayName ?? null,
+          managerRosterId: w.manager?.rosterId ?? null,
+          weeks: [],
+          totalWeeks: 0,
+          starterWeeks: 0,
+          totalPoints: 0,
+          ppgAll: 0,
+          ppgStarter: 0,
+        });
       }
-      groups[groups.length - 1].weeks.push(w);
+      seasonMap.get(userKey)!.weeks.push(w);
     }
-    return groups;
+    for (const seasonMap of map.values()) {
+      for (const stint of seasonMap.values()) {
+        stint.totalWeeks = stint.weeks.length;
+        stint.starterWeeks = stint.weeks.filter(
+          (w) => w.fantasyStatus === "starter"
+        ).length;
+        stint.totalPoints = stint.weeks.reduce((s, w) => s + w.points, 0);
+        stint.ppgAll = stint.totalWeeks
+          ? stint.totalPoints / stint.totalWeeks
+          : 0;
+        const starterPoints = stint.weeks
+          .filter((w) => w.fantasyStatus === "starter")
+          .reduce((s, w) => s + w.points, 0);
+        stint.ppgStarter = stint.starterWeeks
+          ? starterPoints / stint.starterWeeks
+          : 0;
+      }
+    }
+    return [...map.entries()]
+      .sort(([a], [b]) => parseInt(b, 10) - parseInt(a, 10))
+      .map(([season, stintMap]) => ({
+        season,
+        stints: [...stintMap.values()].sort(
+          (a, b) => b.totalPoints - a.totalPoints
+        ),
+      }));
   }, [filteredWeeks]);
+
+  const allStintKeys = useMemo(
+    () => seasonGroups.flatMap((g) => g.stints.map((s) => s.key)),
+    [seasonGroups]
+  );
+  const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
+  const toggleStint = (key: string) =>
+    setExpandedKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
 
   if (loading) {
     return (
@@ -218,7 +279,7 @@ export default function PlayerDetailPage() {
   return (
       <div>
         <div className="border-b">
-          <div className="container mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-4">
+          <div className="container mx-auto px-4 sm:px-6 py-3">
             <Link
               href={`/league/${familyId}`}
               className="text-sm text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5"
@@ -226,15 +287,6 @@ export default function PlayerDetailPage() {
               <ArrowLeft className="h-4 w-4" />
               League
             </Link>
-            {graphEnabled && (
-              <Link
-                href={`/league/${familyId}/graph?seedPlayerId=${playerId}&from=player`}
-                className="text-sm text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5"
-              >
-                Trace lineage
-                <ArrowRight className="h-4 w-4" />
-              </Link>
-            )}
           </div>
         </div>
 
@@ -262,6 +314,15 @@ export default function PlayerDetailPage() {
                   </>
                 )}
               </div>
+              {graphEnabled && (
+                <Link
+                  href={`/league/${familyId}/graph?seedPlayerId=${playerId}&from=player`}
+                  className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-full bg-primary/10 text-primary hover:bg-primary/15 transition-colors"
+                >
+                  <GitBranch className="h-3.5 w-3.5" />
+                  Trace lineage
+                </Link>
+              )}
             </div>
 
             <CurrentManagerBlock
@@ -274,13 +335,10 @@ export default function PlayerDetailPage() {
         <main className="container mx-auto px-4 sm:px-6 py-6 sm:py-8">
         {/* Summary Stats */}
         {stats && (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
+          <div className="grid grid-cols-3 gap-3 sm:gap-4 mb-8">
             <StatCard label="Weeks Rostered" value={stats.totalWeeks} />
             <StatCard label="Weeks Started" value={stats.starterWeeks} />
-            <StatCard label="Weeks Benched" value={stats.benchWeeks} />
-            <StatCard label="Total Points" value={stats.totalPoints.toFixed(1)} />
-            <StatCard label="PPG (Started)" value={stats.ppgStarter.toFixed(1)} />
-            <StatCard label="PPG (All)" value={stats.ppgAll.toFixed(1)} />
+            <StatCard label="PPG" value={stats.ppgAll.toFixed(1)} />
           </div>
         )}
 
@@ -355,86 +413,136 @@ export default function PlayerDetailPage() {
           </div>
         </div>
 
-        {/* Weekly Log Table */}
+        {/* Weekly Log: collapsible (season, manager) groups */}
         {filteredWeeks.length === 0 ? (
           <p className="text-muted-foreground text-center py-8">
             No weekly data found for this player
           </p>
         ) : (
-          <div className="border rounded-lg overflow-x-auto">
-            <table className="w-full min-w-[480px]">
-              <thead className="bg-muted/50">
-                <tr className="text-left text-sm">
-                  <th className="px-4 py-3 font-medium">Week</th>
-                  <th className="px-4 py-3 font-medium">Manager</th>
-                  <th className="px-4 py-3 font-medium">Lineup</th>
-                  <th className="px-4 py-3 font-medium">Status</th>
-                  <th className="px-4 py-3 font-medium text-right">Points</th>
-                </tr>
-              </thead>
-              <tbody>
-                {groupedWeeks.map((group) => (
-                  <Fragment key={`group-${group.season}`}>
-                    {/* Season divider */}
-                    {data.availableSeasons.length > 1 && (
-                      <tr>
-                        <td
-                          colSpan={5}
-                          className="px-4 py-2 bg-muted/30 text-xs font-semibold text-muted-foreground uppercase tracking-wider"
-                        >
-                          {group.season} Season
-                        </td>
-                      </tr>
-                    )}
-                    {group.weeks.map((w) => {
-                      const badge = fantasyStatusBadge(w);
+          <>
+            <div className="flex items-center justify-end gap-3 mb-3 text-xs">
+              <button
+                type="button"
+                onClick={() => setExpandedKeys(new Set(allStintKeys))}
+                className="text-muted-foreground hover:text-foreground transition-colors"
+              >
+                Expand all
+              </button>
+              <span aria-hidden className="text-muted-foreground/40">|</span>
+              <button
+                type="button"
+                onClick={() => setExpandedKeys(new Set())}
+                className="text-muted-foreground hover:text-foreground transition-colors"
+              >
+                Collapse all
+              </button>
+            </div>
+
+            <div className="space-y-5">
+              {seasonGroups.map((group) => (
+                <section key={group.season}>
+                  <h3 className="text-xs font-mono uppercase tracking-wider text-muted-foreground mb-2 px-1">
+                    {group.season} Season
+                  </h3>
+                  <div className="border rounded-lg overflow-hidden bg-card">
+                    {group.stints.map((stint, idx) => {
+                      const expanded = expandedKeys.has(stint.key);
                       return (
-                        <tr
-                          key={`${w.leagueId}-${w.season}-${w.week}`}
-                          className="border-t hover:bg-muted/30 transition-colors"
-                        >
-                          <td className="px-4 py-3 text-sm font-mono">
-                            W{w.week}
-                          </td>
-                          <td className="px-4 py-3 text-sm">
-                            {w.manager ? (
-                              <ManagerName
-                                userId={w.manager.userId}
-                                rosterId={w.manager.rosterId}
-                                displayName={w.manager.displayName}
-                                variant="display-only"
-                                fallback="—"
-                              />
-                            ) : (
-                              "—"
-                            )}
-                          </td>
-                          <td className="px-4 py-3">
-                            <span
-                              className={`inline-block px-2 py-0.5 text-xs font-medium rounded-full ${badge.className}`}
-                            >
-                              {badge.label}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3">
-                            <span className={`text-sm ${nflStatusColor(w.nflStatus, w.isByeWeek)}`}>
-                              {nflStatusLabel(w.nflStatus, w.isByeWeek)}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 text-right font-mono text-sm">
-                            {w.points.toFixed(1)}
-                          </td>
-                        </tr>
+                        <Fragment key={stint.key}>
+                          <button
+                            type="button"
+                            onClick={() => toggleStint(stint.key)}
+                            className={`w-full px-3 sm:px-4 py-3 flex items-center gap-3 text-left hover:bg-muted/30 transition-colors ${
+                              idx > 0 ? "border-t" : ""
+                            }`}
+                            aria-expanded={expanded}
+                          >
+                            <ChevronDown
+                              className={`h-4 w-4 text-muted-foreground transition-transform shrink-0 ${
+                                expanded ? "" : "-rotate-90"
+                              }`}
+                            />
+                            <div className="flex-1 min-w-0">
+                              <div className="font-medium truncate">
+                                {stint.managerDisplayName ?? "Unrostered"}
+                              </div>
+                              <div className="mt-0.5 text-xs text-muted-foreground font-mono flex flex-wrap gap-x-3 gap-y-0.5">
+                                <span>{stint.totalWeeks} wks</span>
+                                <span>{stint.starterWeeks} started</span>
+                                <span>{stint.totalPoints.toFixed(1)} pts</span>
+                                <span>{stint.ppgAll.toFixed(1)} ppg</span>
+                              </div>
+                            </div>
+                          </button>
+                          {expanded && <WeeklyDetail weeks={stint.weeks} />}
+                        </Fragment>
                       );
                     })}
-                  </Fragment>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                  </div>
+                </section>
+              ))}
+            </div>
+          </>
         )}
       </main>
       </div>
+  );
+}
+
+function WeeklyDetail({ weeks }: { weeks: WeekEntry[] }) {
+  return (
+    <div className="border-t bg-muted/10 overflow-x-auto">
+      <table className="w-full text-sm border-collapse">
+        <thead className="bg-muted/30 text-left">
+          <tr>
+            <th className="sticky left-0 z-10 bg-muted/30 px-3 py-2 font-medium font-mono text-xs uppercase tracking-wide shadow-[1px_0_0_0_var(--border)]">
+              Week
+            </th>
+            <th className="px-3 py-2 font-medium font-mono text-xs uppercase tracking-wide">
+              Lineup
+            </th>
+            <th className="px-3 py-2 font-medium font-mono text-xs uppercase tracking-wide">
+              Status
+            </th>
+            <th className="px-3 py-2 font-medium font-mono text-xs uppercase tracking-wide text-right">
+              Points
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {weeks.map((w) => {
+            const badge = fantasyStatusBadge(w);
+            return (
+              <tr
+                key={`${w.leagueId}-${w.season}-${w.week}`}
+                className="border-t border-border/60"
+              >
+                <td className="sticky left-0 z-10 bg-card px-3 py-2 font-mono shadow-[1px_0_0_0_var(--border)]">
+                  W{w.week}
+                </td>
+                <td className="px-3 py-2">
+                  <span
+                    className={`inline-block px-2 py-0.5 text-xs font-medium rounded-full ${badge.className}`}
+                  >
+                    {badge.label}
+                  </span>
+                </td>
+                <td className="px-3 py-2">
+                  <span
+                    className={`${nflStatusColor(w.nflStatus, w.isByeWeek)}`}
+                  >
+                    {nflStatusLabel(w.nflStatus, w.isByeWeek)}
+                  </span>
+                </td>
+                <td className="px-3 py-2 text-right font-mono">
+                  {w.points.toFixed(1)}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
