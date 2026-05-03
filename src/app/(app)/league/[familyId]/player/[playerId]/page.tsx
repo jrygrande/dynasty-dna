@@ -159,6 +159,15 @@ export default function PlayerDetailPage() {
     return weeks;
   }, [data, selectedSeason, selectedManager]);
 
+  // Only seasons where the player actually has scoring rows — not every
+  // season in the league family.
+  const seasonsWithData = useMemo(() => {
+    if (!data) return [];
+    return [...new Set(data.weeks.map((w) => w.season))].sort(
+      (a, b) => parseInt(b, 10) - parseInt(a, 10)
+    );
+  }, [data]);
+
   const filteredWeeks = useMemo(() => {
     if (selectedStatus === "starter") {
       return scopedWeeks.filter((w) => w.fantasyStatus === "starter");
@@ -316,7 +325,7 @@ export default function PlayerDetailPage() {
         </div>
 
         <div className="flex flex-wrap gap-x-4 gap-y-3 mb-6">
-          {data.availableSeasons.length > 1 && (
+          {seasonsWithData.length > 1 && (
             <div className="flex flex-wrap gap-2">
               <FilterChip
                 active={!selectedSeason}
@@ -324,7 +333,7 @@ export default function PlayerDetailPage() {
               >
                 All Seasons
               </FilterChip>
-              {data.availableSeasons.map((s) => (
+              {seasonsWithData.map((s) => (
                 <FilterChip
                   key={s}
                   active={selectedSeason === s}
