@@ -5,6 +5,7 @@ import { resolveFamily } from "@/lib/familyResolution";
 import { DEMO_LEAGUE_NAME, getDemoSwapForRequest } from "@/lib/demoServer";
 import { swapLeagueUser } from "@/lib/demoTransforms";
 import {
+  compareStandings,
   getAllTimeStandings,
   getChampionRosterFromBracket,
 } from "@/services/familyStandings";
@@ -71,12 +72,7 @@ export async function GET(
           seasonsPlayed: 1,
           championshipYears: [] as string[],
         }))
-        .sort(
-          (a, b) =>
-            b.championshipYears.length - a.championshipYears.length ||
-            b.wins - a.wins ||
-            b.fpts - a.fpts,
-        ),
+        .sort(compareStandings),
       users,
     });
   }
@@ -237,12 +233,7 @@ export async function GET(
         championshipYears:
           champRosterId === r.rosterId ? [league.season] : [],
       }))
-      .sort(
-        (a, b) =>
-          b.championshipYears.length - a.championshipYears.length ||
-          b.wins - a.wins ||
-          b.fpts - a.fpts,
-      ),
+      .sort(compareStandings),
     users: demoSwap ? users.map((u) => swapLeagueUser(u, demoSwap)) : users,
   });
 }

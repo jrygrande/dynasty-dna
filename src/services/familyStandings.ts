@@ -22,6 +22,20 @@ export interface AllTimeStanding {
   championshipYears: string[];
 }
 
+interface StandingsRow {
+  wins: number;
+  fpts: number;
+  championshipYears: string[];
+}
+
+export function compareStandings(a: StandingsRow, b: StandingsRow): number {
+  return (
+    b.championshipYears.length - a.championshipYears.length ||
+    b.wins - a.wins ||
+    b.fpts - a.fpts
+  );
+}
+
 export function getChampionRosterFromBracket(
   bracket: SleeperBracketMatchup[] | null,
   numPlayoffTeams: number,
@@ -121,10 +135,5 @@ export async function getAllTimeStandings(
     owner.championshipYears.sort();
   }
 
-  return Array.from(byOwner.values()).sort(
-    (a, b) =>
-      b.championshipYears.length - a.championshipYears.length ||
-      b.wins - a.wins ||
-      b.fpts - a.fpts,
-  );
+  return Array.from(byOwner.values()).sort(compareStandings);
 }
