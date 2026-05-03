@@ -35,6 +35,10 @@ export async function GET(
     }
 
     const leagueIds = members.map((m) => m.leagueId);
+    const leagueToSeason = new Map(members.map((m) => [m.leagueId, m.season]));
+    const seasonsNewestFirst = [...members].sort(
+      (a, b) => Number(b.season) - Number(a.season),
+    );
 
     // Load user info, metrics, transactions, and rosters in parallel
     const [users, allMetrics, recentTx, rosters] = await Promise.all([
@@ -88,7 +92,12 @@ export async function GET(
         ),
     ]);
 
-    const user = users[0];
+    // Walk seasons newest-first; first matching row wins. Avoids leaking a
+    // stale teamName from an older season when the user has no current-season
+    // row (e.g. left the league after season rollover).
+    const user = seasonsNewestFirst
+      .map((m) => users.find((u) => u.leagueId === m.leagueId))
+      .find(Boolean);
     if (!user) {
       return NextResponse.json(
         { error: "Manager not found" },
@@ -180,9 +189,6 @@ export async function GET(
       : null;
 
     // Season history — group season-scoped metrics by season
-    const leagueToSeason = new Map(
-      members.map((m) => [m.leagueId, m.season]),
-    );
     const seasonMetrics = myMetrics.filter((r) =>
       r.scope.startsWith("season:"),
     );
