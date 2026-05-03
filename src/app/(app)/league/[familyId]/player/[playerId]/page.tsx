@@ -131,6 +131,7 @@ export default function PlayerDetailPage() {
   const [selectedSeason, setSelectedSeason] = useState<string | null>(null);
   const [selectedManager, setSelectedManager] = useState<string | null>(null);
   const [selectedStatus, setSelectedStatus] = useState<"all" | "starter" | "bench">("all");
+  const [selectedLocation, setSelectedLocation] = useState<"all" | "home" | "away">("all");
 
   useEffect(() => {
     loadData();
@@ -158,8 +159,13 @@ export default function PlayerDetailPage() {
     if (selectedManager) {
       weeks = weeks.filter((w) => w.manager?.userId === selectedManager);
     }
+    if (selectedLocation === "home") {
+      weeks = weeks.filter((w) => w.opponent !== null && !w.isAway);
+    } else if (selectedLocation === "away") {
+      weeks = weeks.filter((w) => w.opponent !== null && w.isAway);
+    }
     return weeks;
-  }, [data, selectedSeason, selectedManager]);
+  }, [data, selectedSeason, selectedManager, selectedLocation]);
 
   // Only seasons where the player actually has scoring rows — not every
   // season in the league family.
@@ -194,14 +200,14 @@ export default function PlayerDetailPage() {
     const ppg = ppgWeeks.length
       ? ppgWeeks.reduce((s, w) => s + w.points, 0) / ppgWeeks.length
       : 0;
-    const ppgLabel =
-      selectedStatus === "starter"
-        ? "PPG when Started"
-        : selectedStatus === "bench"
-          ? "PPG on Bench"
-          : "PPG";
+    const suffixes: string[] = [];
+    if (selectedLocation === "home") suffixes.push("Home");
+    if (selectedLocation === "away") suffixes.push("Away");
+    if (selectedStatus === "starter") suffixes.push("Started");
+    if (selectedStatus === "bench") suffixes.push("Bench");
+    const ppgLabel = suffixes.length ? `PPG · ${suffixes.join(" · ")}` : "PPG";
     return { totalWeeks, starterWeeks, ppg, ppgLabel };
-  }, [scopedWeeks, selectedStatus]);
+  }, [scopedWeeks, selectedStatus, selectedLocation]);
 
   const sections: CollapsibleSection[] = useMemo(() => {
     type Stint = {
@@ -389,6 +395,27 @@ export default function PlayerDetailPage() {
               onClick={() => setSelectedStatus("bench")}
             >
               Benched
+            </FilterChip>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <FilterChip
+              active={selectedLocation === "all"}
+              onClick={() => setSelectedLocation("all")}
+            >
+              All
+            </FilterChip>
+            <FilterChip
+              active={selectedLocation === "home"}
+              onClick={() => setSelectedLocation("home")}
+            >
+              Home
+            </FilterChip>
+            <FilterChip
+              active={selectedLocation === "away"}
+              onClick={() => setSelectedLocation("away")}
+            >
+              Away
             </FilterChip>
           </div>
         </div>
