@@ -3,6 +3,8 @@ import { getDb, schema } from "@/db";
 import { eq, inArray } from "drizzle-orm";
 import { scoreToGrade } from "@/services/gradingCore";
 import { resolveFamily } from "@/lib/familyResolution";
+import { getDemoSwapForRequest } from "@/lib/demoServer";
+import { lookupSwap } from "@/lib/demoAnonymize";
 
 export async function GET(
   req: NextRequest,
@@ -115,7 +117,9 @@ export async function GET(
     map.set(g.pickNo, g);
   }
 
-  // Build roster owner maps by leagueId
+  const demoSwap = await getDemoSwapForRequest(req, resolvedFamilyId);
+
+  // Build roster owner maps by leagueId (already pseudonymized when demo on)
   const usersByLeague = new Map<string, Map<string, string | null>>();
   for (const u of allUsers) {
     let map = usersByLeague.get(u.leagueId);
@@ -123,7 +127,10 @@ export async function GET(
       map = new Map();
       usersByLeague.set(u.leagueId, map);
     }
-    map.set(u.userId, u.displayName);
+    const swapped = demoSwap
+      ? lookupSwap(demoSwap, u.userId)?.displayName
+      : undefined;
+    map.set(u.userId, swapped ?? u.displayName);
   }
 
   const rosterOwnerByLeague = new Map<string, Map<number, string>>();
@@ -135,7 +142,10 @@ export async function GET(
     }
     if (r.ownerId) {
       const userMap = usersByLeague.get(r.leagueId);
-      map.set(r.rosterId, userMap?.get(r.ownerId) || r.ownerId);
+      const swapped = demoSwap
+        ? lookupSwap(demoSwap, r.ownerId, r.rosterId)?.displayName
+        : undefined;
+      map.set(r.rosterId, swapped ?? userMap?.get(r.ownerId) ?? r.ownerId);
     }
   }
 

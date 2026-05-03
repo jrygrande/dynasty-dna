@@ -3,6 +3,8 @@ import { getDb, schema } from "@/db";
 import { eq, and, inArray, desc } from "drizzle-orm";
 import { resolveFamily } from "@/lib/familyResolution";
 import { percentileToGrade } from "@/services/gradingCore";
+import { getDemoSwapForRequest } from "@/lib/demoServer";
+import { lookupSwap } from "@/lib/demoAnonymize";
 
 export async function GET(
   req: NextRequest,
@@ -296,12 +298,14 @@ export async function GET(
       };
     });
 
+    const demoSwap = await getDemoSwapForRequest(req, familyId);
+    const swap = demoSwap ? lookupSwap(demoSwap, user.userId) : undefined;
     return NextResponse.json({
       manager: {
         userId: user.userId,
-        displayName: user.displayName,
-        teamName: user.teamName,
-        avatar: user.avatar,
+        displayName: swap?.displayName ?? user.displayName,
+        teamName: swap?.teamName ?? user.teamName,
+        avatar: swap ? null : user.avatar,
       },
       overallScore,
       pillarScores,

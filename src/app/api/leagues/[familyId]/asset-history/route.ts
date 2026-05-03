@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDb, schema } from "@/db";
 import { eq, and, inArray, sql } from "drizzle-orm";
 import { resolveFamily } from "@/lib/familyResolution";
+import { getDemoSwapForRequest } from "@/lib/demoServer";
+import { lookupSwap } from "@/lib/demoAnonymize";
 
 export async function GET(
   req: NextRequest,
@@ -63,7 +65,9 @@ export async function GET(
       sql`${schema.assetEvents.createdAt} ASC`
     );
 
-  // Get roster owner names across all leagues
+  const demoSwap = await getDemoSwapForRequest(req, resolvedFamilyId);
+
+  // Get roster owner names across all leagues (pseudonymized in demo mode)
   const rosterOwnerMaps = new Map<string, Map<number, string>>();
   for (const leagueId of leagueIds) {
     const users = await db
@@ -77,7 +81,11 @@ export async function GET(
     const userMap = new Map(users.map((u) => [u.userId, u.displayName]));
     const rosterMap = new Map<number, string>();
     for (const r of rosters) {
-      if (r.ownerId) rosterMap.set(r.rosterId, userMap.get(r.ownerId) || r.ownerId);
+      if (!r.ownerId) continue;
+      const swapped = demoSwap
+        ? lookupSwap(demoSwap, r.ownerId, r.rosterId)?.displayName
+        : undefined;
+      rosterMap.set(r.rosterId, swapped ?? userMap.get(r.ownerId) ?? r.ownerId);
     }
     rosterOwnerMaps.set(leagueId, rosterMap);
   }

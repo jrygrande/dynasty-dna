@@ -3,6 +3,8 @@ import { getDb, schema } from "@/db";
 import { eq } from "drizzle-orm";
 import { resolveFamily } from "@/lib/familyResolution";
 import { gradeLeagueLineups } from "@/services/lineupGrading";
+import { getDemoSwapForRequest } from "@/lib/demoServer";
+import { lookupSwap } from "@/lib/demoAnonymize";
 
 export async function GET(
   req: NextRequest,
@@ -82,12 +84,17 @@ export async function GET(
     leagueUsers.map((u) => [u.userId, u]),
   );
 
+  const demoSwap = await getDemoSwapForRequest(req, resolvedFamilyId);
   const rosters = rosterGrades.map((r) => {
     const user = userMap.get(r.ownerId);
+    const swap = demoSwap
+      ? lookupSwap(demoSwap, r.ownerId, r.rosterId)
+      : undefined;
     return {
       ...r,
       displayName:
-        user?.teamName || user?.displayName || r.ownerId || "Unknown",
+        swap?.displayName ??
+        (user?.teamName || user?.displayName || r.ownerId || "Unknown"),
     };
   });
 

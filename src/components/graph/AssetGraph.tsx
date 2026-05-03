@@ -30,7 +30,6 @@ import "reactflow/dist/style.css";
 
 import { assetKey, type GraphEdge, type GraphNode, type GraphSelection } from "@/lib/assetGraph";
 import { edgeAssetKey } from "@/lib/useGraphVisibility";
-import { useDemoMap } from "@/lib/useDemoMap";
 
 import { TransactionNode, type TransactionNodeData } from "./nodes/TransactionNode";
 import type { TransactionNodeAsset } from "./TransactionCardChrome";
@@ -134,14 +133,6 @@ function AssetGraphInner({
 }: AssetGraphProps) {
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
   const [hoveredAssetKey, setHoveredAssetKey] = useState<string | null>(null);
-  const { active: demoActive, map: demoMap } = useDemoMap();
-  const swapManagerName = useCallback(
-    (userId: string, fallback: string): string => {
-      if (!demoActive || !demoMap) return fallback;
-      return demoMap.users.get(userId)?.displayName ?? fallback;
-    },
-    [demoActive, demoMap],
-  );
 
   const assetExpansionsByNode = useMemo(() => {
     const m = new Map<string, Set<string>>();
@@ -378,7 +369,6 @@ function AssetGraphInner({
           assetKey: aKey,
           assetLabel,
           managerName: e.managerName,
-          managerUserId: e.managerUserId,
           isOpen: e.isOpen,
           gutterOffset: gutterOffsets.get(e.id),
         },
@@ -446,7 +436,7 @@ function AssetGraphInner({
         };
       });
 
-      const header = buildTransactionHeader(n, swapManagerName);
+      const header = buildTransactionHeader(n);
       const chainAssetKeys = chainAssetsByNode?.get(n.id) ?? new Set<string>();
       const headerExpanded = isHeaderExpanded(n, fullyExpanded);
 
@@ -485,7 +475,6 @@ function AssetGraphInner({
     chainAssetsByNode,
     fullyExpanded,
     onHeaderToggle,
-    swapManagerName,
   ]);
 
   const onNodeClick = useCallback<NodeMouseHandler>(

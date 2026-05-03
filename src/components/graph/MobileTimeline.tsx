@@ -16,7 +16,6 @@ import { trackEvent } from "@/lib/analytics";
 import { AssetPicker } from "./AssetPicker";
 import { CopyLinkButton } from "./CopyLinkButton";
 import { ManagerName } from "@/components/ManagerName";
-import { useDemoMap } from "@/lib/useDemoMap";
 import {
   TransactionCardChrome,
   type TransactionCardChromeData,
@@ -274,20 +273,12 @@ function MobileCard({
   onHeaderToggle: (nodeId: string) => void;
   onSelect: (nodeId: string) => void;
 }) {
-  const { active: demoActive, map: demoMap } = useDemoMap();
-  const swapManagerName = (userId: string, fallback: string): string => {
-    if (!demoActive || !demoMap) return fallback;
-    return demoMap.users.get(userId)?.displayName ?? fallback;
-  };
-  const header = buildTransactionHeader(node, swapManagerName);
+  const header = buildTransactionHeader(node);
   const headerExpanded = isHeaderExpanded(node, fullyExpanded);
   const dimmed = chainAssetKeys.size === 0 && !headerExpanded;
 
   const nameByUser = new Map(
-    node.managers.map((m) => [
-      m.userId,
-      swapManagerName(m.userId, m.displayName),
-    ]),
+    node.managers.map((m) => [m.userId, m.displayName]),
   );
 
   const assets: TransactionNodeAsset[] = node.assets.map((a) => {

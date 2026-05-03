@@ -1,45 +1,14 @@
 "use client";
 
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import { X } from "lucide-react";
 import {
-  activateDemo,
   DEMO_BANNER_DISMISSED_KEY,
   dismissDemoBanner,
   exitDemo,
   useDemoActive,
 } from "@/lib/useDemoMap";
-
-// Reads the ?demo=1 entry-point query param and converts it into session
-// state, then strips the param so shared URLs from the address bar stay
-// clean. Wrapped in <Suspense> at the layout level — useSearchParams() opts
-// the page out of static rendering otherwise.
-function DemoQueryParamSyncImpl() {
-  const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
-
-  useEffect(() => {
-    if (!searchParams) return;
-    if (searchParams.get("demo") !== "1") return;
-    activateDemo();
-    const next = new URLSearchParams(searchParams.toString());
-    next.delete("demo");
-    const qs = next.toString();
-    router.replace(qs ? `${pathname}?${qs}` : pathname);
-  }, [searchParams, router, pathname]);
-
-  return null;
-}
-
-export function DemoQueryParamSync() {
-  return (
-    <Suspense fallback={null}>
-      <DemoQueryParamSyncImpl />
-    </Suspense>
-  );
-}
 
 // Persistent sage outline pill that replaces the right-side CTA when demo is
 // active. ✕ exits demo and routes back to /start.
@@ -53,8 +22,8 @@ export function DemoChip() {
       Demo mode
       <button
         type="button"
-        onClick={() => {
-          exitDemo();
+        onClick={async () => {
+          await exitDemo();
           router.push("/start");
         }}
         aria-label="Exit demo"

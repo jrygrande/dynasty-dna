@@ -3,6 +3,7 @@ import { getDb, schema } from "@/db";
 import { eq, and, sql, inArray } from "drizzle-orm";
 import { enrichTransactions, buildRosterOwnerMap } from "@/lib/transactionEnrichment";
 import { resolveFamily } from "@/lib/familyResolution";
+import { getDemoSwapForRequest } from "@/lib/demoServer";
 
 export async function GET(
   req: NextRequest,
@@ -70,7 +71,8 @@ export async function GET(
 
   // Build shared maps
   const leagueSeasonMap = new Map(members.map((m) => [m.leagueId, m.season]));
-  const rosterOwnerMap = await buildRosterOwnerMap(allLeagueIds);
+  const demoSwap = await getDemoSwapForRequest(req, resolvedFamilyId);
+  const rosterOwnerMap = await buildRosterOwnerMap(allLeagueIds, demoSwap);
 
   // Enrich transactions using shared logic
   const formattedTxs = await enrichTransactions(

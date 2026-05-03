@@ -20,6 +20,8 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import { buildRosterOwnerMap, enrichTransactions } from "@/lib/transactionEnrichment";
 import type { EnrichedTransaction } from "@/lib/transactionEnrichment";
 import { resolveFamily } from "@/lib/familyResolution";
+import { getDemoSwapForRequest } from "@/lib/demoServer";
+import { lookupSwap } from "@/lib/demoAnonymize";
 import {
   buildGraphFromEvents,
   pickKey,
@@ -38,7 +40,7 @@ const ALLOWED_EVENT_TYPES: ReadonlyArray<string> = [
 ];
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: { familyId: string } },
 ) {
   const db = getDb();
@@ -77,7 +79,8 @@ export async function GET(
     return NextResponse.json(empty);
   }
 
-  const rosterOwnerMap = await buildRosterOwnerMap(allLeagueIds);
+  const demoSwap = await getDemoSwapForRequest(req, resolvedFamilyId);
+  const rosterOwnerMap = await buildRosterOwnerMap(allLeagueIds, demoSwap);
 
   const [allLeagueUsers, allRosters] = await Promise.all([
     db
@@ -97,15 +100,20 @@ export async function GET(
   >();
   for (const lu of allLeagueUsers) {
     const season = leagueSeasonMap.get(lu.leagueId);
+    const swapped = demoSwap
+      ? lookupSwap(demoSwap, lu.userId)?.displayName
+      : undefined;
+    const display = swapped ?? lu.displayName ?? lu.userId;
+    const avatar = demoSwap ? null : lu.avatar ?? null;
     const existing = managerMeta.get(lu.userId);
     if (existing) {
-      if (lu.displayName && !existing.displayName) existing.displayName = lu.displayName;
-      if (lu.avatar && !existing.avatar) existing.avatar = lu.avatar;
+      if (!existing.displayName) existing.displayName = display;
+      if (avatar && !existing.avatar) existing.avatar = avatar;
       if (season) existing.seasons.add(season);
     } else {
       managerMeta.set(lu.userId, {
-        displayName: lu.displayName || lu.userId,
-        avatar: lu.avatar ?? null,
+        displayName: display,
+        avatar,
         seasons: new Set(season ? [season] : []),
       });
     }

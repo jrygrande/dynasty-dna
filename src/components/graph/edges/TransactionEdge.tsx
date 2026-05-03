@@ -5,14 +5,12 @@ import { BaseEdge, EdgeLabelRenderer, type EdgeProps } from "reactflow";
 
 import { useGraphHover, useObstacles } from "../AssetGraph";
 import { routeEdgePath } from "@/lib/graph/routeEdgePath";
-import { useDemoMap } from "@/lib/useDemoMap";
 
 export interface TransactionEdgeData {
   assetKind: "player" | "pick";
   assetKey: string;
   assetLabel: string;
   managerName: string;
-  managerUserId?: string | null;
   /** Stint is still active (target is a current-roster anchor). */
   isOpen?: boolean;
   /** Y-offset in gutters to separate overlapping edge paths. */
@@ -43,11 +41,6 @@ function TransactionEdgeImpl(props: EdgeProps<TransactionEdgeData>) {
   const labelY = result.labelY;
 
   const { hoveredAssetKey, hoveredNodeId } = useGraphHover();
-  const { active, map } = useDemoMap();
-  const swappedManager =
-    active && map && data?.managerUserId
-      ? map.users.get(data.managerUserId)?.displayName
-      : undefined;
   const matchesHovered = !!hoveredAssetKey && data?.assetKey === hoveredAssetKey;
   const nodeIncident = !!hoveredNodeId && (props.source === hoveredNodeId || props.target === hoveredNodeId);
   const dimmed =
@@ -95,7 +88,7 @@ function TransactionEdgeImpl(props: EdgeProps<TransactionEdgeData>) {
             }}
           >
             {data.assetLabel}
-            <span className="ml-1 text-muted-foreground">· {swappedManager ?? data.managerName}</span>
+            <span className="ml-1 text-muted-foreground">· {data.managerName}</span>
           </div>
         </EdgeLabelRenderer>
       ) : null}
