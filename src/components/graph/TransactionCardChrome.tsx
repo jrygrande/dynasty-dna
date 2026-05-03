@@ -265,10 +265,20 @@ export function TransactionCardChrome({
               {data.header.title}
             </span>
             <span
-              className="font-mono text-[11px] text-muted-foreground truncate"
-              title={data.header.subtitle}
+              className="font-mono text-[11px] text-muted-foreground flex items-baseline gap-1 min-w-0"
+              title={
+                data.header.subtitleLead
+                  ? `${data.header.subtitleLead} · ${data.header.subtitle}`
+                  : data.header.subtitle
+              }
             >
-              {data.header.subtitle}
+              {data.header.subtitleLead ? (
+                <>
+                  <span className="truncate min-w-0">{data.header.subtitleLead}</span>
+                  <span aria-hidden className="shrink-0">·</span>
+                </>
+              ) : null}
+              <span className="shrink-0 whitespace-nowrap">{data.header.subtitle}</span>
             </span>
           </div>
           <span

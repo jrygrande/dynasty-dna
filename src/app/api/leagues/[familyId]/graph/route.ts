@@ -177,12 +177,17 @@ export async function GET(
       .from(schema.drafts)
       .where(inArray(schema.drafts.leagueId, allLeagueIds));
 
-    // leagueId:season → draft info
-    const draftByLeagueSeason = new Map<string, { id: string; slotToRosterId: Record<string, number> | null }>();
+    // leagueId:season → draft info (size precomputed once for pickInRound math)
+    const draftByLeagueSeason = new Map<
+      string,
+      { id: string; slotToRosterId: Record<string, number> | null; draftSize: number }
+    >();
     for (const d of draftRows) {
+      const slotToRosterId = d.slotToRosterId as Record<string, number> | null;
       draftByLeagueSeason.set(`${d.leagueId}:${d.season}`, {
         id: d.id,
-        slotToRosterId: d.slotToRosterId as Record<string, number> | null,
+        slotToRosterId,
+        draftSize: slotToRosterId ? Object.keys(slotToRosterId).length : 0,
       });
     }
 
@@ -218,6 +223,19 @@ export async function GET(
       const trueOriginal = draftInfo.slotToRosterId[String(slot)];
       if (trueOriginal != null && trueOriginal !== ev.pickOriginalRosterId) {
         ev.pickOriginalRosterId = trueOriginal;
+      }
+
+      // Surface pickInRound on the event so the card header can render
+      // "2024  3.04". Stored in details (jsonb) since it's derived metadata,
+      // not a column. Wrap-around arithmetic handles snake drafts the same
+      // as linear since pick ordering is by global pickNo regardless.
+      const details = (ev.details ?? {}) as Record<string, unknown>;
+      const pickNo = typeof details.pickNo === "number" ? details.pickNo : null;
+      if (pickNo !== null && draftInfo.draftSize > 0) {
+        ev.details = {
+          ...details,
+          pickInRound: ((pickNo - 1) % draftInfo.draftSize) + 1,
+        };
       }
     }
   }

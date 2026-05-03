@@ -122,11 +122,15 @@ export interface TransactionNode {
   assets: TransactionAssetRef[];
   /** For draft nodes, the pick that was consumed to draft the player. The
    * pick lives on the incoming edge rather than in `assets` (which holds
-   * the player drafted), so we surface it here for header display. */
+   * the player drafted), so we surface it here for header display.
+   *
+   * `pickInRound` is the 1-based position within the round, used to
+   * render "2024  3.04" titles. Null when source data is missing. */
   draftPick?: {
     season: string;
     round: number;
     originalRosterId: number;
+    pickInRound: number | null;
   };
   layout?: LayoutPos;
 }
@@ -388,10 +392,14 @@ export function buildGraphFromEvents(input: BuildGraphInput): Graph {
       ev.pickOriginalRosterId !== null &&
       !node.draftPick
     ) {
+      const details = (ev.details ?? {}) as Record<string, unknown>;
+      const pickInRound =
+        typeof details.pickInRound === "number" ? details.pickInRound : null;
       node.draftPick = {
         season: ev.pickSeason,
         round: ev.pickRound,
         originalRosterId: ev.pickOriginalRosterId,
+        pickInRound,
       };
     }
 

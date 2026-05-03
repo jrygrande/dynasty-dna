@@ -1,8 +1,12 @@
 import { assetKey, type GraphNode, type TransactionNode } from "@/lib/assetGraph";
-import { getRoundSuffix } from "@/lib/utils";
 
 export interface TransactionHeader {
   title: string;
+  /** Optional left segment of the subtitle (e.g. manager name on draft
+   *  cards). Truncates with ellipsis when the card is narrow. */
+  subtitleLead?: string;
+  /** Trailing subtitle segment — typically the formatted date. Pinned at
+   *  the end of the subtitle row so it always renders in full. */
   subtitle: string;
 }
 
@@ -80,13 +84,16 @@ export function buildTransactionHeader(node: TransactionNode): TransactionHeader
     }
     case "draft": {
       // Pick details live on `draftPick` (populated from the draft_selected
-      // event), not in `assets` (which holds the player drafted). Falls
-      // back to "Draft" if pick info is somehow missing.
+      // event), not in `assets` (which holds the player drafted). Title
+      // format is "{season}  {round}.{pickInRound zero-padded to 2}" — note
+      // the double-space separator. Falls back to "Draft" when pick info
+      // (or pickInRound) is missing.
       const pick = node.draftPick;
-      const title = pick
-        ? `${pick.round}${getRoundSuffix(pick.round)} round, ${pick.season}`
-        : "Draft";
-      return { title, subtitle: `${managerName} · ${date}` };
+      const title =
+        pick && pick.pickInRound !== null
+          ? `${pick.season}  ${pick.round}.${String(pick.pickInRound).padStart(2, "0")}`
+          : "Draft";
+      return { title, subtitleLead: managerName, subtitle: date };
     }
     case "waiver":
       return { title: `Waiver claim by ${managerName}`, subtitle: date };
