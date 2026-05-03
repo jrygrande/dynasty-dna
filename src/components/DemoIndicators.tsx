@@ -57,7 +57,7 @@ export function DemoBanner() {
     <div className="border-b border-grade-c/25 bg-grade-c/8">
       <div className="container mx-auto px-6 py-2.5 flex items-center justify-between gap-4 text-sm">
         <p className="text-foreground/90">
-          You&apos;re browsing a real league with anonymized names.
+          You&apos;re exploring a real league with anonymized names.
         </p>
         <button
           type="button"

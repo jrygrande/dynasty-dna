@@ -25,7 +25,7 @@ export function DemoLeagueCallout() {
           Try Dynasty DNA right now
         </h2>
         <p className="text-sm text-muted-foreground mt-1">
-          Your leagues aren&apos;t supported yet — but you can browse a real
+          Your leagues aren&apos;t supported yet — but you can explore a real
           seeded league with anonymized names to check it out.
         </p>
       </div>
@@ -33,7 +33,7 @@ export function DemoLeagueCallout() {
       <DemoLinkTile
         href="/demo"
         icon={Sparkles}
-        label="Browse a real, anonymized league"
+        label="Explore a real, anonymized league"
       />
 
       <div className="border-t border-primary/15 pt-5 space-y-3">
