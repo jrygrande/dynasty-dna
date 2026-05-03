@@ -147,9 +147,6 @@ export default function LeagueOverviewPage() {
             <h1 className="text-base sm:text-lg font-semibold truncate">
               {data.league.name}
             </h1>
-            <span className="text-sm text-muted-foreground shrink-0">
-              {isAllTime ? "All-time" : data.league.season}
-            </span>
           </div>
           <div className="flex items-center gap-2 sm:gap-3 shrink-0">
             <Link
