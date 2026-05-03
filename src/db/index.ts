@@ -20,7 +20,13 @@ const globalForDb = globalThis as unknown as {
 
 export function getDb() {
   if (!globalForDb.dbInstance) {
-    const sql = neon(getDbUrl());
+    // `cache: "no-store"` opts every neon-http request out of Next.js's
+    // Data Cache. Without this, fetch() responses from neon's HTTP
+    // endpoint get cached indefinitely on Production deployments
+    // (preview deployments don't enable the Data Cache, which is why
+    // they showed fresh DB rows while production served stale ones —
+    // see #41 / Vercel debugging session, May 2026).
+    const sql = neon(getDbUrl(), { fetchOptions: { cache: "no-store" } });
     globalForDb.dbInstance = drizzle(sql, { schema });
   }
   return globalForDb.dbInstance;
