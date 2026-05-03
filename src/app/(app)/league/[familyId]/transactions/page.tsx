@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
+import { FilterChip } from "@/components/FilterChip";
 import {
   TransactionCard,
   type TransactionData,
@@ -150,29 +151,5 @@ export default function TransactionsPage() {
         )}
       </main>
       </div>
-  );
-}
-
-function FilterChip({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`px-3 py-1 text-sm rounded-full transition-colors whitespace-nowrap ${
-        active
-          ? "bg-primary text-primary-foreground"
-          : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
-      }`}
-    >
-      {children}
-    </button>
   );
 }

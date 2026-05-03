@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter, Source_Serif_4, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 
@@ -24,6 +24,11 @@ export const metadata: Metadata = {
   title: "Dynasty DNA",
   description:
     "Measure dynasty fantasy football manager efficacy with data-driven analytics",
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
 };
 
 export default function RootLayout({

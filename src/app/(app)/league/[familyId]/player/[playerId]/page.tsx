@@ -3,6 +3,7 @@
 import { Fragment, useEffect, useState, useMemo } from "react";
 import { useParams } from "next/navigation";
 import { ManagerName } from "@/components/ManagerName";
+import { PositionChip } from "@/components/PositionChip";
 import { Subheader } from "@/components/Subheader";
 
 interface Manager {
@@ -176,13 +177,16 @@ export default function PlayerDetailPage() {
       <div>
         <Subheader
           title={
-            <div className="min-w-0">
+            <div className="min-w-0 flex items-center gap-2">
+              <PositionChip position={player.position} />
               <h1 className="text-base sm:text-lg md:text-xl font-semibold line-clamp-1">
                 {player.name}
               </h1>
-              <div className="text-sm text-muted-foreground line-clamp-1">
-                {player.position} {player.team ? `— ${player.team}` : ""}
-              </div>
+              {player.team && (
+                <span className="text-sm text-muted-foreground shrink-0">
+                  {player.team}
+                </span>
+              )}
             </div>
           }
         />

@@ -13,7 +13,7 @@ export function Subheader({ title, rightSlot }: SubheaderProps) {
 
   return (
     <div
-      className={`sticky z-30 bg-background border-b border-border/50 transition-shadow ${
+      className={`sticky z-30 bg-background transition-shadow ${
         scrolled ? "shadow-sm" : ""
       }`}
       style={{ top: "var(--nav-height, 0px)" }}
