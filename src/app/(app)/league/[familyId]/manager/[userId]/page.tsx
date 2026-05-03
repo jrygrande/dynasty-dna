@@ -54,7 +54,7 @@ export default function ManagerPage() {
     async function loadData() {
       setLoading(true);
       try {
-        const res = await fetch(`/api/leagues/${familyId}/manager/${userId}`);
+        const res = await fetch(`/api/leagues/${familyId}/manager-grades/${userId}`);
         if (res.ok) {
           setData(await res.json());
         }
