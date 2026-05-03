@@ -88,6 +88,7 @@ export async function GET(
       recentTx,
       allRosters,
       leagueRows,
+      draftPickRows,
     ] = await Promise.all([
       db
         .select()
@@ -133,6 +134,20 @@ export async function GET(
         })
         .from(schema.leagues)
         .where(inArray(schema.leagues.id, leagueIds)),
+      db
+        .select({
+          draftId: schema.draftPicks.draftId,
+          pickNo: schema.draftPicks.pickNo,
+          round: schema.draftPicks.round,
+          rosterId: schema.draftPicks.rosterId,
+          playerId: schema.draftPicks.playerId,
+          isKeeper: schema.draftPicks.isKeeper,
+          leagueId: schema.drafts.leagueId,
+          season: schema.drafts.season,
+        })
+        .from(schema.draftPicks)
+        .innerJoin(schema.drafts, eq(schema.draftPicks.draftId, schema.drafts.id))
+        .where(inArray(schema.drafts.leagueId, leagueIds)),
     ]);
 
     const user = seasonsNewestFirst
@@ -394,12 +409,19 @@ export async function GET(
       }
       return false;
     });
+    const myDraftPicks = draftPickRows.filter((p) =>
+      managerRosterIds.has(`${p.leagueId}:${p.rosterId}`),
+    );
+
     const allDisplayedPlayerIds = new Set(rosterDisplayedPlayerIds);
     for (const tx of earlyManagerTx) {
       const adds = (tx.adds || {}) as Record<string, number>;
       const drops = (tx.drops || {}) as Record<string, number>;
       for (const pid of Object.keys(adds)) allDisplayedPlayerIds.add(pid);
       for (const pid of Object.keys(drops)) allDisplayedPlayerIds.add(pid);
+    }
+    for (const p of myDraftPicks) {
+      if (p.playerId) allDisplayedPlayerIds.add(p.playerId);
     }
 
     const myRosterIdList = [...new Set(allRosters
@@ -606,29 +628,46 @@ export async function GET(
 
     const managerTx = earlyManagerTx;
     const txIds = managerTx.map((tx) => tx.id);
-    const [tradeGrades, waiverGrades] =
-      txIds.length > 0
+    const draftIdsForGrades = [...new Set(myDraftPicks.map((p) => p.draftId))];
+    const [tradeGrades, waiverGrades, draftGradeRows] =
+      txIds.length > 0 || draftIdsForGrades.length > 0
         ? await Promise.all([
-            db
-              .select({
-                transactionId: schema.tradeGrades.transactionId,
-                rosterId: schema.tradeGrades.rosterId,
-                grade: schema.tradeGrades.grade,
-                blendedScore: schema.tradeGrades.blendedScore,
-              })
-              .from(schema.tradeGrades)
-              .where(inArray(schema.tradeGrades.transactionId, txIds)),
-            db
-              .select({
-                transactionId: schema.waiverGrades.transactionId,
-                rosterId: schema.waiverGrades.rosterId,
-                grade: schema.waiverGrades.grade,
-                blendedScore: schema.waiverGrades.blendedScore,
-              })
-              .from(schema.waiverGrades)
-              .where(inArray(schema.waiverGrades.transactionId, txIds)),
+            txIds.length > 0
+              ? db
+                  .select({
+                    transactionId: schema.tradeGrades.transactionId,
+                    rosterId: schema.tradeGrades.rosterId,
+                    grade: schema.tradeGrades.grade,
+                    blendedScore: schema.tradeGrades.blendedScore,
+                  })
+                  .from(schema.tradeGrades)
+                  .where(inArray(schema.tradeGrades.transactionId, txIds))
+              : Promise.resolve([]),
+            txIds.length > 0
+              ? db
+                  .select({
+                    transactionId: schema.waiverGrades.transactionId,
+                    rosterId: schema.waiverGrades.rosterId,
+                    grade: schema.waiverGrades.grade,
+                    blendedScore: schema.waiverGrades.blendedScore,
+                  })
+                  .from(schema.waiverGrades)
+                  .where(inArray(schema.waiverGrades.transactionId, txIds))
+              : Promise.resolve([]),
+            draftIdsForGrades.length > 0
+              ? db
+                  .select({
+                    draftId: schema.draftGrades.draftId,
+                    pickNo: schema.draftGrades.pickNo,
+                    rosterId: schema.draftGrades.rosterId,
+                    grade: schema.draftGrades.grade,
+                    blendedScore: schema.draftGrades.blendedScore,
+                  })
+                  .from(schema.draftGrades)
+                  .where(inArray(schema.draftGrades.draftId, draftIdsForGrades))
+              : Promise.resolve([]),
           ])
-        : [[], []];
+        : [[], [], []];
 
     const txLeagueMap = new Map(managerTx.map((t) => [t.id, t.leagueId]));
     const gradeMap = new Map<string, { grade: string; score: number }>();
@@ -709,6 +748,33 @@ export async function GET(
       };
     });
 
+    const draftGradeMap = new Map<string, { grade: string; score: number }>();
+    for (const g of draftGradeRows) {
+      draftGradeMap.set(`${g.draftId}|${g.pickNo}`, {
+        grade: g.grade ?? "",
+        score: g.blendedScore ?? 0,
+      });
+    }
+
+    const draftSelections = myDraftPicks
+      .map((p) => {
+        const dg = draftGradeMap.get(`${p.draftId}|${p.pickNo}`);
+        return {
+          id: `${p.draftId}:${p.pickNo}`,
+          season: p.season,
+          round: p.round,
+          pickNo: p.pickNo,
+          isKeeper: !!p.isKeeper,
+          player: p.playerId ? playerRef(p.playerId) : null,
+          grade: dg?.grade || null,
+          score: dg?.score ?? null,
+        };
+      })
+      .sort(
+        (a, b) =>
+          b.season.localeCompare(a.season) || a.pickNo - b.pickNo,
+      );
+
     const demoSwap = await getDemoSwapForRequest(req, familyId);
     const swap = demoSwap ? lookupSwap(demoSwap, user.userId) : undefined;
 
@@ -727,6 +793,7 @@ export async function GET(
       seasonHistory,
       rosters,
       recentTransactions: enrichedTx,
+      draftSelections,
       seasons: members
         .map((m) => ({ leagueId: m.leagueId, season: m.season }))
         .sort((a, b) => b.season.localeCompare(a.season)),
