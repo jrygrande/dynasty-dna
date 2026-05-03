@@ -1,8 +1,19 @@
 import Link from "next/link";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, Minus, Plus } from "lucide-react";
 import { GradeBadge } from "./GradeBadge";
 import { ManagerName } from "./ManagerName";
 import { getRoundSuffix } from "@/lib/utils";
+
+// Subtle hover treatment for player-name links: an underline that fades in
+// on hover. Avoids the "dead text" problem where the link is the same color
+// as surrounding text.
+const PLAYER_LINK_HOVER =
+  "underline decoration-current/0 underline-offset-2 hover:decoration-current/60 transition-[text-decoration-color]";
+
+function AssetSign({ kind }: { kind: "add" | "drop" }) {
+  const Icon = kind === "add" ? Plus : Minus;
+  return <Icon className="h-3 w-3 inline-block align-text-bottom" aria-hidden />;
+}
 
 interface TransactionAdd {
   playerId: string;
@@ -69,7 +80,7 @@ function PlayerLink({ playerId, playerName, familyId, className }: {
   return (
     <Link
       href={`/league/${familyId}/player/${playerId}`}
-      className={`${className} hover:underline`}
+      className={`${className ?? ""} ${PLAYER_LINK_HOVER}`}
     >
       {playerName}
     </Link>
@@ -198,7 +209,7 @@ function TradeCard({ tx, familyId }: { tx: TransactionData; familyId?: string })
                 <p className="text-xs text-muted-foreground mb-1">Received</p>
                 {side.received.map((a) => (
                   <p key={a.playerId} className="text-sm text-primary">
-                    + <PlayerLink playerId={a.playerId} playerName={a.playerName} familyId={familyId} />
+                    <AssetSign kind="add" /> <PlayerLink playerId={a.playerId} playerName={a.playerName} familyId={familyId} />
                   </p>
                 ))}
               </div>
@@ -210,7 +221,7 @@ function TradeCard({ tx, familyId }: { tx: TransactionData; familyId?: string })
                 )}
                 {side.picksReceived.map((p, i) => (
                   <p key={i} className="text-sm text-primary">
-                    + {p.season} {p.round}{getRoundSuffix(p.round)} Round Pick
+                    <AssetSign kind="add" /> {p.season} {p.round}{getRoundSuffix(p.round)} Round Pick
                     {p.originalOwnerName && p.originalRosterId !== side.rosterId && (
                       <span className="text-xs text-muted-foreground ml-1">
                         (
@@ -237,7 +248,7 @@ function TradeCard({ tx, familyId }: { tx: TransactionData; familyId?: string })
                 <p className="text-xs text-muted-foreground mb-1">Sent</p>
                 {side.sent.map((d) => (
                   <p key={d.playerId} className="text-sm text-muted-foreground">
-                    − <PlayerLink playerId={d.playerId} playerName={d.playerName} familyId={familyId} />
+                    <AssetSign kind="drop" /> <PlayerLink playerId={d.playerId} playerName={d.playerName} familyId={familyId} />
                   </p>
                 ))}
               </div>
@@ -249,7 +260,7 @@ function TradeCard({ tx, familyId }: { tx: TransactionData; familyId?: string })
                 )}
                 {side.picksSent.map((p, i) => (
                   <p key={i} className="text-sm text-muted-foreground">
-                    − {p.season} {p.round}{getRoundSuffix(p.round)} Round Pick
+                    <AssetSign kind="drop" /> {p.season} {p.round}{getRoundSuffix(p.round)} Round Pick
                     {p.originalOwnerName && p.originalRosterId !== side.rosterId && (
                       <span className="text-xs text-muted-foreground ml-1">
                         (
@@ -305,7 +316,7 @@ function SimpleTransactionCard({ tx, familyId }: { tx: TransactionData; familyId
         {tx.adds.map((a) => (
           <p key={a.playerId} className="text-sm">
             <span className="text-primary font-medium">
-              + <PlayerLink playerId={a.playerId} playerName={a.playerName} familyId={familyId} />
+              <AssetSign kind="add" /> <PlayerLink playerId={a.playerId} playerName={a.playerName} familyId={familyId} />
             </span>
             <span className="text-muted-foreground ml-2 inline-flex items-center gap-1 align-middle">
               <ArrowRight className="h-3 w-3" />
@@ -320,7 +331,7 @@ function SimpleTransactionCard({ tx, familyId }: { tx: TransactionData; familyId
         {tx.drops.map((d) => (
           <p key={d.playerId} className="text-sm">
             <span className="text-muted-foreground font-medium">
-              − <PlayerLink playerId={d.playerId} playerName={d.playerName} familyId={familyId} />
+              <AssetSign kind="drop" /> <PlayerLink playerId={d.playerId} playerName={d.playerName} familyId={familyId} />
             </span>
             <span className="text-muted-foreground ml-2">
               from{" "}

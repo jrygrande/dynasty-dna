@@ -232,7 +232,7 @@ function DraftBoard({ draft, familyId }: { draft: DraftData; familyId: string })
                           {pick.playerId ? (
                             <Link
                               href={`/league/${familyId}/player/${pick.playerId}`}
-                              className="font-medium text-sm truncate hover:underline"
+                              className="font-medium text-sm truncate hover:text-primary transition-colors"
                             >
                               {pick.playerName}
                             </Link>
