@@ -176,7 +176,7 @@ function StartPageInner() {
         viewState === "error_api_down" ||
         viewState === "error_rate_limited" ||
         viewState === "error_db") && (
-        <div className="space-y-3">
+        <div className="space-y-2">
           <UsernameInput
             value={username}
             onChange={setUsername}
@@ -188,6 +188,7 @@ function StartPageInner() {
             href="/demo"
             icon={HelpCircle}
             label="Don't have a Sleeper account? Check out a real league"
+            variant="compact"
           />
         </div>
       )}
