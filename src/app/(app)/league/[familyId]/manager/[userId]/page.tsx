@@ -2,12 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
 import { GradeBadge } from "@/components/GradeBadge";
 import { ManagerRadarChart } from "@/components/ManagerRadarChart";
 import { ManagerGradeCard } from "@/components/ManagerGradeCard";
 import { ManagerName, ManagerSecondaryName } from "@/components/ManagerName";
+import { Subheader } from "@/components/Subheader";
 import { TypeBadge } from "@/components/TransactionCard";
 import { PILLAR_LABELS } from "@/lib/pillars";
 
@@ -89,19 +88,10 @@ export default function ManagerPage() {
 
   return (
     <div>
-      {/* Sub-header */}
-      <div className="border-b">
-        <div className="container mx-auto px-6 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Link
-              href={`/league/${familyId}`}
-              className="text-sm text-muted-foreground hover:text-primary transition-colors inline-flex items-center gap-1.5"
-            >
-              <ArrowLeft className="h-4 w-4" />
-              League
-            </Link>
-            <span className="text-muted-foreground">/</span>
-            <h1 className="text-lg font-semibold">
+      <Subheader
+        title={
+          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 min-w-0">
+            <h1 className="text-base sm:text-lg md:text-xl font-semibold line-clamp-1">
               <ManagerName
                 userId={manager.userId}
                 displayName={manager.displayName}
@@ -116,8 +106,8 @@ export default function ManagerPage() {
               className="text-sm text-muted-foreground"
             />
           </div>
-        </div>
-      </div>
+        }
+      />
 
       <main className="container mx-auto px-6 py-8 space-y-8">
         {/* Top section: Grade card + Radar chart */}

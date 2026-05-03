@@ -2,10 +2,9 @@
 
 import { Fragment, useEffect, useState, useMemo } from "react";
 import { useParams } from "next/navigation";
-import Link from "next/link";
-import { ArrowLeft, ArrowRight } from "lucide-react";
 import { ManagerName } from "@/components/ManagerName";
-import { useFlag } from "@/lib/useFlag";
+import { PositionChip } from "@/components/PositionChip";
+import { Subheader } from "@/components/Subheader";
 
 interface Manager {
   userId: string;
@@ -87,7 +86,6 @@ export default function PlayerDetailPage() {
 
   const [data, setData] = useState<WeeklyLogData | null>(null);
   const [loading, setLoading] = useState(true);
-  const graphEnabled = useFlag("ASSET_GRAPH_BROWSER");
 
   // Filters
   const [selectedSeason, setSelectedSeason] = useState<string | null>(null);
@@ -177,34 +175,21 @@ export default function PlayerDetailPage() {
 
   return (
       <div>
-        <div className="border-b">
-          <div className="container mx-auto px-6 py-3 flex items-center gap-4">
-            <Link
-              href={`/league/${familyId}`}
-              className="text-sm text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5"
-            >
-              <ArrowLeft className="h-4 w-4" />
-              League
-            </Link>
-            <div className="flex-1">
-              <h1 className="text-lg font-semibold">{player.name}</h1>
-              <div className="text-sm text-muted-foreground">
-                {player.position} {player.team ? `— ${player.team}` : ""}
-              </div>
-            </div>
-            <div className="flex items-center gap-4 ml-auto">
-              {graphEnabled && (
-                <Link
-                  href={`/league/${familyId}/graph?seedPlayerId=${playerId}&from=player`}
-                  className="text-sm text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5"
-                >
-                  Trace lineage
-                  <ArrowRight className="h-4 w-4" />
-                </Link>
+        <Subheader
+          title={
+            <div className="min-w-0 flex items-center gap-2">
+              <PositionChip position={player.position} />
+              <h1 className="text-base sm:text-lg md:text-xl font-semibold line-clamp-1">
+                {player.name}
+              </h1>
+              {player.team && (
+                <span className="text-sm text-muted-foreground shrink-0">
+                  {player.team}
+                </span>
               )}
             </div>
-          </div>
-        </div>
+          }
+        />
 
         <main className="container mx-auto px-6 py-8">
         {/* Summary Stats */}

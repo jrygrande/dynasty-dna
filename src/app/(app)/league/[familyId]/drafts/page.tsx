@@ -3,7 +3,9 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
+import { FilterChip } from "@/components/FilterChip";
+import { PositionChip } from "@/components/PositionChip";
+import { Subheader } from "@/components/Subheader";
 
 interface PickGrade {
   grade: string;
@@ -47,15 +49,6 @@ interface DraftsResponse {
   seasons: string[];
 }
 
-const POSITION_COLORS: Record<string, string> = {
-  QB: "bg-grade-f/12 text-grade-f",
-  RB: "bg-grade-b/12 text-grade-b",
-  WR: "bg-grade-a/12 text-grade-a",
-  TE: "bg-grade-d/12 text-grade-d",
-  K: "bg-chart-4/15 text-chart-4",
-  DEF: "bg-muted text-muted-foreground",
-};
-
 import { GradeBadge } from "@/components/GradeBadge";
 import { ManagerName } from "@/components/ManagerName";
 
@@ -92,51 +85,32 @@ export default function DraftsPage() {
     return () => controller.abort();
   }, [familyId, selectedSeason]);
 
+  const seasonChips =
+    data?.seasons && data.seasons.length > 1 ? (
+      <div className="flex flex-wrap gap-2">
+        <FilterChip
+          active={!selectedSeason}
+          onClick={() => setSelectedSeason(null)}
+        >
+          All Seasons
+        </FilterChip>
+        {data.seasons.map((s) => (
+          <FilterChip
+            key={s}
+            active={selectedSeason === s}
+            onClick={() => setSelectedSeason(s)}
+          >
+            {s}
+          </FilterChip>
+        ))}
+      </div>
+    ) : null;
+
   return (
       <div>
-        <div className="border-b">
-          <div className="container mx-auto px-6 py-3 flex items-center gap-4">
-            <Link
-              href={`/league/${familyId}`}
-              className="text-sm text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5"
-            >
-              <ArrowLeft className="h-4 w-4" />
-              League
-            </Link>
-            <h1 className="text-lg font-semibold">Draft History</h1>
-          </div>
-        </div>
+        <Subheader title="Draft History" rightSlot={seasonChips} />
 
         <main className="container mx-auto px-6 py-8">
-        {/* Season filter */}
-        {data?.seasons && data.seasons.length > 1 && (
-          <div className="flex gap-2 mb-6">
-            <button
-              onClick={() => setSelectedSeason(null)}
-              className={`px-3 py-1 text-sm rounded-full transition-colors ${
-                !selectedSeason
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
-              }`}
-            >
-              All Seasons
-            </button>
-            {data.seasons.map((s) => (
-              <button
-                key={s}
-                onClick={() => setSelectedSeason(s)}
-                className={`px-3 py-1 text-sm rounded-full transition-colors ${
-                  selectedSeason === s
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
-                }`}
-              >
-                {s}
-              </button>
-            ))}
-          </div>
-        )}
-
         {loading && (
           <div className="animate-pulse text-muted-foreground">
             Loading drafts...
@@ -254,13 +228,7 @@ function DraftBoard({ draft, familyId }: { draft: DraftData; familyId: string })
                     <td key={pick.pickNo} className="px-3 py-2">
                       <div className="space-y-0.5">
                         <div className="flex items-center gap-1.5">
-                          {pick.position && (
-                            <span
-                              className={`px-1.5 py-0 text-[10px] font-mono font-medium tracking-wide uppercase rounded-full ${POSITION_COLORS[pick.position] || ""}`}
-                            >
-                              {pick.position}
-                            </span>
-                          )}
+                          <PositionChip position={pick.position} size="xs" />
                           {pick.playerId ? (
                             <Link
                               href={`/league/${familyId}/player/${pick.playerId}`}
