@@ -119,8 +119,7 @@ export async function GET(
             ]),
           ),
         )
-        .orderBy(desc(schema.transactions.createdAt))
-        .limit(500),
+        .orderBy(desc(schema.transactions.createdAt)),
       db
         .select()
         .from(schema.rosters)
@@ -411,13 +410,23 @@ export async function GET(
 
     const playerById = new Map(snapshotPlayers.map((p) => [p.id, p]));
 
+    // Bye detection only needs status rows for the displayed roster's
+    // players. Without this filter we'd pull the full NFL weekly status
+    // table (~3K player-weeks × seasons) on every request.
+    const rosterGsisIds = [
+      ...new Set(snapshotPlayers.map((p) => p.gsisId).filter((g): g is string => !!g)),
+    ];
+
     const [statusRows, scheduleRows] = await Promise.all([
-      seasonsAsNumbers.length > 0
+      seasonsAsNumbers.length > 0 && rosterGsisIds.length > 0
         ? db
             .select()
             .from(schema.nflWeeklyRosterStatus)
             .where(
-              inArray(schema.nflWeeklyRosterStatus.season, seasonsAsNumbers),
+              and(
+                inArray(schema.nflWeeklyRosterStatus.season, seasonsAsNumbers),
+                inArray(schema.nflWeeklyRosterStatus.gsisId, rosterGsisIds),
+              ),
             )
         : Promise.resolve([]),
       seasonsAsNumbers.length > 0
@@ -572,7 +581,7 @@ export async function GET(
         if (managerRosterIds.has(`${tx.leagueId}:${rid}`)) return true;
       }
       return false;
-    }).slice(0, 100);
+    });
 
     const txPlayerIds = new Set<string>();
     for (const tx of managerTx) {

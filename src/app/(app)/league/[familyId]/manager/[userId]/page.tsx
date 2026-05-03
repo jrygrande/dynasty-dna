@@ -346,6 +346,7 @@ function ManagerPageContent({
 
         {/* Section 4: Recent Transactions */}
         <TransactionsSection
+          familyId={familyId}
           transactions={filteredTransactions}
           allCount={data.recentTransactions.length}
           allSeasons={allSeasons}
@@ -785,6 +786,7 @@ function RosterPlayerList({
 // ============================================================
 
 function TransactionsSection({
+  familyId,
   transactions,
   allCount,
   allSeasons,
@@ -793,6 +795,7 @@ function TransactionsSection({
   onSeasonChange,
   onTypeChange,
 }: {
+  familyId: string;
   transactions: Transaction[];
   allCount: number;
   allSeasons: string[];
@@ -878,7 +881,7 @@ function TransactionsSection({
               <ul className="divide-y divide-border/60">
                 {transactions.map((tx) => (
                   <li key={tx.id}>
-                    <TransactionRow tx={tx} />
+                    <TransactionRow tx={tx} familyId={familyId} />
                   </li>
                 ))}
               </ul>
@@ -918,13 +921,22 @@ function AssetList({
   );
 }
 
-function TransactionRow({ tx }: { tx: Transaction }) {
+function TransactionRow({
+  tx,
+  familyId,
+}: {
+  tx: Transaction;
+  familyId: string;
+}) {
   const isTrade = tx.type === "trade";
   const hasReceived = tx.adds.length > 0 || tx.picksReceived.length > 0;
   const hasSent = tx.drops.length > 0 || tx.picksSent.length > 0;
 
   return (
-    <div className="px-3 sm:px-4 py-3 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 sm:gap-4">
+    <Link
+      href={`/league/${familyId}/graph?seedTransactionId=${tx.id}&from=manager`}
+      className="block px-3 sm:px-4 py-3 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 sm:gap-4 hover:bg-muted/30 transition-colors"
+    >
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 mb-1 flex-wrap">
           <TypeBadge type={tx.type} />
@@ -982,6 +994,6 @@ function TransactionRow({ tx }: { tx: Transaction }) {
         )}
       </div>
       {tx.grade && <GradeBadge grade={tx.grade} size="xs" />}
-    </div>
+    </Link>
   );
 }
