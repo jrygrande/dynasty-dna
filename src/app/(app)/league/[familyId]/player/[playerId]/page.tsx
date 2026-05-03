@@ -148,28 +148,33 @@ export default function PlayerDetailPage() {
     setLoading(false);
   }
 
-  const filteredWeeks = useMemo(() => {
+  // Headline stats follow season + manager filters but ignore the status
+  // filter — they're identity-level numbers about rostership, not a slice
+  // of which weeks the user is currently inspecting.
+  const scopedWeeks = useMemo(() => {
     if (!data) return [];
-    let weeks = data.weeks;
-    if (selectedManager) {
-      weeks = weeks.filter((w) => w.manager?.userId === selectedManager);
-    }
+    if (!selectedManager) return data.weeks;
+    return data.weeks.filter((w) => w.manager?.userId === selectedManager);
+  }, [data, selectedManager]);
+
+  const filteredWeeks = useMemo(() => {
     if (selectedStatus === "starter") {
-      weeks = weeks.filter((w) => w.fantasyStatus === "starter");
-    } else if (selectedStatus === "bench") {
-      weeks = weeks.filter((w) => w.fantasyStatus === "bench");
+      return scopedWeeks.filter((w) => w.fantasyStatus === "starter");
     }
-    return weeks;
-  }, [data, selectedManager, selectedStatus]);
+    if (selectedStatus === "bench") {
+      return scopedWeeks.filter((w) => w.fantasyStatus === "bench");
+    }
+    return scopedWeeks;
+  }, [scopedWeeks, selectedStatus]);
 
   const stats = useMemo(() => {
-    if (filteredWeeks.length === 0) return null;
-    const totalWeeks = filteredWeeks.length;
-    const starterWeeks = filteredWeeks.filter((w) => w.fantasyStatus === "starter").length;
-    const totalPoints = filteredWeeks.reduce((sum, w) => sum + w.points, 0);
+    if (scopedWeeks.length === 0) return null;
+    const totalWeeks = scopedWeeks.length;
+    const starterWeeks = scopedWeeks.filter((w) => w.fantasyStatus === "starter").length;
+    const totalPoints = scopedWeeks.reduce((sum, w) => sum + w.points, 0);
     const ppgAll = totalPoints / totalWeeks;
     return { totalWeeks, starterWeeks, ppgAll };
-  }, [filteredWeeks]);
+  }, [scopedWeeks]);
 
   const sections: CollapsibleSection[] = useMemo(() => {
     type Stint = {
@@ -244,14 +249,6 @@ export default function PlayerDetailPage() {
 
   const { player, currentManager } = data;
   const statusLabel = playerStatusLabel(player.status, player.injuryStatus);
-  const metaParts: string[] = [];
-  if (player.team) metaParts.push(player.team);
-  if (player.age != null) metaParts.push(`${player.age} yo`);
-  if (player.yearsExp != null) {
-    metaParts.push(
-      player.yearsExp === 0 ? "Rookie" : `${player.yearsExp}y exp`
-    );
-  }
 
   return (
     <div>
@@ -269,58 +266,33 @@ export default function PlayerDetailPage() {
             )}
           </div>
         }
+        rightSlot={
+          graphEnabled ? (
+            <Link
+              href={`/league/${familyId}/graph?seedPlayerId=${playerId}&from=player`}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-full bg-primary/10 text-primary hover:bg-primary/15 transition-colors whitespace-nowrap"
+            >
+              <GitBranch className="h-3.5 w-3.5" />
+              Trace lineage
+            </Link>
+          ) : undefined
+        }
       />
 
-      <div className="border-b bg-card">
-        <div className="container mx-auto px-4 sm:px-6 py-5 sm:py-6 flex flex-col md:flex-row md:items-center md:justify-between gap-4 md:gap-6">
-          <div className="min-w-0">
-            <h2 className="text-2xl sm:text-3xl font-semibold tracking-tight truncate">
-              {player.name}
-            </h2>
-            <div className="mt-1 text-sm text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-1">
-              {metaParts.map((part, i) => (
-                <Fragment key={`meta-${i}`}>
-                  {i > 0 && <span aria-hidden className="text-muted-foreground/50">·</span>}
-                  <span>{part}</span>
-                </Fragment>
-              ))}
-              {statusLabel && (
-                <>
-                  {metaParts.length > 0 && (
-                    <span aria-hidden className="text-muted-foreground/50">·</span>
-                  )}
-                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-grade-d/10 text-grade-d">
-                    {statusLabel}
-                  </span>
-                </>
-              )}
-            </div>
-            {graphEnabled && (
-              <Link
-                href={`/league/${familyId}/graph?seedPlayerId=${playerId}&from=player`}
-                className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-full bg-primary/10 text-primary hover:bg-primary/15 transition-colors"
-              >
-                <GitBranch className="h-3.5 w-3.5" />
-                Trace lineage
-              </Link>
-            )}
-          </div>
-
-          <CurrentManagerBlock
+      <main className="container mx-auto px-4 sm:px-6 py-6 sm:py-8">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 mb-8">
+          <PlayerMetaTile
+            team={player.team}
+            age={player.age}
+            yearsExp={player.yearsExp}
+            statusLabel={statusLabel}
+          />
+          <CurrentManagerTile
             familyId={familyId}
             currentManager={currentManager}
           />
+          {stats && <PlayerStatsTile stats={stats} />}
         </div>
-      </div>
-
-      <main className="container mx-auto px-4 sm:px-6 py-6 sm:py-8">
-        {stats && (
-          <div className="grid grid-cols-3 gap-3 sm:gap-4 mb-8">
-            <StatCard label="Weeks Rostered" value={stats.totalWeeks} />
-            <StatCard label="Weeks Started" value={stats.starterWeeks} />
-            <StatCard label="PPG" value={stats.ppgAll.toFixed(1)} />
-          </div>
-        )}
 
         <div className="flex flex-wrap gap-x-4 gap-y-3 mb-6">
           {data.availableSeasons.length > 1 && (
@@ -455,7 +427,54 @@ function WeeklyDetail({ weeks }: { weeks: WeekEntry[] }) {
   );
 }
 
-function CurrentManagerBlock({
+function PlayerMetaTile({
+  team,
+  age,
+  yearsExp,
+  statusLabel,
+}: {
+  team: string | null;
+  age: number | null;
+  yearsExp: number | null;
+  statusLabel: string | null;
+}) {
+  const parts: string[] = [];
+  if (team) parts.push(team);
+  if (age != null) parts.push(`${age} yo`);
+  if (yearsExp != null) {
+    parts.push(yearsExp === 0 ? "Rookie" : `${yearsExp}y exp`);
+  }
+
+  return (
+    <div className="border rounded-lg p-4 flex flex-col gap-1">
+      <div className="text-[11px] font-mono uppercase tracking-wide text-muted-foreground">
+        Player
+      </div>
+      <div className="text-sm flex flex-wrap items-center gap-x-2 gap-y-1">
+        {parts.map((part, i) => (
+          <Fragment key={`meta-${i}`}>
+            {i > 0 && (
+              <span aria-hidden className="text-muted-foreground/50">·</span>
+            )}
+            <span>{part}</span>
+          </Fragment>
+        ))}
+        {statusLabel && (
+          <>
+            {parts.length > 0 && (
+              <span aria-hidden className="text-muted-foreground/50">·</span>
+            )}
+            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-grade-d/10 text-grade-d">
+              {statusLabel}
+            </span>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function CurrentManagerTile({
   familyId,
   currentManager,
 }: {
@@ -464,11 +483,11 @@ function CurrentManagerBlock({
 }) {
   if (!currentManager) {
     return (
-      <div className="md:text-right text-sm text-muted-foreground inline-flex md:flex-col md:items-end items-center gap-1">
-        <span className="uppercase tracking-wide text-[11px] font-mono text-muted-foreground/70">
+      <div className="border rounded-lg p-4 flex flex-col gap-1">
+        <div className="text-[11px] font-mono uppercase tracking-wide text-muted-foreground">
           Currently
-        </span>
-        <span>Free agent</span>
+        </div>
+        <div className="text-sm text-muted-foreground">Free agent</div>
       </div>
     );
   }
@@ -478,18 +497,18 @@ function CurrentManagerBlock({
   return (
     <Link
       href={`/league/${familyId}/manager/${currentManager.userId}`}
-      className="group flex items-center md:flex-row-reverse gap-3 rounded-lg p-2 -m-2 hover:bg-muted/50 transition-colors min-w-0"
+      className="group border rounded-lg p-4 flex items-center gap-3 hover:bg-muted/30 transition-colors min-w-0"
     >
       <ManagerAvatar
         displayName={currentManager.displayName}
         avatarUrl={currentManager.avatar}
-        size={44}
+        size={40}
       />
-      <div className="min-w-0 md:text-right">
+      <div className="min-w-0 flex-1">
         <div className="text-[11px] font-mono uppercase tracking-wide text-muted-foreground">
           Currently rostered by
         </div>
-        <div className="font-semibold text-foreground truncate group-hover:text-primary transition-colors">
+        <div className="text-sm font-semibold text-foreground truncate group-hover:text-primary transition-colors">
           {teamLabel}
         </div>
         <ManagerSecondaryName
@@ -509,11 +528,28 @@ function CurrentManagerBlock({
   );
 }
 
-function StatCard({ label, value }: { label: string; value: string | number }) {
+function PlayerStatsTile({
+  stats,
+}: {
+  stats: { totalWeeks: number; starterWeeks: number; ppgAll: number };
+}) {
   return (
-    <div className="border rounded-lg p-4">
-      <div className="text-2xl font-bold">{value}</div>
-      <div className="text-xs text-muted-foreground">{label}</div>
+    <div className="border rounded-lg p-4 flex items-center gap-6">
+      <div className="min-w-0">
+        <div
+          className="text-2xl font-bold font-mono tabular-nums underline decoration-dotted decoration-muted-foreground/40 underline-offset-4 cursor-help"
+          title={`Started ${stats.starterWeeks} of ${stats.totalWeeks} weeks rostered`}
+        >
+          {stats.starterWeeks}/{stats.totalWeeks}
+        </div>
+        <div className="text-xs text-muted-foreground">Weeks Started</div>
+      </div>
+      <div className="min-w-0">
+        <div className="text-2xl font-bold font-mono tabular-nums">
+          {stats.ppgAll.toFixed(1)}
+        </div>
+        <div className="text-xs text-muted-foreground">PPG</div>
+      </div>
     </div>
   );
 }
