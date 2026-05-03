@@ -580,6 +580,18 @@ export async function GET(
       for (const rid of Object.values(drops)) {
         if (managerRosterIds.has(`${tx.leagueId}:${rid}`)) return true;
       }
+      // Pick-for-pick trades have null adds/drops; check draftPicks too so
+      // they don't silently disappear from the manager's transaction list.
+      const picks = (tx.draftPicks || []) as Array<{
+        owner_id: number;
+        previous_owner_id: number;
+      }>;
+      for (const p of picks) {
+        if (managerRosterIds.has(`${tx.leagueId}:${p.owner_id}`)) return true;
+        if (managerRosterIds.has(`${tx.leagueId}:${p.previous_owner_id}`)) {
+          return true;
+        }
+      }
       return false;
     });
 
