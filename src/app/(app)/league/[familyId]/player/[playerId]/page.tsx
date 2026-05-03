@@ -193,13 +193,6 @@ export default function PlayerDetailPage() {
               </div>
             </div>
             <div className="flex items-center gap-4 ml-auto">
-              <Link
-                href={`/league/${familyId}/timeline?playerId=${playerId}`}
-                className="text-sm text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5"
-              >
-                Timeline
-                <ArrowRight className="h-4 w-4" />
-              </Link>
               {graphEnabled && (
                 <Link
                   href={`/league/${familyId}/graph?seedPlayerId=${playerId}&from=player`}

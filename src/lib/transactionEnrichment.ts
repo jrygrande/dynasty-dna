@@ -1,7 +1,6 @@
 /**
- * Shared transaction enrichment logic.
- * Extracts the formatting/enrichment pipeline from the transactions API
- * so it can be reused by the asset-timeline API.
+ * Shared transaction enrichment logic — formatting/enrichment pipeline
+ * extracted from the transactions API for reuse across surfaces.
  */
 
 import { getDb, schema } from "@/db";
