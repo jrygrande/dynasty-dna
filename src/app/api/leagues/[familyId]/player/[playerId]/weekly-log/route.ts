@@ -16,9 +16,12 @@ import { lookupSwap } from "@/lib/demoAnonymize";
  * - Fantasy points scored
  *
  * Query params:
- *   ?season=2025          — filter to specific season
  *   ?rosterId=3           — filter to specific roster/manager
  *   ?starterOnly=true     — only show weeks where player was started
+ *
+ * Season filtering is intentionally client-side — `currentManager` and
+ * `rosteredSince` must always reflect the all-time identity of the player,
+ * not the selected season window.
  */
 export async function GET(
   req: NextRequest,
@@ -27,7 +30,6 @@ export async function GET(
   const db = getDb();
   const { familyId, playerId } = params;
   const searchParams = req.nextUrl.searchParams;
-  const seasonFilter = searchParams.get("season");
   const rosterIdFilter = searchParams.get("rosterId");
   const starterOnly = searchParams.get("starterOnly") === "true";
 
@@ -36,26 +38,17 @@ export async function GET(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  // Get all family members (leagueId + season)
   const members = await db
     .select()
     .from(schema.leagueFamilyMembers)
     .where(eq(schema.leagueFamilyMembers.familyId, resolvedFamilyId));
 
-  let filteredMembers = members;
-  if (seasonFilter) {
-    filteredMembers = members.filter((m) => m.season === seasonFilter);
-  }
-
-  const leagueIds = filteredMembers.map((m) => m.leagueId);
+  const leagueIds = members.map((m) => m.leagueId);
   if (leagueIds.length === 0) {
     return NextResponse.json({ weeks: [], player: null, managers: [] });
   }
 
-  // Map leagueId → season
-  const leagueSeasonMap = new Map(
-    filteredMembers.map((m) => [m.leagueId, m.season])
-  );
+  const leagueSeasonMap = new Map(members.map((m) => [m.leagueId, m.season]));
 
   // --- Load player info ---
   const playerRows = await db

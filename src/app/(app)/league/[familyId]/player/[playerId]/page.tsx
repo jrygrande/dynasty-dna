@@ -132,15 +132,12 @@ export default function PlayerDetailPage() {
 
   useEffect(() => {
     loadData();
-  }, [familyId, playerId, selectedSeason]);
+  }, [familyId, playerId]);
 
   async function loadData() {
     setLoading(true);
-    const params = new URLSearchParams();
-    if (selectedSeason) params.set("season", selectedSeason);
-
     const res = await fetch(
-      `/api/leagues/${familyId}/player/${playerId}/weekly-log?${params.toString()}`
+      `/api/leagues/${familyId}/player/${playerId}/weekly-log`
     );
     if (res.ok) {
       setData(await res.json());
@@ -148,14 +145,19 @@ export default function PlayerDetailPage() {
     setLoading(false);
   }
 
-  // Headline stats follow season + manager filters but ignore the status
-  // filter — they're identity-level numbers about rostership, not a slice
-  // of which weeks the user is currently inspecting.
+  // Season + manager filters narrow the headline stats; status filter only
+  // affects PPG (handled below) and which weeks appear in the game log.
+  // currentManager comes straight from the API and is always all-time —
+  // never narrowed by any filter.
   const scopedWeeks = useMemo(() => {
     if (!data) return [];
-    if (!selectedManager) return data.weeks;
-    return data.weeks.filter((w) => w.manager?.userId === selectedManager);
-  }, [data, selectedManager]);
+    let weeks = data.weeks;
+    if (selectedSeason) weeks = weeks.filter((w) => w.season === selectedSeason);
+    if (selectedManager) {
+      weeks = weeks.filter((w) => w.manager?.userId === selectedManager);
+    }
+    return weeks;
+  }, [data, selectedSeason, selectedManager]);
 
   const filteredWeeks = useMemo(() => {
     if (selectedStatus === "starter") {
