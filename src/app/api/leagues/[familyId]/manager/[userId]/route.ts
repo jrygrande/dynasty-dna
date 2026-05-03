@@ -172,16 +172,16 @@ export async function GET(
 
     // Manager Process Score (MPS) — composite all-time score
     const mpsMetric = myMetrics.find(
-      (r) => r.metric === "mps" && r.scope === "all_time",
+      (r) => r.metric === "manager_process_score" && r.scope === "all_time",
     );
     const mps = mpsMetric
       ? {
           value: mpsMetric.value,
           grade: percentileToGrade(
-            globalPercentile("mps", "all_time", mpsMetric.value),
+            globalPercentile("manager_process_score", "all_time", mpsMetric.value),
           ),
           percentile: globalPercentile(
-            "mps",
+            "manager_process_score",
             "all_time",
             mpsMetric.value,
           ),

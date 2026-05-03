@@ -479,7 +479,7 @@ export const managerMetrics = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     leagueId: text("league_id").notNull(),
     managerId: text("manager_id").notNull(), // Sleeper user_id
-    metric: text("metric").notNull(), // draft_score, trade_score, waiver_score, lineup_score, mps (Manager Process Score)
+    metric: text("metric").notNull(), // draft_score, trade_score, waiver_score, lineup_score, manager_process_score (MPS)
     scope: text("scope").notNull(), // all_time, season:2024, etc
     value: real("value").notNull(),
     percentile: real("percentile"), // 0-100 within league

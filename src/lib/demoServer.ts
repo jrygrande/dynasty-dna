@@ -82,7 +82,7 @@ async function loadDemoInputs(familyId: string): Promise<DemoInputs> {
       .where(
         and(
           inArray(schema.managerMetrics.leagueId, allLeagueIds),
-          eq(schema.managerMetrics.metric, "mps"),
+          eq(schema.managerMetrics.metric, "manager_process_score"),
           eq(schema.managerMetrics.scope, "all_time")
         )
       )

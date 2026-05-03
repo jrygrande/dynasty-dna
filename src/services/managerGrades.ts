@@ -292,7 +292,7 @@ export async function rollupManagerGrades(familyId: string): Promise<void> {
     mpsValues.push({
       leagueId: recentLeagueId,
       managerId,
-      metric: "mps",
+      metric: "manager_process_score",
       scope: "all_time",
       value: mps,
       percentile: 0,
@@ -319,7 +319,7 @@ export async function rollupManagerGrades(familyId: string): Promise<void> {
       .where(
         and(
           eq(schema.managerMetrics.managerId, entry.managerId),
-          eq(schema.managerMetrics.metric, "mps"),
+          eq(schema.managerMetrics.metric, "manager_process_score"),
           eq(schema.managerMetrics.scope, "all_time"),
         ),
       );

@@ -137,7 +137,7 @@ export function initialsFromName(name: string): string {
 
 export interface ManagerInput {
   userId: string;
-  // mps / all_time. null = missing for this manager.
+  // manager_process_score / all_time. null = missing for this manager.
   score: number | null;
 }
 
