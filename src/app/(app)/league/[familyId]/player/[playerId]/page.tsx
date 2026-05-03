@@ -1,10 +1,22 @@
 "use client";
 
-import { Fragment, useEffect, useState, useMemo } from "react";
+import { type ReactNode, useEffect, useState, useMemo } from "react";
 import { useParams } from "next/navigation";
-import { ManagerName } from "@/components/ManagerName";
+import Link from "next/link";
+import { GitBranch } from "lucide-react";
+import {
+  ManagerName,
+  ManagerAvatar,
+  ManagerSecondaryName,
+} from "@/components/ManagerName";
 import { PositionChip } from "@/components/PositionChip";
+import { FilterChip } from "@/components/FilterChip";
 import { Subheader } from "@/components/Subheader";
+import {
+  CollapsibleSeasonTable,
+  type CollapsibleSection,
+} from "@/components/CollapsibleSeasonTable";
+import { useFlag } from "@/lib/useFlag";
 
 interface Manager {
   userId: string;
@@ -22,6 +34,8 @@ interface WeekEntry {
   nflStatus: string | null;
   nflStatusAbbr: string | null;
   isByeWeek: boolean;
+  opponent: string | null;
+  isAway: boolean;
 }
 
 interface PlayerInfo {
@@ -30,6 +44,19 @@ interface PlayerInfo {
   position: string | null;
   team: string | null;
   gsisId: string | null;
+  age: number | null;
+  yearsExp: number | null;
+  status: string | null;
+  injuryStatus: string | null;
+}
+
+interface CurrentManager {
+  userId: string;
+  rosterId: number;
+  displayName: string;
+  teamName: string | null;
+  avatar: string | null;
+  rosteredSince: { season: string; week: number } | null;
 }
 
 interface WeeklyLogData {
@@ -37,6 +64,19 @@ interface WeeklyLogData {
   weeks: WeekEntry[];
   managers: Manager[];
   availableSeasons: string[];
+  currentManager: CurrentManager | null;
+}
+
+// Injury detail (Out/Doubtful/Questionable) takes priority over roster status:
+// it's the more actionable signal for fantasy decisions.
+function playerStatusLabel(
+  status: string | null,
+  injuryStatus: string | null
+): string | null {
+  if (injuryStatus) return injuryStatus;
+  if (status === "Injured Reserve") return "IR";
+  if (status === "Inactive") return "Inactive";
+  return null;
 }
 
 function nflStatusLabel(status: string | null, isByeWeek: boolean): string {
@@ -86,23 +126,21 @@ export default function PlayerDetailPage() {
 
   const [data, setData] = useState<WeeklyLogData | null>(null);
   const [loading, setLoading] = useState(true);
+  const graphEnabled = useFlag("ASSET_GRAPH_BROWSER");
 
-  // Filters
   const [selectedSeason, setSelectedSeason] = useState<string | null>(null);
   const [selectedManager, setSelectedManager] = useState<string | null>(null);
   const [selectedStatus, setSelectedStatus] = useState<"all" | "starter" | "bench">("all");
+  const [selectedLocation, setSelectedLocation] = useState<"all" | "home" | "away">("all");
 
   useEffect(() => {
     loadData();
-  }, [familyId, playerId, selectedSeason]);
+  }, [familyId, playerId]);
 
   async function loadData() {
     setLoading(true);
-    const params = new URLSearchParams();
-    if (selectedSeason) params.set("season", selectedSeason);
-
     const res = await fetch(
-      `/api/leagues/${familyId}/player/${playerId}/weekly-log?${params.toString()}`
+      `/api/leagues/${familyId}/player/${playerId}/weekly-log`
     );
     if (res.ok) {
       setData(await res.json());
@@ -110,49 +148,129 @@ export default function PlayerDetailPage() {
     setLoading(false);
   }
 
-  // Client-side filters (manager + starter/bench applied after fetch)
-  const filteredWeeks = useMemo(() => {
+  // Season + manager filters narrow the headline stats; status filter only
+  // affects PPG (handled below) and which weeks appear in the game log.
+  // currentManager comes straight from the API and is always all-time —
+  // never narrowed by any filter.
+  const scopedWeeks = useMemo(() => {
     if (!data) return [];
     let weeks = data.weeks;
+    if (selectedSeason) weeks = weeks.filter((w) => w.season === selectedSeason);
     if (selectedManager) {
       weeks = weeks.filter((w) => w.manager?.userId === selectedManager);
     }
-    if (selectedStatus === "starter") {
-      weeks = weeks.filter((w) => w.fantasyStatus === "starter");
-    } else if (selectedStatus === "bench") {
-      weeks = weeks.filter((w) => w.fantasyStatus === "bench");
+    if (selectedLocation === "home") {
+      weeks = weeks.filter((w) => w.opponent !== null && !w.isAway);
+    } else if (selectedLocation === "away") {
+      weeks = weeks.filter((w) => w.opponent !== null && w.isAway);
     }
     return weeks;
-  }, [data, selectedManager, selectedStatus]);
+  }, [data, selectedSeason, selectedManager, selectedLocation]);
 
-  // Summary stats
-  const stats = useMemo(() => {
-    if (filteredWeeks.length === 0) return null;
-    const totalWeeks = filteredWeeks.length;
-    const starterWeeks = filteredWeeks.filter((w) => w.fantasyStatus === "starter").length;
-    const benchWeeks = totalWeeks - starterWeeks;
-    const totalPoints = filteredWeeks.reduce((sum, w) => sum + w.points, 0);
-    const starterPoints = filteredWeeks
-      .filter((w) => w.fantasyStatus === "starter")
-      .reduce((sum, w) => sum + w.points, 0);
-    const ppgAll = totalPoints / totalWeeks;
-    const ppgStarter = starterWeeks > 0 ? starterPoints / starterWeeks : 0;
+  // Only seasons where the player actually has scoring rows — not every
+  // season in the league family.
+  const seasonsWithData = useMemo(() => {
+    if (!data) return [];
+    return [...new Set(data.weeks.map((w) => w.season))].sort(
+      (a, b) => parseInt(b, 10) - parseInt(a, 10)
+    );
+  }, [data]);
 
-    return { totalWeeks, starterWeeks, benchWeeks, totalPoints, ppgAll, ppgStarter };
-  }, [filteredWeeks]);
-
-  // Group weeks by season for dividers
-  const groupedWeeks = useMemo(() => {
-    const groups: { season: string; weeks: WeekEntry[] }[] = [];
-    let currentSeason = "";
-    for (const w of filteredWeeks) {
-      if (w.season !== currentSeason) {
-        currentSeason = w.season;
-        groups.push({ season: currentSeason, weeks: [] });
-      }
-      groups[groups.length - 1].weeks.push(w);
+  const filteredWeeks = useMemo(() => {
+    if (selectedStatus === "starter") {
+      return scopedWeeks.filter((w) => w.fantasyStatus === "starter");
     }
-    return groups;
+    if (selectedStatus === "bench") {
+      return scopedWeeks.filter((w) => w.fantasyStatus === "bench");
+    }
+    return scopedWeeks;
+  }, [scopedWeeks, selectedStatus]);
+
+  // Started/Rostered ratio is identity-level (ignores status filter).
+  // PPG follows the status filter — Started/Benched switches the denominator
+  // so the headline number reflects what the user is looking at.
+  // Bye weeks are excluded from every calc — a bye is not a fantasy
+  // opportunity, so counting it inflates "rostered" and drags PPG down.
+  const stats = useMemo(() => {
+    const playedWeeks = scopedWeeks.filter((w) => !w.isByeWeek);
+    if (playedWeeks.length === 0) return null;
+    const totalWeeks = playedWeeks.length;
+    const starterWeeks = playedWeeks.filter((w) => w.fantasyStatus === "starter").length;
+    const ppgWeeks =
+      selectedStatus === "all"
+        ? playedWeeks
+        : playedWeeks.filter((w) => w.fantasyStatus === selectedStatus);
+    const ppg = ppgWeeks.length
+      ? ppgWeeks.reduce((s, w) => s + w.points, 0) / ppgWeeks.length
+      : 0;
+    const suffixes: string[] = [];
+    if (selectedLocation === "home") suffixes.push("Home");
+    if (selectedLocation === "away") suffixes.push("Away");
+    if (selectedStatus === "starter") suffixes.push("Started");
+    if (selectedStatus === "bench") suffixes.push("Bench");
+    const ppgLabel = suffixes.length ? `PPG · ${suffixes.join(" · ")}` : "PPG";
+    return { totalWeeks, starterWeeks, ppg, ppgLabel };
+  }, [scopedWeeks, selectedStatus, selectedLocation]);
+
+  // Per-stint aggregates exclude byes so "wks", "started", "pts", "ppg"
+  // all describe playable weeks. The detail table still renders all
+  // weeks (including bye rows) — exclusion is for calcs, not display.
+  const sections: CollapsibleSection[] = useMemo(() => {
+    type Stint = {
+      key: string;
+      managerDisplayName: string | null;
+      weeks: WeekEntry[];
+    };
+    const map = new Map<string, Map<string, Stint>>();
+    for (const w of filteredWeeks) {
+      const userKey = w.manager?.userId ?? "__unrostered";
+      if (!map.has(w.season)) map.set(w.season, new Map());
+      const seasonMap = map.get(w.season)!;
+      let stint = seasonMap.get(userKey);
+      if (!stint) {
+        stint = {
+          key: `${w.season}|${userKey}`,
+          managerDisplayName: w.manager?.displayName ?? null,
+          weeks: [],
+        };
+        seasonMap.set(userKey, stint);
+      }
+      stint.weeks.push(w);
+    }
+
+    function aggregate(weeks: WeekEntry[]) {
+      const played = weeks.filter((w) => !w.isByeWeek);
+      const totalPoints = played.reduce((s, w) => s + w.points, 0);
+      return {
+        totalWeeks: played.length,
+        starterWeeks: played.filter((w) => w.fantasyStatus === "starter").length,
+        totalPoints,
+        ppg: played.length ? totalPoints / played.length : 0,
+      };
+    }
+
+    return [...map.entries()]
+      .sort(([a], [b]) => parseInt(b, 10) - parseInt(a, 10))
+      .map(([season, stintMap]) => ({
+        key: season,
+        heading: `${season} Season`,
+        rows: [...stintMap.values()]
+          .map((stint) => ({ stint, agg: aggregate(stint.weeks) }))
+          .sort((a, b) => b.agg.totalPoints - a.agg.totalPoints)
+          .map(({ stint, agg }) => ({
+            key: stint.key,
+            title: stint.managerDisplayName ?? "Unrostered",
+            meta: (
+              <>
+                <span>{agg.totalWeeks} wks</span>
+                <span>{agg.starterWeeks} started</span>
+                <span>{agg.totalPoints.toFixed(1)} pts</span>
+                <span>{agg.ppg.toFixed(1)} ppg</span>
+              </>
+            ),
+            detail: <WeeklyDetail weeks={stint.weeks} />,
+          })),
+      }));
   }, [filteredWeeks]);
 
   if (loading) {
@@ -171,73 +289,89 @@ export default function PlayerDetailPage() {
     );
   }
 
-  const { player } = data;
+  const { player, currentManager } = data;
+  const statusLabel = playerStatusLabel(player.status, player.injuryStatus);
 
   return (
-      <div>
-        <Subheader
-          title={
-            <div className="min-w-0 flex items-center gap-2">
-              <PositionChip position={player.position} />
-              <h1 className="text-base sm:text-lg md:text-xl font-semibold line-clamp-1">
-                {player.name}
-              </h1>
-              {player.team && (
-                <span className="text-sm text-muted-foreground shrink-0">
-                  {player.team}
-                </span>
-              )}
-            </div>
-          }
-        />
-
-        <main className="container mx-auto px-6 py-8">
-        {/* Summary Stats */}
-        {stats && (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
-            <StatCard label="Weeks Rostered" value={stats.totalWeeks} />
-            <StatCard label="Weeks Started" value={stats.starterWeeks} />
-            <StatCard label="Weeks Benched" value={stats.benchWeeks} />
-            <StatCard label="Total Points" value={stats.totalPoints.toFixed(1)} />
-            <StatCard label="PPG (Started)" value={stats.ppgStarter.toFixed(1)} />
-            <StatCard label="PPG (All)" value={stats.ppgAll.toFixed(1)} />
+    <div>
+      <Subheader
+        title={
+          <div className="min-w-0 flex items-center gap-2">
+            <PositionChip position={player.position} />
+            <h1 className="text-base sm:text-lg md:text-xl font-semibold line-clamp-1">
+              {player.name}
+            </h1>
+            {player.team && (
+              <span className="text-sm text-muted-foreground shrink-0">
+                {player.team}
+              </span>
+            )}
           </div>
-        )}
+        }
+        rightSlot={
+          graphEnabled ? (
+            <Link
+              href={`/league/${familyId}/graph?seedPlayerId=${playerId}&from=player`}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-full bg-primary/10 text-primary hover:bg-primary/15 transition-colors whitespace-nowrap"
+            >
+              <GitBranch className="h-3.5 w-3.5" />
+              Trace lineage
+            </Link>
+          ) : undefined
+        }
+      />
 
-        {/* Filters */}
-        <div className="flex flex-wrap gap-4 mb-6">
-          {/* Season filter */}
-          {data.availableSeasons.length > 1 && (
-            <div className="flex gap-2">
-              <FilterButton
+      <main className="container mx-auto px-4 sm:px-6 py-6 sm:py-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4 mb-8">
+          <SituationTile
+            team={player.team}
+            age={player.age}
+            yearsExp={player.yearsExp}
+            statusLabel={statusLabel}
+          />
+          <CurrentManagerTile
+            familyId={familyId}
+            currentManager={currentManager}
+          />
+          {stats && (
+            <ProductionTile
+              stats={stats}
+              className="sm:row-span-2 lg:row-span-1"
+            />
+          )}
+        </div>
+
+        <div className="flex flex-wrap gap-x-4 gap-y-3 mb-6">
+          {seasonsWithData.length > 1 && (
+            <div className="flex flex-wrap gap-2">
+              <FilterChip
                 active={!selectedSeason}
                 onClick={() => setSelectedSeason(null)}
               >
                 All Seasons
-              </FilterButton>
-              {data.availableSeasons.map((s) => (
-                <FilterButton
+              </FilterChip>
+              {seasonsWithData.map((s) => (
+                <FilterChip
                   key={s}
                   active={selectedSeason === s}
                   onClick={() => setSelectedSeason(s)}
                 >
                   {s}
-                </FilterButton>
+                </FilterChip>
               ))}
             </div>
           )}
 
-          {/* Manager filter */}
           {data.managers.length > 1 && (
-            <div className="flex gap-2">
-              <FilterButton
+            <div className="flex flex-wrap gap-2">
+              <FilterChip
                 active={!selectedManager}
                 onClick={() => setSelectedManager(null)}
               >
                 All Managers
-              </FilterButton>
+              </FilterChip>
               {data.managers.map((m) => (
-                <FilterButton
+                <FilterChip
                   key={m.userId}
                   active={selectedManager === m.userId}
                   onClick={() => setSelectedManager(m.userId)}
@@ -247,145 +381,293 @@ export default function PlayerDetailPage() {
                     displayName={m.displayName}
                     variant="display-only"
                   />
-                </FilterButton>
+                </FilterChip>
               ))}
             </div>
           )}
 
-          {/* Status filter */}
-          <div className="flex gap-2">
-            <FilterButton
+          <div className="flex flex-wrap gap-2">
+            <FilterChip
               active={selectedStatus === "all"}
               onClick={() => setSelectedStatus("all")}
             >
               All
-            </FilterButton>
-            <FilterButton
+            </FilterChip>
+            <FilterChip
               active={selectedStatus === "starter"}
               onClick={() => setSelectedStatus("starter")}
             >
               Started
-            </FilterButton>
-            <FilterButton
+            </FilterChip>
+            <FilterChip
               active={selectedStatus === "bench"}
               onClick={() => setSelectedStatus("bench")}
             >
               Benched
-            </FilterButton>
+            </FilterChip>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <FilterChip
+              active={selectedLocation === "all"}
+              onClick={() => setSelectedLocation("all")}
+            >
+              All
+            </FilterChip>
+            <FilterChip
+              active={selectedLocation === "home"}
+              onClick={() => setSelectedLocation("home")}
+            >
+              Home
+            </FilterChip>
+            <FilterChip
+              active={selectedLocation === "away"}
+              onClick={() => setSelectedLocation("away")}
+            >
+              Away
+            </FilterChip>
           </div>
         </div>
 
-        {/* Weekly Log Table */}
-        {filteredWeeks.length === 0 ? (
-          <p className="text-muted-foreground text-center py-8">
-            No weekly data found for this player
-          </p>
-        ) : (
-          <div className="border rounded-lg overflow-hidden">
-            <table className="w-full">
-              <thead className="bg-muted/50">
-                <tr className="text-left text-sm">
-                  <th className="px-4 py-3 font-medium">Week</th>
-                  <th className="px-4 py-3 font-medium">Manager</th>
-                  <th className="px-4 py-3 font-medium">Status</th>
-                  <th className="px-4 py-3 font-medium">NFL</th>
-                  <th className="px-4 py-3 font-medium text-right">Points</th>
-                </tr>
-              </thead>
-              <tbody>
-                {groupedWeeks.map((group) => (
-                  <Fragment key={`group-${group.season}`}>
-                    {/* Season divider */}
-                    {data.availableSeasons.length > 1 && (
-                      <tr>
-                        <td
-                          colSpan={5}
-                          className="px-4 py-2 bg-muted/30 text-xs font-semibold text-muted-foreground uppercase tracking-wider"
-                        >
-                          {group.season} Season
-                        </td>
-                      </tr>
-                    )}
-                    {group.weeks.map((w) => {
-                      const badge = fantasyStatusBadge(w);
-                      return (
-                        <tr
-                          key={`${w.leagueId}-${w.season}-${w.week}`}
-                          className="border-t hover:bg-muted/30 transition-colors"
-                        >
-                          <td className="px-4 py-3 text-sm font-mono">
-                            W{w.week}
-                          </td>
-                          <td className="px-4 py-3 text-sm">
-                            {w.manager ? (
-                              <ManagerName
-                                userId={w.manager.userId}
-                                rosterId={w.manager.rosterId}
-                                displayName={w.manager.displayName}
-                                variant="display-only"
-                                fallback="—"
-                              />
-                            ) : (
-                              "—"
-                            )}
-                          </td>
-                          <td className="px-4 py-3">
-                            <span
-                              className={`inline-block px-2 py-0.5 text-xs font-medium rounded-full ${badge.className}`}
-                            >
-                              {badge.label}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3">
-                            <span className={`text-sm ${nflStatusColor(w.nflStatus, w.isByeWeek)}`}>
-                              {nflStatusLabel(w.nflStatus, w.isByeWeek)}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 text-right font-mono text-sm">
-                            {w.points.toFixed(1)}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </Fragment>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+        <CollapsibleSeasonTable
+          sections={sections}
+          emptyMessage="No weekly data found for this player"
+        />
       </main>
-      </div>
-  );
-}
-
-function StatCard({ label, value }: { label: string; value: string | number }) {
-  return (
-    <div className="border rounded-lg p-4">
-      <div className="text-2xl font-bold">{value}</div>
-      <div className="text-xs text-muted-foreground">{label}</div>
     </div>
   );
 }
 
-function FilterButton({
-  active,
-  onClick,
-  children,
+function opponentLabel(w: WeekEntry): string {
+  if (w.isByeWeek) return "BYE";
+  if (!w.opponent) return "—";
+  return w.isAway ? `@${w.opponent}` : w.opponent;
+}
+
+function WeeklyDetail({ weeks }: { weeks: WeekEntry[] }) {
+  return (
+    <div className="border-t bg-muted/10 overflow-x-auto">
+      <table className="w-full text-sm border-collapse">
+        <thead className="bg-muted/30 text-left">
+          <tr>
+            <th className="sticky left-0 z-10 bg-muted/30 px-3 py-2 font-medium font-mono text-xs uppercase tracking-wide shadow-[1px_0_0_0_var(--border)]">
+              Week
+            </th>
+            <th className="px-3 py-2 font-medium font-mono text-xs uppercase tracking-wide">
+              Lineup
+            </th>
+            <th className="px-3 py-2 font-medium font-mono text-xs uppercase tracking-wide">
+              Status
+            </th>
+            <th className="px-3 py-2 font-medium font-mono text-xs uppercase tracking-wide">
+              <span className="hidden md:inline">Opponent</span>
+              <span className="md:hidden">Opp</span>
+            </th>
+            <th className="px-3 py-2 font-medium font-mono text-xs uppercase tracking-wide text-right">
+              Points
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {weeks.map((w) => {
+            const badge = fantasyStatusBadge(w);
+            return (
+              <tr
+                key={`${w.leagueId}-${w.season}-${w.week}`}
+                className="border-t border-border/60"
+              >
+                <td className="sticky left-0 z-10 bg-card px-3 py-2 font-mono shadow-[1px_0_0_0_var(--border)]">
+                  W{w.week}
+                </td>
+                <td className="px-3 py-2">
+                  <span
+                    className={`inline-block px-2 py-0.5 text-xs font-medium rounded-full ${badge.className}`}
+                  >
+                    {badge.label}
+                  </span>
+                </td>
+                <td className="px-3 py-2">
+                  <span
+                    className={`${nflStatusColor(w.nflStatus, w.isByeWeek)}`}
+                  >
+                    {nflStatusLabel(w.nflStatus, w.isByeWeek)}
+                  </span>
+                </td>
+                <td className="px-3 py-2 font-mono">{opponentLabel(w)}</td>
+                <td className="px-3 py-2 text-right font-mono">
+                  {w.points.toFixed(1)}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function TileLabel({ children }: { children: ReactNode }) {
+  return (
+    <div className="text-[11px] font-mono uppercase tracking-wide text-muted-foreground">
+      {children}
+    </div>
+  );
+}
+
+function StatBlock({
+  value,
+  label,
+  tooltip,
+  className,
 }: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
+  value: ReactNode;
+  label: ReactNode;
+  tooltip?: string;
+  className?: string;
+}) {
+  const valueClass = tooltip
+    ? "text-2xl font-bold font-mono tabular-nums underline decoration-dotted decoration-muted-foreground/40 underline-offset-4 cursor-help"
+    : "text-2xl font-bold font-mono tabular-nums";
+  return (
+    <div className={`min-w-0 flex-1 ${className ?? ""}`}>
+      <div className={valueClass} title={tooltip}>
+        {value}
+      </div>
+      <div className="text-xs text-muted-foreground mt-0.5">{label}</div>
+    </div>
+  );
+}
+
+function SituationTile({
+  team,
+  age,
+  yearsExp,
+  statusLabel,
+}: {
+  team: string | null;
+  age: number | null;
+  yearsExp: number | null;
+  statusLabel: string | null;
+}) {
+  const facts: { label: string; value: ReactNode }[] = [];
+  if (team) facts.push({ label: "Team", value: team });
+  if (age != null) facts.push({ label: "Age", value: age });
+  if (yearsExp != null) {
+    facts.push({
+      label: "Exp",
+      value: yearsExp === 0 ? "Rookie" : `${yearsExp}y`,
+    });
+  }
+  if (statusLabel) {
+    facts.push({
+      label: "Status",
+      value: (
+        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-grade-d/10 text-grade-d">
+          {statusLabel}
+        </span>
+      ),
+    });
+  }
+
+  return (
+    <div className="border rounded-lg p-4 flex flex-col gap-3">
+      <TileLabel>Situation</TileLabel>
+      <div className="flex items-center divide-x divide-border/60">
+        {facts.map((f, i) => (
+          <div
+            key={i}
+            className="px-3 first:pl-0 last:pr-0 min-w-0 flex-1"
+          >
+            <div className="text-base font-semibold truncate">{f.value}</div>
+            <div className="text-[10px] font-mono uppercase tracking-wide text-muted-foreground mt-0.5">
+              {f.label}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function CurrentManagerTile({
+  familyId,
+  currentManager,
+}: {
+  familyId: string;
+  currentManager: CurrentManager | null;
+}) {
+  if (!currentManager) {
+    return (
+      <div className="border rounded-lg p-4 flex flex-col gap-3">
+        <TileLabel>Currently</TileLabel>
+        <div className="text-sm text-muted-foreground">Free agent</div>
+      </div>
+    );
+  }
+
+  const teamLabel = currentManager.teamName || currentManager.displayName;
+
+  return (
+    <Link
+      href={`/league/${familyId}/manager/${currentManager.userId}`}
+      className="group border rounded-lg p-4 flex items-center gap-3 hover:bg-muted/30 transition-colors min-w-0"
+    >
+      <div className="min-w-0 flex-1">
+        <TileLabel>Currently rostered by</TileLabel>
+        <div className="mt-1 text-sm font-semibold text-foreground truncate group-hover:text-primary transition-colors">
+          {teamLabel}
+        </div>
+        <ManagerSecondaryName
+          displayName={currentManager.displayName}
+          teamName={currentManager.teamName}
+          parens={false}
+          className="block text-xs text-muted-foreground truncate"
+        />
+        {currentManager.rosteredSince && (
+          <div className="text-xs text-muted-foreground mt-0.5">
+            Since W{currentManager.rosteredSince.week}{" "}
+            {currentManager.rosteredSince.season}
+          </div>
+        )}
+      </div>
+      <ManagerAvatar
+        displayName={currentManager.displayName}
+        avatarUrl={currentManager.avatar}
+        size={40}
+      />
+    </Link>
+  );
+}
+
+function ProductionTile({
+  stats,
+  className,
+}: {
+  stats: {
+    totalWeeks: number;
+    starterWeeks: number;
+    ppg: number;
+    ppgLabel: string;
+  };
+  className?: string;
 }) {
   return (
-    <button
-      onClick={onClick}
-      className={`px-3 py-1 text-sm rounded-full transition-colors ${
-        active
-          ? "bg-primary text-primary-foreground"
-          : "bg-secondary text-secondary-foreground hover:bg-secondary/80"
-      }`}
+    <div
+      className={`border rounded-lg p-4 flex flex-col gap-3 ${className ?? ""}`}
     >
-      {children}
-    </button>
+      <TileLabel>Production</TileLabel>
+      <div className="flex-1 flex flex-row sm:flex-col lg:flex-row sm:justify-center gap-4 sm:gap-3 lg:gap-4">
+        <StatBlock
+          value={`${stats.starterWeeks}/${stats.totalWeeks}`}
+          label="Weeks Started"
+          tooltip={`Started ${stats.starterWeeks} of ${stats.totalWeeks} weeks rostered`}
+        />
+        <div
+          aria-hidden
+          className="border-l sm:border-l-0 sm:border-t lg:border-t-0 lg:border-l border-border/60"
+        />
+        <StatBlock value={stats.ppg.toFixed(1)} label={stats.ppgLabel} />
+      </div>
+    </div>
   );
 }

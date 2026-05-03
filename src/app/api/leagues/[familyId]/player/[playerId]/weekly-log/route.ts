@@ -16,9 +16,12 @@ import { lookupSwap } from "@/lib/demoAnonymize";
  * - Fantasy points scored
  *
  * Query params:
- *   ?season=2025          — filter to specific season
  *   ?rosterId=3           — filter to specific roster/manager
  *   ?starterOnly=true     — only show weeks where player was started
+ *
+ * Season filtering is intentionally client-side — `currentManager` and
+ * `rosteredSince` must always reflect the all-time identity of the player,
+ * not the selected season window.
  */
 export async function GET(
   req: NextRequest,
@@ -27,7 +30,6 @@ export async function GET(
   const db = getDb();
   const { familyId, playerId } = params;
   const searchParams = req.nextUrl.searchParams;
-  const seasonFilter = searchParams.get("season");
   const rosterIdFilter = searchParams.get("rosterId");
   const starterOnly = searchParams.get("starterOnly") === "true";
 
@@ -36,26 +38,17 @@ export async function GET(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  // Get all family members (leagueId + season)
   const members = await db
     .select()
     .from(schema.leagueFamilyMembers)
     .where(eq(schema.leagueFamilyMembers.familyId, resolvedFamilyId));
 
-  let filteredMembers = members;
-  if (seasonFilter) {
-    filteredMembers = members.filter((m) => m.season === seasonFilter);
-  }
-
-  const leagueIds = filteredMembers.map((m) => m.leagueId);
+  const leagueIds = members.map((m) => m.leagueId);
   if (leagueIds.length === 0) {
     return NextResponse.json({ weeks: [], player: null, managers: [] });
   }
 
-  // Map leagueId → season
-  const leagueSeasonMap = new Map(
-    filteredMembers.map((m) => [m.leagueId, m.season])
-  );
+  const leagueSeasonMap = new Map(members.map((m) => [m.leagueId, m.season]));
 
   // --- Load player info ---
   const playerRows = await db
@@ -71,6 +64,10 @@ export async function GET(
         position: playerRows[0].position,
         team: playerRows[0].team,
         gsisId: playerRows[0].gsisId,
+        age: playerRows[0].age,
+        yearsExp: playerRows[0].yearsExp,
+        status: playerRows[0].status,
+        injuryStatus: playerRows[0].injuryStatus,
       }
     : null;
 
@@ -191,10 +188,12 @@ export async function GET(
     }
   }
 
-  // --- Build bye week map from nfl_schedule ---
-  // For each (season, team), find weeks where team has no game
+  // teamScheduleMap: "{season}|{team}" → week → { opponent, isAway }
+  // Drives both bye-week detection (team has no game that week) and the
+  // Opponent column on the weekly log.
   const relevantSeasons = [...new Set(members.map((m) => parseInt(m.season, 10)))].filter((n) => !isNaN(n));
-  const byeWeekMap = new Map<string, Set<number>>(); // "season|team" → bye week numbers
+  const teamScheduleMap = new Map<string, Map<number, { opponent: string; isAway: boolean }>>();
+  const seasonAllWeeks = new Map<number, Set<number>>();
 
   if (relevantSeasons.length > 0) {
     const scheduleRows = await db
@@ -202,47 +201,40 @@ export async function GET(
       .from(schema.nflSchedule)
       .where(inArray(schema.nflSchedule.season, relevantSeasons));
 
-    // Group schedule by season
-    const schedBySeason = new Map<number, typeof scheduleRows>();
-    for (const row of scheduleRows) {
-      const arr = schedBySeason.get(row.season) || [];
-      arr.push(row);
-      schedBySeason.set(row.season, arr);
-    }
+    for (const g of scheduleRows) {
+      if (!seasonAllWeeks.has(g.season)) seasonAllWeeks.set(g.season, new Set());
+      seasonAllWeeks.get(g.season)!.add(g.week);
 
-    for (const season of relevantSeasons) {
-      const games = schedBySeason.get(season) || [];
-      if (games.length === 0) continue;
-
-      // All weeks in this season's schedule
-      const allWeeks = new Set(games.map((g) => g.week));
-      // Teams playing each week
-      const teamWeeks = new Map<string, Set<number>>();
-      for (const g of games) {
-        if (!teamWeeks.has(g.homeTeam)) teamWeeks.set(g.homeTeam, new Set());
-        if (!teamWeeks.has(g.awayTeam)) teamWeeks.set(g.awayTeam, new Set());
-        teamWeeks.get(g.homeTeam)!.add(g.week);
-        teamWeeks.get(g.awayTeam)!.add(g.week);
-      }
-
-      for (const [team, weeks] of teamWeeks) {
-        const byes = new Set<number>();
-        for (const week of allWeeks) {
-          if (!weeks.has(week)) byes.add(week);
-        }
-        if (byes.size > 0) {
-          byeWeekMap.set(`${season}|${team}`, byes);
-        }
-      }
+      const homeKey = `${g.season}|${g.homeTeam}`;
+      const awayKey = `${g.season}|${g.awayTeam}`;
+      if (!teamScheduleMap.has(homeKey)) teamScheduleMap.set(homeKey, new Map());
+      if (!teamScheduleMap.has(awayKey)) teamScheduleMap.set(awayKey, new Map());
+      teamScheduleMap.get(homeKey)!.set(g.week, { opponent: g.awayTeam, isAway: false });
+      teamScheduleMap.get(awayKey)!.set(g.week, { opponent: g.homeTeam, isAway: true });
     }
   }
 
-  // --- Assemble weekly log ---
+  // Player's NFL team for a given (season, week). Falls back to nearby
+  // weeks for traded/inactive players, then to player's current Sleeper
+  // team — needed for bye detection and opponent lookup.
+  function resolveTeam(seasonNum: number, week: number): string | null {
+    const direct = nflStatusMap.get(`${seasonNum}|${week}`)?.team;
+    if (direct) return direct;
+    if (player?.gsisId) {
+      for (let delta = 1; delta <= 18; delta++) {
+        const before = nflStatusMap.get(`${seasonNum}|${week - delta}`);
+        if (before?.team) return before.team;
+        const after = nflStatusMap.get(`${seasonNum}|${week + delta}`);
+        if (after?.team) return after.team;
+      }
+    }
+    return player?.team ?? null;
+  }
+
   const weeks = scores.map((s) => {
     const season = leagueSeasonMap.get(s.leagueId) || "";
     const seasonNum = parseInt(season, 10);
 
-    // Lineup slot derivation
     const matchupKey = `${s.leagueId}|${s.week}|${s.rosterId}`;
     const starters = matchupMap.get(matchupKey) || [];
     const rosterPositions = leagueRosterPositions.get(s.leagueId) || [];
@@ -254,41 +246,23 @@ export async function GET(
       }
     }
 
-    // Manager info
     const ownerKey = `${s.leagueId}|${s.rosterId}`;
     const owner = rosterOwnerMap.get(ownerKey);
 
-    // NFL status
-    const nflKey = `${seasonNum}|${s.week}`;
-    const nflStatus = nflStatusMap.get(nflKey);
+    const nflStatus = nflStatusMap.get(`${seasonNum}|${s.week}`);
 
-    // Bye week detection: use team from roster status for this week,
-    // or infer from nearest adjacent week (handles traded players + bye weeks where no roster row exists)
+    const team = resolveTeam(seasonNum, s.week);
+    let opponent: string | null = null;
+    let isAway = false;
     let isByeWeek = false;
-    if (player?.gsisId && !nflStatus) {
-      // No roster status row — could be bye week or missing data
-      // Infer team from nearest adjacent week's roster status
-      let inferredTeam: string | null = null;
-      for (let delta = 1; delta <= 18; delta++) {
-        const before = nflStatusMap.get(`${seasonNum}|${s.week - delta}`);
-        if (before?.team) { inferredTeam = before.team; break; }
-        const after = nflStatusMap.get(`${seasonNum}|${s.week + delta}`);
-        if (after?.team) { inferredTeam = after.team; break; }
+    if (team) {
+      const game = teamScheduleMap.get(`${seasonNum}|${team}`)?.get(s.week);
+      if (game) {
+        opponent = game.opponent;
+        isAway = game.isAway;
+      } else if (seasonAllWeeks.get(seasonNum)?.has(s.week)) {
+        isByeWeek = true;
       }
-      if (inferredTeam) {
-        const teamByes = byeWeekMap.get(`${seasonNum}|${inferredTeam}`);
-        if (teamByes?.has(s.week)) isByeWeek = true;
-      }
-    } else if (nflStatus?.team) {
-      // Has roster status — check if this week is a bye for that team
-      // (shouldn't happen since bye = no roster row, but defensive)
-      const teamByes = byeWeekMap.get(`${seasonNum}|${nflStatus.team}`);
-      if (teamByes?.has(s.week)) isByeWeek = true;
-    } else if (!player?.gsisId && player?.team) {
-      // Fallback: no gsis_id at all — use player's current team from Sleeper
-      // Won't handle mid-season trades, but better than no bye detection
-      const teamByes = byeWeekMap.get(`${seasonNum}|${player.team}`);
-      if (teamByes?.has(s.week)) isByeWeek = true;
     }
 
     return {
@@ -304,6 +278,8 @@ export async function GET(
       nflStatus: nflStatus?.status || null,
       nflStatusAbbr: nflStatus?.statusAbbr || null,
       isByeWeek,
+      opponent,
+      isAway,
     };
   });
 
@@ -330,10 +306,72 @@ export async function GET(
     ...new Set(members.map((m) => m.season)),
   ].sort((a, b) => parseInt(b, 10) - parseInt(a, 10));
 
+  // --- Current manager: who rosters this player in the most recent league? ---
+  let currentManager: {
+    userId: string;
+    rosterId: number;
+    displayName: string;
+    teamName: string | null;
+    avatar: string | null;
+    rosteredSince: { season: string; week: number } | null;
+  } | null = null;
+
+  const sortedMembers = [...members].sort(
+    (a, b) => parseInt(b.season, 10) - parseInt(a.season, 10)
+  );
+  const currentLeagueId = sortedMembers[0]?.leagueId;
+
+  if (currentLeagueId) {
+    const owningRoster = rosterRows.find((r) => {
+      if (r.leagueId !== currentLeagueId) return false;
+      const players = (r.players as string[] | null) ?? [];
+      return players.includes(playerId);
+    });
+
+    if (owningRoster?.ownerId) {
+      const userRow = userRows.find(
+        (u) =>
+          u.leagueId === currentLeagueId && u.userId === owningRoster.ownerId
+      );
+      const swapped = demoSwap
+        ? lookupSwap(demoSwap, owningRoster.ownerId)
+        : undefined;
+      const displayName =
+        swapped?.displayName ?? userRow?.displayName ?? owningRoster.ownerId;
+      const teamName = swapped?.teamName ?? userRow?.teamName ?? null;
+      const avatarHash = demoSwap ? null : userRow?.avatar ?? null;
+      const avatar = avatarHash
+        ? `https://sleepercdn.com/avatars/thumbs/${avatarHash}`
+        : null;
+
+      // weeks is sorted season DESC, week ASC — iterating from the end walks
+      // newest → oldest to find the start of the current contiguous stint.
+      let rosteredSince: { season: string; week: number } | null = null;
+      for (let i = weeks.length - 1; i >= 0; i--) {
+        const w = weeks[i];
+        if (w.manager?.userId === owningRoster.ownerId) {
+          rosteredSince = { season: w.season, week: w.week };
+        } else {
+          break;
+        }
+      }
+
+      currentManager = {
+        userId: owningRoster.ownerId,
+        rosterId: owningRoster.rosterId,
+        displayName,
+        teamName,
+        avatar,
+        rosteredSince,
+      };
+    }
+  }
+
   return NextResponse.json({
     player,
     weeks,
     managers: Array.from(managersMap.values()),
     availableSeasons,
+    currentManager,
   });
 }
