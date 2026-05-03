@@ -5,6 +5,7 @@ import { resolveFamily } from "@/lib/familyResolution";
 import { DEMO_LEAGUE_NAME, getDemoSwapForRequest } from "@/lib/demoServer";
 import { swapLeagueUser } from "@/lib/demoTransforms";
 import {
+  compareStandings,
   getAllTimeStandings,
   getChampionRosterFromBracket,
 } from "@/services/familyStandings";
@@ -59,17 +60,19 @@ export async function GET(
       },
       familyId: null,
       seasons: [{ leagueId: league.id, season: league.season }],
-      rosters: rosters.map((r) => ({
-        rosterId: r.rosterId,
-        ownerId: r.ownerId,
-        wins: r.wins || 0,
-        losses: r.losses || 0,
-        ties: r.ties || 0,
-        fpts: r.fpts || 0,
-        fptsAgainst: r.fptsAgainst || 0,
-        seasonsPlayed: 1,
-        championshipYears: [] as string[],
-      })),
+      rosters: rosters
+        .map((r) => ({
+          rosterId: r.rosterId,
+          ownerId: r.ownerId,
+          wins: r.wins || 0,
+          losses: r.losses || 0,
+          ties: r.ties || 0,
+          fpts: r.fpts || 0,
+          fptsAgainst: r.fptsAgainst || 0,
+          seasonsPlayed: 1,
+          championshipYears: [] as string[],
+        }))
+        .sort(compareStandings),
       users,
     });
   }
@@ -217,18 +220,20 @@ export async function GET(
     },
     familyId: resolvedFamilyId,
     seasons,
-    rosters: rosters.map((r) => ({
-      rosterId: r.rosterId,
-      ownerId: r.ownerId,
-      wins: r.wins || 0,
-      losses: r.losses || 0,
-      ties: r.ties || 0,
-      fpts: r.fpts || 0,
-      fptsAgainst: r.fptsAgainst || 0,
-      seasonsPlayed: 1,
-      championshipYears:
-        champRosterId === r.rosterId ? [league.season] : [],
-    })),
+    rosters: rosters
+      .map((r) => ({
+        rosterId: r.rosterId,
+        ownerId: r.ownerId,
+        wins: r.wins || 0,
+        losses: r.losses || 0,
+        ties: r.ties || 0,
+        fpts: r.fpts || 0,
+        fptsAgainst: r.fptsAgainst || 0,
+        seasonsPlayed: 1,
+        championshipYears:
+          champRosterId === r.rosterId ? [league.season] : [],
+      }))
+      .sort(compareStandings),
     users: demoSwap ? users.map((u) => swapLeagueUser(u, demoSwap)) : users,
   });
 }
