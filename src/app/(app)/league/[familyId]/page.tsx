@@ -3,9 +3,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Network } from "lucide-react";
 import { ManagerName, ManagerSecondaryName } from "@/components/ManagerName";
 import { ChampionshipTrophies } from "@/components/ChampionshipTrophy";
+import { Subheader } from "@/components/Subheader";
+import { BrandMark } from "@/components/BrandMark";
 import { useFlag } from "@/lib/useFlag";
 
 interface Roster {
@@ -122,45 +123,7 @@ export default function LeagueOverviewPage() {
 
   return (
     <div>
-      <div className="border-b">
-        <div className="container mx-auto px-4 sm:px-6 py-3 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3 sm:gap-4 min-w-0">
-            <Link
-              href="/start"
-              className="text-sm text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 shrink-0"
-            >
-              <ArrowLeft className="h-4 w-4" />
-              <span className="hidden sm:inline">My leagues</span>
-            </Link>
-            <h1 className="text-base sm:text-lg font-semibold truncate">
-              {data.league.name}
-            </h1>
-          </div>
-          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-            <Link
-              href={`/league/${familyId}/transactions`}
-              className="px-2.5 sm:px-3 py-1.5 text-sm rounded-md border hover:bg-secondary transition-colors"
-            >
-              Transactions
-            </Link>
-            <Link
-              href={`/league/${familyId}/drafts`}
-              className="px-2.5 sm:px-3 py-1.5 text-sm rounded-md border hover:bg-secondary transition-colors"
-            >
-              Drafts
-            </Link>
-            {graphEnabled && (
-              <Link
-                href={`/league/${familyId}/graph?from=overview`}
-                className="px-2.5 sm:px-3 py-1.5 text-sm rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors inline-flex items-center gap-2 font-medium"
-              >
-                <Network className="h-4 w-4" />
-                <span className="hidden sm:inline">Lineage Tracer</span>
-              </Link>
-            )}
-          </div>
-        </div>
-      </div>
+      <Subheader title={data.league.name} />
 
       <main className="container mx-auto px-4 sm:px-6 py-6 sm:py-8">
         <div className="-mx-4 sm:mx-0 mb-6 overflow-x-auto">
@@ -179,6 +142,22 @@ export default function LeagueOverviewPage() {
             ))}
           </div>
         </div>
+
+        {graphEnabled && (
+          <Link
+            href={`/league/${familyId}/graph?from=overview`}
+            className="mb-6 block rounded-lg border border-primary/25 bg-primary/8 px-4 py-4 sm:px-5 hover:bg-primary/12 transition-colors"
+          >
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm sm:text-base text-foreground">
+                <span className="font-semibold">Lineage Tracer</span>
+                <span className="text-muted-foreground"> — </span>
+                <span>Follow any player or pick through this league&apos;s history</span>
+              </p>
+              <BrandMark className="h-4 w-4 sm:h-[18px] sm:w-[18px] text-primary shrink-0" />
+            </div>
+          </Link>
+        )}
 
         <section>
           <h2 className="text-lg font-semibold mb-4">Standings</h2>

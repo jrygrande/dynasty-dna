@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
+import { Subheader } from "@/components/Subheader";
 
 interface PickGrade {
   grade: string;
@@ -94,18 +94,7 @@ export default function DraftsPage() {
 
   return (
       <div>
-        <div className="border-b">
-          <div className="container mx-auto px-6 py-3 flex items-center gap-4">
-            <Link
-              href={`/league/${familyId}`}
-              className="text-sm text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5"
-            >
-              <ArrowLeft className="h-4 w-4" />
-              League
-            </Link>
-            <h1 className="text-lg font-semibold">Draft History</h1>
-          </div>
-        </div>
+        <Subheader title="Draft History" />
 
         <main className="container mx-auto px-6 py-8">
         {/* Season filter */}
