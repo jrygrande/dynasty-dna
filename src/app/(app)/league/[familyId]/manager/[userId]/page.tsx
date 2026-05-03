@@ -935,7 +935,7 @@ function TransactionRow({
   return (
     <Link
       href={`/league/${familyId}/graph?seedTransactionId=${tx.id}&from=manager`}
-      className="block px-3 sm:px-4 py-3 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 sm:gap-4 hover:bg-muted/30 transition-colors"
+      className="px-3 sm:px-4 py-3 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2 sm:gap-4 hover:bg-muted/30 transition-colors"
     >
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 mb-1 flex-wrap">

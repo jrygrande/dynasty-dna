@@ -363,11 +363,43 @@ export async function GET(
       return ids.filter(Boolean);
     }
 
+    // Collect every player ID we'll need metadata for in one shot —
+    // displayed roster snapshots + add/drop/pick players in transactions
+    // the manager touched. Avoids a second player-fetch round-trip later.
     const rosterDisplayedPlayerIds = new Set<string>();
     for (const member of members) {
       for (const pid of rosterPlayersFor(member.leagueId)) {
         rosterDisplayedPlayerIds.add(pid);
       }
+    }
+
+    const earlyManagerTx = recentTx.filter((tx) => {
+      const adds = (tx.adds || {}) as Record<string, number>;
+      const drops = (tx.drops || {}) as Record<string, number>;
+      for (const rid of Object.values(adds)) {
+        if (managerRosterIds.has(`${tx.leagueId}:${rid}`)) return true;
+      }
+      for (const rid of Object.values(drops)) {
+        if (managerRosterIds.has(`${tx.leagueId}:${rid}`)) return true;
+      }
+      const picks = (tx.draftPicks || []) as Array<{
+        owner_id: number;
+        previous_owner_id: number;
+      }>;
+      for (const p of picks) {
+        if (managerRosterIds.has(`${tx.leagueId}:${p.owner_id}`)) return true;
+        if (managerRosterIds.has(`${tx.leagueId}:${p.previous_owner_id}`)) {
+          return true;
+        }
+      }
+      return false;
+    });
+    const allDisplayedPlayerIds = new Set(rosterDisplayedPlayerIds);
+    for (const tx of earlyManagerTx) {
+      const adds = (tx.adds || {}) as Record<string, number>;
+      const drops = (tx.drops || {}) as Record<string, number>;
+      for (const pid of Object.keys(adds)) allDisplayedPlayerIds.add(pid);
+      for (const pid of Object.keys(drops)) allDisplayedPlayerIds.add(pid);
     }
 
     const myRosterIdList = [...new Set(allRosters
@@ -394,11 +426,11 @@ export async function GET(
               ),
             )
         : Promise.resolve([]),
-      rosterDisplayedPlayerIds.size > 0
+      allDisplayedPlayerIds.size > 0
         ? db
             .select()
             .from(schema.players)
-            .where(inArray(schema.players.id, [...rosterDisplayedPlayerIds]))
+            .where(inArray(schema.players.id, [...allDisplayedPlayerIds]))
         : Promise.resolve([]),
     ]);
 
@@ -568,51 +600,11 @@ export async function GET(
     }
 
     // ============================================================
-    // Recent transactions
+    // Transactions enrichment (filter computed earlier so we could batch
+    // the players query into the main Promise.all)
     // ============================================================
 
-    const managerTx = recentTx.filter((tx) => {
-      const adds = (tx.adds || {}) as Record<string, number>;
-      const drops = (tx.drops || {}) as Record<string, number>;
-      for (const rid of Object.values(adds)) {
-        if (managerRosterIds.has(`${tx.leagueId}:${rid}`)) return true;
-      }
-      for (const rid of Object.values(drops)) {
-        if (managerRosterIds.has(`${tx.leagueId}:${rid}`)) return true;
-      }
-      // Pick-for-pick trades have null adds/drops; check draftPicks too so
-      // they don't silently disappear from the manager's transaction list.
-      const picks = (tx.draftPicks || []) as Array<{
-        owner_id: number;
-        previous_owner_id: number;
-      }>;
-      for (const p of picks) {
-        if (managerRosterIds.has(`${tx.leagueId}:${p.owner_id}`)) return true;
-        if (managerRosterIds.has(`${tx.leagueId}:${p.previous_owner_id}`)) {
-          return true;
-        }
-      }
-      return false;
-    });
-
-    const txPlayerIds = new Set<string>();
-    for (const tx of managerTx) {
-      const adds = (tx.adds || {}) as Record<string, number>;
-      const drops = (tx.drops || {}) as Record<string, number>;
-      for (const pid of Object.keys(adds)) txPlayerIds.add(pid);
-      for (const pid of Object.keys(drops)) txPlayerIds.add(pid);
-    }
-    const missingTxPlayerIds = [...txPlayerIds].filter(
-      (id) => !playerById.has(id),
-    );
-    if (missingTxPlayerIds.length > 0) {
-      const extraPlayers = await db
-        .select()
-        .from(schema.players)
-        .where(inArray(schema.players.id, missingTxPlayerIds));
-      for (const p of extraPlayers) playerById.set(p.id, p);
-    }
-
+    const managerTx = earlyManagerTx;
     const txIds = managerTx.map((tx) => tx.id);
     const [tradeGrades, waiverGrades] =
       txIds.length > 0

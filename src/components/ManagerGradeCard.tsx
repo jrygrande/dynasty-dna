@@ -41,7 +41,6 @@ export function ManagerGradeCard({
         >
           MPS
           <Info className="h-3 w-3" aria-hidden />
-          <span className="sr-only">{MPS_TOOLTIP}</span>
         </span>
       </div>
       <p className="text-xs text-muted-foreground mb-4">
