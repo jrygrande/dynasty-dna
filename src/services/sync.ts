@@ -570,7 +570,7 @@ export async function syncLeagueFamily(
     });
   }
 
-  // Roll up all_time + overall_score after all per-league grading is done
+  // Roll up all_time + MPS after all per-league grading is done
   if (familyId) {
     onProgress?.({
       step: "manager_grades",

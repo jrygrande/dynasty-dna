@@ -57,13 +57,13 @@ function computePercentile(entry: { score: number }, sortedAsc: { score: number 
 
 
 // ============================================================
-// Rollup: all_time per-metric + overall_score
+// Rollup: all_time per-metric + MPS (Manager Process Score)
 // ============================================================
 
 /**
  * Aggregate all season-scoped manager metrics in a league family into
  * `all_time` scores with exponential time-decay weighting, then compute
- * an `overall_score` blending all available metric types.
+ * an `mps` (Manager Process Score) blending all available metric types.
  *
  * Call this after all per-metric grading (lineup, trade, draft, etc.)
  * has written its season-scoped rows.
@@ -216,7 +216,7 @@ export async function rollupManagerGrades(familyId: string): Promise<void> {
     for (const entry of sorted) {
       const percentile = computePercentile(entry, sorted);
 
-      // Store percentile in managerAllTime for overall_score computation
+      // Store percentile in managerAllTime for MPS computation
       const mgrMetric = managerAllTime.get(entry.managerId)?.get(metric);
       if (mgrMetric) mgrMetric.percentile = percentile;
 
@@ -241,7 +241,7 @@ export async function rollupManagerGrades(familyId: string): Promise<void> {
     }
   }
 
-  // 6. Compute overall_score per manager
+  // 6. Compute MPS per manager
   const managerRecentLeague = new Map<string, string>();
   for (const [key, entries] of grouped) {
     const managerId = key.split("::")[0];
@@ -252,8 +252,8 @@ export async function rollupManagerGrades(familyId: string): Promise<void> {
     }
   }
 
-  const overallValues: Array<typeof schema.managerMetrics.$inferInsert> = [];
-  const overallScores: Array<{ managerId: string; score: number }> = [];
+  const mpsValues: Array<typeof schema.managerMetrics.$inferInsert> = [];
+  const mpsScores: Array<{ managerId: string; score: number }> = [];
   const mostRecentLeagueId = [...members].sort(
     (a, b) => parseInt(b.season, 10) - parseInt(a.season, 10),
   )[0].leagueId;
@@ -264,7 +264,7 @@ export async function rollupManagerGrades(familyId: string): Promise<void> {
     const values = Array.from(metrics.entries());
     if (values.length === 0) continue;
 
-    // Weighted overall_score from pillar percentiles (not raw scores)
+    // Weighted MPS from pillar percentiles (not raw scores)
     // This ensures pillars on different scales contribute equally
     let weightedSum = 0;
     let totalWeight = 0;
@@ -273,7 +273,7 @@ export async function rollupManagerGrades(familyId: string): Promise<void> {
       weightedSum += data.percentile * weight;
       totalWeight += weight;
     }
-    const overallScore =
+    const mps =
       Math.round(
         (totalWeight > 0 ? weightedSum / totalWeight : 0) * 10,
       ) / 10;
@@ -287,17 +287,17 @@ export async function rollupManagerGrades(familyId: string): Promise<void> {
       ]),
     );
 
-    overallScores.push({ managerId, score: overallScore });
+    mpsScores.push({ managerId, score: mps });
 
-    overallValues.push({
+    mpsValues.push({
       leagueId: recentLeagueId,
       managerId,
-      metric: "overall_score",
+      metric: "mps",
       scope: "all_time",
-      value: overallScore,
+      value: mps,
       percentile: 0,
       meta: {
-        grade: scoreToGrade(overallScore),
+        grade: scoreToGrade(mps),
         metricBreakdown,
         decayHalflife: DECAY_HALFLIFE_YEARS,
       },
@@ -305,13 +305,13 @@ export async function rollupManagerGrades(familyId: string): Promise<void> {
     });
   }
 
-  // Batch upsert overall scores
-  await batchUpsertManagerMetrics(overallValues);
+  // Batch upsert MPS scores
+  await batchUpsertManagerMetrics(mpsValues);
 
-  // 7. Update overall_score percentiles
-  const sortedOverall = [...overallScores].sort((a, b) => a.score - b.score);
-  for (const entry of sortedOverall) {
-    const percentile = computePercentile(entry, sortedOverall);
+  // 7. Update MPS percentiles
+  const sortedMps = [...mpsScores].sort((a, b) => a.score - b.score);
+  for (const entry of sortedMps) {
+    const percentile = computePercentile(entry, sortedMps);
 
     await db
       .update(schema.managerMetrics)
@@ -319,7 +319,7 @@ export async function rollupManagerGrades(familyId: string): Promise<void> {
       .where(
         and(
           eq(schema.managerMetrics.managerId, entry.managerId),
-          eq(schema.managerMetrics.metric, "overall_score"),
+          eq(schema.managerMetrics.metric, "mps"),
           eq(schema.managerMetrics.scope, "all_time"),
         ),
       );
