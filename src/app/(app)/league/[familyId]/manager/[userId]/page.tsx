@@ -93,6 +93,17 @@ interface Transaction {
   createdAt: number | null;
 }
 
+interface DraftSelection {
+  id: string;
+  season: string;
+  round: number;
+  pickNo: number;
+  isKeeper: boolean;
+  player: PlayerRef | null;
+  grade: string | null;
+  score: number | null;
+}
+
 interface ManagerData {
   manager: {
     userId: string;
@@ -108,6 +119,7 @@ interface ManagerData {
   seasonHistory: SeasonHistoryRow[];
   rosters: Record<string, RosterSnapshot>;
   recentTransactions: Transaction[];
+  draftSelections: DraftSelection[];
   seasons: Array<{ leagueId: string; season: string }>;
 }
 
@@ -134,10 +146,14 @@ export default function ManagerPage() {
   const seasonParam = searchParams.get("season");
   const txTypeParam = searchParams.get("txType");
   const txSeasonParam = searchParams.get("txSeason");
+  const draftSeasonParam = searchParams.get("draftSeason");
+  const draftRoundParam = searchParams.get("draftRound");
 
   const selectedSeason: SeasonFilter = seasonParam ?? "all";
   const selectedTxType = txTypeParam ?? "all";
   const selectedTxSeason: SeasonFilter = txSeasonParam ?? selectedSeason;
+  const selectedDraftSeason: SeasonFilter = draftSeasonParam ?? selectedSeason;
+  const selectedDraftRound: string = draftRoundParam ?? "all";
 
   function setParam(key: string, value: string | null) {
     const next = new URLSearchParams(searchParams.toString());
@@ -193,9 +209,17 @@ export default function ManagerPage() {
       selectedSeason={selectedSeason}
       selectedTxType={selectedTxType}
       selectedTxSeason={selectedTxSeason}
+      selectedDraftSeason={selectedDraftSeason}
+      selectedDraftRound={selectedDraftRound}
       onSeasonChange={(s) => setParam("season", s === "all" ? null : s)}
       onTxTypeChange={(t) => setParam("txType", t === "all" ? null : t)}
       onTxSeasonChange={(s) => setParam("txSeason", s === "all" ? null : s)}
+      onDraftSeasonChange={(s) =>
+        setParam("draftSeason", s === "all" ? null : s)
+      }
+      onDraftRoundChange={(r) =>
+        setParam("draftRound", r === "all" ? null : r)
+      }
     />
   );
 }
@@ -206,18 +230,26 @@ function ManagerPageContent({
   selectedSeason,
   selectedTxType,
   selectedTxSeason,
+  selectedDraftSeason,
+  selectedDraftRound,
   onSeasonChange,
   onTxTypeChange,
   onTxSeasonChange,
+  onDraftSeasonChange,
+  onDraftRoundChange,
 }: {
   data: ManagerData;
   familyId: string;
   selectedSeason: SeasonFilter;
   selectedTxType: string;
   selectedTxSeason: SeasonFilter;
+  selectedDraftSeason: SeasonFilter;
+  selectedDraftRound: string;
   onSeasonChange: (s: SeasonFilter) => void;
   onTxTypeChange: (t: string) => void;
   onTxSeasonChange: (s: SeasonFilter) => void;
+  onDraftSeasonChange: (s: SeasonFilter) => void;
+  onDraftRoundChange: (r: string) => void;
 }) {
   const { manager, allTime, seasonStats, championshipYears, seasonHistory } =
     data;
@@ -254,6 +286,35 @@ function ManagerPageContent({
       return true;
     });
   }, [data.recentTransactions, selectedTxSeason, selectedTxType]);
+
+  // Section 6: Drafts — apply Season + Round filters
+  const draftSeasons = useMemo(
+    () =>
+      [...new Set(data.draftSelections.map((d) => d.season))].sort((a, b) =>
+        b.localeCompare(a),
+      ),
+    [data.draftSelections],
+  );
+  const draftRounds = useMemo(
+    () =>
+      [...new Set(data.draftSelections.map((d) => d.round))].sort(
+        (a, b) => a - b,
+      ),
+    [data.draftSelections],
+  );
+  const filteredDrafts = useMemo(() => {
+    return data.draftSelections.filter((d) => {
+      if (selectedDraftSeason !== "all" && d.season !== selectedDraftSeason)
+        return false;
+      if (
+        selectedDraftRound !== "all" &&
+        d.round !== Number(selectedDraftRound)
+      ) {
+        return false;
+      }
+      return true;
+    });
+  }, [data.draftSelections, selectedDraftSeason, selectedDraftRound]);
 
   return (
     <div>
@@ -354,6 +415,19 @@ function ManagerPageContent({
           selectedType={selectedTxType}
           onSeasonChange={onTxSeasonChange}
           onTypeChange={onTxTypeChange}
+        />
+
+        {/* Section 6: Drafts */}
+        <DraftsSection
+          familyId={familyId}
+          drafts={filteredDrafts}
+          allCount={data.draftSelections.length}
+          seasons={draftSeasons}
+          rounds={draftRounds}
+          selectedSeason={selectedDraftSeason}
+          selectedRound={selectedDraftRound}
+          onSeasonChange={onDraftSeasonChange}
+          onRoundChange={onDraftRoundChange}
         />
       </main>
     </div>
@@ -994,6 +1068,163 @@ function TransactionRow({
         )}
       </div>
       {tx.grade && <GradeBadge grade={tx.grade} size="xs" />}
+    </Link>
+  );
+}
+
+// ============================================================
+// Section 6: Drafts
+// ============================================================
+
+function DraftsSection({
+  familyId,
+  drafts,
+  allCount,
+  seasons,
+  rounds,
+  selectedSeason,
+  selectedRound,
+  onSeasonChange,
+  onRoundChange,
+}: {
+  familyId: string;
+  drafts: DraftSelection[];
+  allCount: number;
+  seasons: string[];
+  rounds: number[];
+  selectedSeason: SeasonFilter;
+  selectedRound: string;
+  onSeasonChange: (s: SeasonFilter) => void;
+  onRoundChange: (r: string) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  if (allCount === 0) return null;
+
+  return (
+    <section>
+      <h2 className="text-lg font-semibold mb-3">Drafts</h2>
+      <div className="border rounded-lg overflow-hidden bg-card">
+        <button
+          type="button"
+          onClick={() => setExpanded((e) => !e)}
+          className="w-full px-3 sm:px-4 py-3 flex items-center gap-3 text-left hover:bg-muted/30 transition-colors min-h-[44px]"
+          aria-expanded={expanded}
+        >
+          <ChevronDown
+            className={`h-4 w-4 text-muted-foreground transition-transform shrink-0 ${
+              expanded ? "" : "-rotate-90"
+            }`}
+          />
+          <div className="flex-1 min-w-0">
+            <div className="font-medium truncate">
+              {drafts.length} of {allCount} pick
+              {allCount !== 1 ? "s" : ""}
+            </div>
+            <div className="mt-0.5 text-xs text-muted-foreground">
+              Picks across every draft you&apos;ve participated in
+            </div>
+          </div>
+        </button>
+        {expanded && (
+          <div className="border-t bg-muted/10">
+            <div className="p-3 sm:p-4 flex flex-wrap gap-x-3 gap-y-2 border-b">
+              {seasons.length > 1 && (
+                <div className="flex flex-wrap gap-2">
+                  <FilterChip
+                    active={selectedSeason === "all"}
+                    onClick={() => onSeasonChange("all")}
+                  >
+                    All Seasons
+                  </FilterChip>
+                  {seasons.map((s) => (
+                    <FilterChip
+                      key={s}
+                      active={selectedSeason === s}
+                      onClick={() => onSeasonChange(s)}
+                    >
+                      {s}
+                    </FilterChip>
+                  ))}
+                </div>
+              )}
+              {rounds.length > 1 && (
+                <div className="flex flex-wrap gap-2">
+                  <FilterChip
+                    active={selectedRound === "all"}
+                    onClick={() => onRoundChange("all")}
+                  >
+                    All Rounds
+                  </FilterChip>
+                  {rounds.map((r) => (
+                    <FilterChip
+                      key={r}
+                      active={selectedRound === String(r)}
+                      onClick={() => onRoundChange(String(r))}
+                    >
+                      Rd {r}
+                    </FilterChip>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {drafts.length === 0 ? (
+              <p className="px-4 py-6 text-center text-sm text-muted-foreground">
+                No picks match the current filters
+              </p>
+            ) : (
+              <ul className="divide-y divide-border/60">
+                {drafts.map((d) => (
+                  <li key={d.id}>
+                    <DraftRow draft={d} familyId={familyId} />
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function DraftRow({
+  draft,
+  familyId,
+}: {
+  draft: DraftSelection;
+  familyId: string;
+}) {
+  const pickLabel = `${draft.season} · Rd ${draft.round}, Pick ${draft.pickNo}`;
+  const player = draft.player;
+
+  const body = (
+    <div className="px-3 sm:px-4 py-3 flex items-center justify-between gap-3 hover:bg-muted/30 transition-colors min-h-[44px]">
+      <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
+        <PositionChip position={player?.position ?? null} />
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-medium truncate">
+            {player?.name ?? "Unselected"}
+            {draft.isKeeper && (
+              <span className="ml-2 text-[10px] font-mono uppercase tracking-wide text-muted-foreground">
+                Keeper
+              </span>
+            )}
+          </div>
+          <div className="text-xs text-muted-foreground font-mono">
+            {pickLabel}
+            {player?.team ? ` · ${player.team}` : ""}
+          </div>
+        </div>
+      </div>
+      {draft.grade && <GradeBadge grade={draft.grade} size="xs" />}
+    </div>
+  );
+
+  if (!player) return body;
+  return (
+    <Link href={`/league/${familyId}/player/${player.id}`} className="block">
+      {body}
     </Link>
   );
 }
