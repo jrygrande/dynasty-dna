@@ -285,6 +285,7 @@ function EdgeDetail({ edge, familyId }: { edge: GraphEdge | null; familyId: stri
   const endLabel = edge.isOpen
     ? "Ongoing"
     : `${edge.endSeason ?? ""}${edge.endWeek ? ` · W${edge.endWeek}` : ""}`;
+  const startLabel = `${edge.startSeason} · W${edge.startWeek}`;
 
   return (
     <div className="space-y-3 border rounded-lg p-3 max-lg:space-y-2 max-lg:p-2">
@@ -331,7 +332,7 @@ function EdgeDetail({ edge, familyId }: { edge: GraphEdge | null; familyId: stri
         <PlayerStintStats familyId={familyId} edge={edge} />
       )}
       <p className="text-xs text-muted-foreground">
-        {edge.startSeason} W{edge.startWeek} – {endLabel}
+        {startLabel} – {endLabel}
       </p>
       {edge.assetKind === "player" && edge.playerId && (
         <p data-cmd-click-tip className="text-[11px] tip-shimmer pt-1 border-t border-border/40">
