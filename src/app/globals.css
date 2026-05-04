@@ -108,6 +108,15 @@
   * {
     @apply border-border;
   }
+  /* Clamp document width on every device. Without this, a single overflowing
+     descendant (sticky table, long unbroken token, fixed-width chart) widens
+     the layout viewport on iOS/Android — the user lands on a page that looks
+     scaled-in / shifted right. `overflow-x: clip` keeps painting fully but
+     prevents the document from becoming horizontally scrollable. */
+  html,
+  body {
+    overflow-x: clip;
+  }
   body {
     @apply bg-background text-foreground font-sans;
     font-feature-settings: "cv11", "ss01";
