@@ -43,7 +43,10 @@ export async function syncPlayers(force = false): Promise<number> {
       .filter((p) => p.position && FANTASY_POSITIONS.has(p.position))
       .map((p) => ({
         id: p.player_id,
-        gsisId: p.gsis_id,
+        // Sleeper occasionally returns gsis_id with stray whitespace (the 2019
+        // draft cohort all had a leading space) — normalize so joins onto the
+        // nflverse-sourced nfl_weekly_roster_status table actually match.
+        gsisId: p.gsis_id?.trim() || null,
         name: p.full_name || `${p.first_name} ${p.last_name}`,
         firstName: p.first_name,
         lastName: p.last_name,
