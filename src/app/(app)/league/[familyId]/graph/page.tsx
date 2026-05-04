@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { Dna } from "lucide-react";
+import { Dna, Smartphone, X } from "lucide-react";
 import {
   pickKey,
   type Graph,
@@ -102,13 +102,27 @@ export default function GraphPage() {
     if (typeof window === "undefined") return false;
     return window.innerWidth < 1024;
   });
+  const [isLandscape, setIsLandscape] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return window.innerWidth > window.innerHeight;
+  });
   useEffect(() => {
     function onResize() {
       setIsNarrow(window.innerWidth < 1024);
+      setIsLandscape(window.innerWidth > window.innerHeight);
     }
     window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
+    window.addEventListener("orientationchange", onResize);
+    return () => {
+      window.removeEventListener("resize", onResize);
+      window.removeEventListener("orientationchange", onResize);
+    };
   }, []);
+
+  // Narrow viewport in portrait gets the chronological MobileTimeline. Narrow
+  // landscape (phones rotated) falls through to the React Flow canvas — same
+  // experience as desktop, just at a tighter viewport.
+  const isPortraitMobile = isNarrow && !isLandscape;
 
   // Fullbleed-on-mobile: lets the global nav scroll off so the subheader
   // pins to viewport top, freeing screen space for the canvas/timeline.
@@ -386,15 +400,15 @@ export default function GraphPage() {
     selection?.type === "node" ? selection.nodeId : null;
 
   // Allowed per design: graph headers may use Source Serif 4 (relaxes marketing-only rule).
-  // On mobile, Reset rides the title row so the collapsed subheader stays one
-  // row tall (title + action). On desktop, Reset moves into the right slot.
+  // Portrait mobile: Reset rides the title row so the collapsed subheader stays
+  // one row tall. Landscape phones + desktop: Reset moves into the right slot.
   const subheaderTitle = (
     <div className="flex items-center gap-2">
       <h1 className="font-serif text-lg sm:text-xl font-medium text-sage-800 inline-flex items-center gap-2 flex-1 min-w-0">
         <Dna className="h-5 w-5 text-primary" aria-hidden="true" />
         Lineage Tracer
       </h1>
-      {isNarrow && hasSeed && (
+      {isPortraitMobile && hasSeed && (
         <Button
           type="button"
           onClick={handleReset}
@@ -408,14 +422,14 @@ export default function GraphPage() {
     </div>
   );
 
-  // On mobile, hide the stats once the user starts scrolling so the sticky
-  // subheader collapses to just title + Reset (more screen space for cards).
-  const showStats = graph && !(isNarrow && scrolled);
+  // Portrait mobile only: hide the stats once the user starts scrolling so the
+  // sticky subheader collapses to just title + Reset (more screen space for cards).
+  const showStats = graph && !(isPortraitMobile && scrolled);
 
   const subheaderRightSlot = (
     <>
       {showStats && <GraphHeaderStats stats={graph.stats} />}
-      {!isNarrow && manualPositions.size > 0 && (
+      {!isPortraitMobile && manualPositions.size > 0 && (
         <Button
           type="button"
           onClick={handleResetManualPositions}
@@ -426,7 +440,7 @@ export default function GraphPage() {
           Reset positions
         </Button>
       )}
-      {!isNarrow && hasSeed && (
+      {!isPortraitMobile && hasSeed && (
         <Button type="button" onClick={handleReset} variant="ghost" size="sm">
           Reset
         </Button>
@@ -434,10 +448,11 @@ export default function GraphPage() {
     </>
   );
 
-  if (isNarrow) {
+  if (isPortraitMobile) {
     return (
       <>
         <Subheader title={subheaderTitle} rightSlot={subheaderRightSlot} />
+        <RotateForCanvasHint />
         <MobileTimeline
           familyId={familyId}
           response={response}
@@ -560,6 +575,42 @@ function CanvasSkeleton() {
           />
         ))}
       </div>
+    </div>
+  );
+}
+
+const ROTATE_HINT_KEY = "graph_rotate_hint_dismissed";
+
+function RotateForCanvasHint() {
+  const [dismissed, setDismissed] = useState<boolean>(() => {
+    if (typeof window === "undefined") return true;
+    return Boolean(window.localStorage.getItem(ROTATE_HINT_KEY));
+  });
+  if (dismissed) return null;
+  return (
+    <div
+      role="status"
+      className="mx-4 mt-3 flex items-center gap-3 rounded-md border border-primary/25 bg-primary/8 px-3 py-2 text-xs text-foreground"
+    >
+      <Smartphone className="h-4 w-4 shrink-0 text-primary -rotate-90" aria-hidden="true" />
+      <span className="flex-1">
+        Rotate your phone for the interactive canvas.
+      </span>
+      <button
+        type="button"
+        onClick={() => {
+          setDismissed(true);
+          try {
+            window.localStorage.setItem(ROTATE_HINT_KEY, "1");
+          } catch {
+            // localStorage may be unavailable (private mode); dismissal is in-memory only.
+          }
+        }}
+        aria-label="Dismiss rotate hint"
+        className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+      >
+        <X className="h-3.5 w-3.5" aria-hidden="true" />
+      </button>
     </div>
   );
 }
