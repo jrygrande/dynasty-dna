@@ -2,8 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import Link from "next/link";
-import { ArrowLeft, Dna } from "lucide-react";
 import {
   pickKey,
   type Graph,
@@ -19,6 +17,8 @@ import { MobileTimeline } from "@/components/graph/MobileTimeline";
 import { AssetPicker } from "@/components/graph/AssetPicker";
 import { trackEvent } from "@/lib/analytics";
 import { AssetGraph } from "@/components/graph/AssetGraph";
+import { BrandMark } from "@/components/BrandMark";
+import { Subheader } from "@/components/Subheader";
 import type { Pos } from "@/components/graph/layout";
 
 type FromSource = "overview" | "player" | "transactions" | "manager" | "deeplink";
@@ -373,9 +373,44 @@ export default function GraphPage() {
   const selectedNodeId =
     selection?.type === "node" ? selection.nodeId : null;
 
+  // Allowed per design: graph headers may use Source Serif 4 (relaxes marketing-only rule).
+  const subheaderTitle = (
+    <h1 className="font-serif text-lg sm:text-xl font-medium text-sage-800 inline-flex items-center gap-2">
+      <BrandMark className="h-5 w-5 text-primary" />
+      Lineage Tracer
+    </h1>
+  );
+
+  const subheaderRightSlot = (
+    <>
+      {hasSeed && (
+        <button
+          type="button"
+          onClick={handleReset}
+          className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+        >
+          Reset
+        </button>
+      )}
+      {!isNarrow && manualPositions.size > 0 && (
+        <button
+          type="button"
+          onClick={handleResetManualPositions}
+          className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+          title="Clear dragged-card positions"
+        >
+          Reset positions
+        </button>
+      )}
+      {graph && <GraphHeaderStats stats={graph.stats} />}
+      <CopyLinkButton hasFocus={hasSeed} />
+    </>
+  );
+
   if (isNarrow) {
     return (
       <>
+        <Subheader title={subheaderTitle} rightSlot={subheaderRightSlot} />
         <MobileTimeline
           familyId={familyId}
           response={response}
@@ -391,7 +426,6 @@ export default function GraphPage() {
           onSelect={(nodeId) =>
             handleSelectionChange({ type: "node", nodeId })
           }
-          onReset={handleReset}
         />
         {selection && visibility.visibleNodes.length > 0 && response && (
           <GraphDetailDrawer
@@ -409,116 +443,80 @@ export default function GraphPage() {
   }
 
   return (
-    <div className="flex flex-col h-[calc(100vh-3.5rem)] min-h-0">
-      <div className="border-b">
-        <div className="px-6 py-3 flex items-center gap-4">
-          <Link
-            href={`/league/${familyId}`}
-            className="text-sm text-muted-foreground hover:text-foreground whitespace-nowrap inline-flex items-center gap-1"
-          >
-            <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
-            League
-          </Link>
-          {/* Allowed per design: graph headers may use Source Serif 4 (relaxes marketing-only rule). */}
-          <h1 className="font-serif text-xl font-medium text-sage-800 whitespace-nowrap inline-flex items-center gap-2">
-            <Dna className="h-5 w-5 text-primary" aria-hidden="true" />
-            Lineage Tracer
-          </h1>
-          {hasSeed && (
-            <button
-              type="button"
-              onClick={handleReset}
-              className="text-xs text-muted-foreground underline-offset-2 hover:underline"
-            >
-              Reset
-            </button>
-          )}
-          {manualPositions.size > 0 && (
-            <button
-              type="button"
-              onClick={handleResetManualPositions}
-              className="text-xs text-muted-foreground underline-offset-2 hover:underline"
-              title="Clear dragged-card positions"
-            >
-              Reset positions
-            </button>
-          )}
-          <div className="flex-1" />
-          {graph && <GraphHeaderStats stats={graph.stats} />}
-          <CopyLinkButton hasFocus={hasSeed} />
-        </div>
-      </div>
+    <>
+      <Subheader title={subheaderTitle} rightSlot={subheaderRightSlot} />
+      <div className="flex flex-col h-[calc(100vh-var(--nav-height,3.5rem)-var(--subheader-height,3rem))] min-h-0">
+        <div className="flex-1 flex min-h-0 relative">
+          <div className="flex-1 relative min-w-0">
+            {loading && !response && <CanvasSkeleton />}
+            {error && !loading && (
+              <div className="flex items-center justify-center h-full">
+                <div className="text-center space-y-3">
+                  <p className="text-sm text-destructive">{error}</p>
+                  <button
+                    type="button"
+                    onClick={() => updateUrl({})}
+                    className="px-3 py-1.5 text-xs rounded-md border hover:bg-accent hover:text-accent-foreground"
+                  >
+                    Retry
+                  </button>
+                </div>
+              </div>
+            )}
+            {!hasSeed && response && !error && (
+              <div className="flex items-center justify-center h-full">
+                <AssetPicker familyId={familyId} onPick={handlePickerSelect} />
+              </div>
+            )}
+            {hasSeed && visibleGraph && !error && (
+              <AssetGraph
+                nodes={visibleGraph.nodes}
+                edges={visibleGraph.edges}
+                selection={selection}
+                onSelect={handleSelectionChange}
+                seedIds={seed}
+                expandedEntries={expanded}
+                onAssetExpand={handleAssetExpand}
+                chainAssetsByNode={visibility.chainAssetsByNode}
+                fullyExpanded={fullyExpanded}
+                onHeaderToggle={handleHeaderToggle}
+                manualPositions={manualPositions}
+                onManualPositionChange={handleManualPositionChange}
+              />
+            )}
 
-      <div className="flex-1 flex min-h-0 relative">
-        <div className="flex-1 relative min-w-0">
-          {loading && !response && <CanvasSkeleton />}
-          {error && !loading && (
-            <div className="flex items-center justify-center h-full">
-              <div className="text-center space-y-3">
-                <p className="text-sm text-destructive">{error}</p>
+            {showOnboarding && (
+              <div
+                role="status"
+                className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 max-w-md px-4 py-2.5 rounded-md bg-foreground text-background shadow-lg flex items-center gap-3"
+              >
+                <span className="text-xs">
+                  Click a card header to expand it. Click an asset to follow its thread across stints between managers.
+                </span>
                 <button
                   type="button"
-                  onClick={() => updateUrl({})}
-                  className="px-3 py-1.5 text-xs rounded-md border hover:bg-accent hover:text-accent-foreground"
+                  onClick={dismissOnboarding}
+                  className="text-xs underline hover:no-underline"
                 >
-                  Retry
+                  Got it
                 </button>
               </div>
-            </div>
-          )}
-          {!hasSeed && response && !error && (
-            <div className="flex items-center justify-center h-full">
-              <AssetPicker familyId={familyId} onPick={handlePickerSelect} />
-            </div>
-          )}
-          {hasSeed && visibleGraph && !error && (
-            <AssetGraph
+            )}
+          </div>
+
+          {selection && visibleGraph && response && (
+            <GraphDetailDrawer
+              selection={selection}
               nodes={visibleGraph.nodes}
               edges={visibleGraph.edges}
-              selection={selection}
-              onSelect={handleSelectionChange}
-              seedIds={seed}
-              expandedEntries={expanded}
-              onAssetExpand={handleAssetExpand}
-              chainAssetsByNode={visibility.chainAssetsByNode}
-              fullyExpanded={fullyExpanded}
-              onHeaderToggle={handleHeaderToggle}
-              manualPositions={manualPositions}
-              onManualPositionChange={handleManualPositionChange}
+              transactions={response.transactions}
+              familyId={familyId}
+              onSelectionChange={handleSelectionChange}
             />
           )}
-
-          {showOnboarding && (
-            <div
-              role="status"
-              className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 max-w-md px-4 py-2.5 rounded-md bg-foreground text-background shadow-lg flex items-center gap-3"
-            >
-              <span className="text-xs">
-                Click a card header to expand it. Click an asset to follow its thread across stints between managers.
-              </span>
-              <button
-                type="button"
-                onClick={dismissOnboarding}
-                className="text-xs underline hover:no-underline"
-              >
-                Got it
-              </button>
-            </div>
-          )}
         </div>
-
-        {selection && visibleGraph && response && (
-          <GraphDetailDrawer
-            selection={selection}
-            nodes={visibleGraph.nodes}
-            edges={visibleGraph.edges}
-            transactions={response.transactions}
-            familyId={familyId}
-            onSelectionChange={handleSelectionChange}
-          />
-        )}
       </div>
-    </div>
+    </>
   );
 }
 

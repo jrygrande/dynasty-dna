@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useMemo } from "react";
-import Link from "next/link";
-import { ArrowDown, ArrowLeft } from "lucide-react";
+import { ArrowDown } from "lucide-react";
 
 import type {
   GraphEdge,
@@ -14,7 +13,6 @@ import { useGraphVisibility, edgeAssetKey } from "@/lib/useGraphVisibility";
 import { trackEvent } from "@/lib/analytics";
 
 import { AssetPicker } from "./AssetPicker";
-import { CopyLinkButton } from "./CopyLinkButton";
 import { ManagerName } from "@/components/ManagerName";
 import {
   TransactionCardChrome,
@@ -36,7 +34,6 @@ interface MobileTimelineProps {
   onAssetClick: (nodeId: string, assetKey: string) => void;
   onHeaderToggle: (nodeId: string) => void;
   onSelect: (nodeId: string) => void;
-  onReset: () => void;
 }
 
 const EMPTY_REMOVED: Set<string> = new Set();
@@ -63,7 +60,6 @@ export function MobileTimeline({
   onAssetClick,
   onHeaderToggle,
   onSelect,
-  onReset,
 }: MobileTimelineProps) {
   useEffect(() => {
     trackEvent("graph_mobile_timeline_opened", { familyId });
@@ -98,34 +94,7 @@ export function MobileTimeline({
   const hasSeed = seed.length > 0;
 
   return (
-    <div className="min-h-screen bg-background">
-      <div className="sticky top-0 z-10 border-b bg-background px-4 py-3">
-        <div className="flex items-center gap-3">
-          <Link
-            href={`/league/${familyId}`}
-            className="text-xs text-muted-foreground hover:text-foreground whitespace-nowrap inline-flex items-center gap-1"
-          >
-            <ArrowLeft className="h-3 w-3" aria-hidden="true" />
-            League
-          </Link>
-          <h1 className="text-base font-semibold flex-1 truncate">
-            Trade network digest
-          </h1>
-          <CopyLinkButton hasFocus={hasSeed} />
-        </div>
-        {hasSeed && (
-          <div className="mt-2">
-            <button
-              type="button"
-              onClick={onReset}
-              className="text-xs text-muted-foreground underline-offset-2 hover:underline"
-            >
-              Reset
-            </button>
-          </div>
-        )}
-      </div>
-
+    <div className="bg-background">
       <div className="p-4">
         {loading && !response && <TimelineSkeleton />}
 
