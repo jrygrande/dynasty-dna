@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { Dna } from "lucide-react";
 import {
   pickKey,
   type Graph,
@@ -12,12 +13,11 @@ import {
 import { useGraphVisibility, edgeAssetKey } from "@/lib/useGraphVisibility";
 import { GraphDetailDrawer } from "@/components/graph/GraphDetailDrawer";
 import { GraphHeaderStats } from "@/components/graph/GraphHeaderStats";
-import { CopyLinkButton } from "@/components/graph/CopyLinkButton";
 import { MobileTimeline } from "@/components/graph/MobileTimeline";
 import { AssetPicker } from "@/components/graph/AssetPicker";
 import { trackEvent } from "@/lib/analytics";
 import { AssetGraph } from "@/components/graph/AssetGraph";
-import { BrandMark } from "@/components/BrandMark";
+import { Button } from "@/components/ui/button";
 import { Subheader } from "@/components/Subheader";
 import type { Pos } from "@/components/graph/layout";
 
@@ -376,34 +376,30 @@ export default function GraphPage() {
   // Allowed per design: graph headers may use Source Serif 4 (relaxes marketing-only rule).
   const subheaderTitle = (
     <h1 className="font-serif text-lg sm:text-xl font-medium text-sage-800 inline-flex items-center gap-2">
-      <BrandMark className="h-5 w-5 text-primary" />
+      <Dna className="h-5 w-5 text-primary" aria-hidden="true" />
       Lineage Tracer
     </h1>
   );
 
   const subheaderRightSlot = (
     <>
-      {hasSeed && (
-        <button
-          type="button"
-          onClick={handleReset}
-          className="text-xs text-muted-foreground underline-offset-2 hover:underline"
-        >
-          Reset
-        </button>
-      )}
+      {graph && <GraphHeaderStats stats={graph.stats} />}
       {!isNarrow && manualPositions.size > 0 && (
-        <button
+        <Button
           type="button"
           onClick={handleResetManualPositions}
-          className="text-xs text-muted-foreground underline-offset-2 hover:underline"
+          variant="ghost"
+          size="sm"
           title="Clear dragged-card positions"
         >
           Reset positions
-        </button>
+        </Button>
       )}
-      {graph && <GraphHeaderStats stats={graph.stats} />}
-      <CopyLinkButton hasFocus={hasSeed} />
+      {hasSeed && (
+        <Button type="button" onClick={handleReset} variant="outline" size="sm">
+          Reset
+        </Button>
+      )}
     </>
   );
 
