@@ -162,6 +162,7 @@ export function PublicNav() {
   return (
     <header
       ref={navRef}
+      data-public-nav
       className={`sticky top-0 z-40 bg-background border-b transition-shadow ${
         scrolled ? "shadow-sm" : ""
       }`}

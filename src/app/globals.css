@@ -121,6 +121,17 @@
 }
 
 @layer utilities {
+  /* Fullbleed-on-mobile mode: nav scrolls off, subheader pins to viewport top.
+     Activated by `body.page-fullbleed-mobile` (see graph page on mobile). */
+  @media (max-width: 1023px) {
+    body.page-fullbleed-mobile [data-public-nav] {
+      position: relative;
+    }
+    body.page-fullbleed-mobile {
+      --subheader-top: 0px;
+    }
+  }
+
   /* Soft sage shimmer for tip text. Uses background-clip:text so the
      gradient animates across the glyph fills rather than the box. */
   .tip-shimmer {
