@@ -173,7 +173,7 @@ export function PublicNav() {
         </Link>
 
         {/* Desktop nav */}
-        <nav data-desktop-nav className="hidden sm:flex items-center gap-6">
+        <nav className="hidden sm:flex items-center gap-6">
           {familyId && (
             <LeagueMenu
               familyId={familyId}
@@ -206,7 +206,6 @@ export function PublicNav() {
 
         {/* Mobile menu button */}
         <button
-          data-mobile-menu-btn
           onClick={() => setMobileOpen(!mobileOpen)}
           className="sm:hidden p-2 text-muted-foreground hover:text-foreground transition-colors"
           aria-label={mobileOpen ? "Close menu" : "Open menu"}

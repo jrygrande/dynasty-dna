@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { IdCard, X } from "lucide-react";
 import type { GraphEdge, GraphNode, GraphSelection } from "@/lib/assetGraph";
@@ -126,13 +126,11 @@ export function GraphDetailDrawer({
       aria-label="Graph detail"
       className={containerClass}
     >
-      <div className="sticky top-0 flex items-center justify-between px-4 py-3 border-b border-border/60 bg-card max-lg:px-3 max-lg:py-2 max-lg:border-b-0">
+      <div className="sticky top-0 flex items-center justify-between max-lg:justify-end px-4 py-3 border-b border-border/60 bg-card max-lg:px-3 max-lg:py-2 max-lg:border-b-0">
         {/* Allowed per design: graph headers may use Source Serif 4 (relaxes marketing-only rule). */}
-        {/* Title hidden on narrow — saves vertical real estate; X is enough. */}
         <h2 className="font-serif text-base text-sage-800 max-lg:hidden">
           {isCompare ? `Comparing ${compareEdgeCount} stints` : "Details"}
         </h2>
-        <span className="hidden max-lg:block" aria-hidden="true" />
         <button
           ref={closeBtnRef}
           type="button"
@@ -294,7 +292,7 @@ function EdgeDetail({ edge, familyId }: { edge: GraphEdge | null; familyId: stri
       </p>
       {edge.assetKind === "player" ? (
         <div>
-          <p className="text-xs text-muted-foreground max-lg:hidden">Player</p>
+          <SubLabel>Player</SubLabel>
           <div className="flex items-center gap-2 min-w-0">
             <p className="text-sm font-semibold flex-1 min-w-0 truncate">
               {edge.playerPosition ? `${edge.playerPosition} · ` : ""}
@@ -314,12 +312,12 @@ function EdgeDetail({ edge, familyId }: { edge: GraphEdge | null; familyId: stri
         </div>
       ) : (
         <div>
-          <p className="text-xs text-muted-foreground max-lg:hidden">Pick</p>
+          <SubLabel>Pick</SubLabel>
           <p className="text-sm font-semibold">{edge.pickLabel}</p>
         </div>
       )}
       <div>
-        <p className="text-xs text-muted-foreground max-lg:hidden">Manager</p>
+        <SubLabel>Manager</SubLabel>
         <p className="text-sm">
           <ManagerName
             userId={edge.managerUserId}
@@ -425,7 +423,7 @@ function PlayerStintStats({
   const stats = state.data;
   return (
     <div>
-      <p className="text-xs text-muted-foreground mb-1.5 max-lg:hidden">Stint stats</p>
+      <SubLabel className="mb-1.5">Stint stats</SubLabel>
       <div className="grid grid-cols-2 gap-2 max-lg:gap-1">
         <StatTile
           label="PPG"
@@ -724,6 +722,22 @@ function CompareCell({
         {row.hint(state.data)}
       </p>
     </div>
+  );
+}
+
+function SubLabel({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <p
+      className={`text-xs text-muted-foreground max-lg:hidden${className ? ` ${className}` : ""}`}
+    >
+      {children}
+    </p>
   );
 }
 

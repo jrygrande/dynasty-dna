@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Dna, Smartphone, X } from "lucide-react";
 import {
@@ -20,6 +20,7 @@ import { AssetGraph } from "@/components/graph/AssetGraph";
 import { Button } from "@/components/ui/button";
 import { Subheader } from "@/components/Subheader";
 import { useScrolled } from "@/lib/useScrolled";
+import { safeStorage } from "@/lib/storedUsername";
 import type { Pos } from "@/components/graph/layout";
 
 type FromSource = "overview" | "player" | "transactions" | "manager" | "deeplink";
@@ -98,31 +99,21 @@ export default function GraphPage() {
     [router, searchParams],
   );
 
-  const [isNarrow, setIsNarrow] = useState<boolean>(() => {
+  const [isPortraitMobile, setIsPortraitMobile] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
-    return window.innerWidth < 1024;
-  });
-  const [isLandscape, setIsLandscape] = useState<boolean>(() => {
-    if (typeof window === "undefined") return false;
-    return window.innerWidth > window.innerHeight;
+    return (
+      window.innerWidth < 1024 && window.innerWidth <= window.innerHeight
+    );
   });
   useEffect(() => {
     function onResize() {
-      setIsNarrow(window.innerWidth < 1024);
-      setIsLandscape(window.innerWidth > window.innerHeight);
+      setIsPortraitMobile(
+        window.innerWidth < 1024 && window.innerWidth <= window.innerHeight,
+      );
     }
     window.addEventListener("resize", onResize);
-    window.addEventListener("orientationchange", onResize);
-    return () => {
-      window.removeEventListener("resize", onResize);
-      window.removeEventListener("orientationchange", onResize);
-    };
+    return () => window.removeEventListener("resize", onResize);
   }, []);
-
-  // Narrow viewport in portrait gets the chronological MobileTimeline. Narrow
-  // landscape (phones rotated) falls through to the React Flow canvas — same
-  // experience as desktop, just at a tighter viewport.
-  const isPortraitMobile = isNarrow && !isLandscape;
 
   // Fullbleed-on-mobile: lets the global nav scroll off so the subheader
   // pins to viewport top, freeing screen space for the canvas/timeline.
@@ -555,68 +546,72 @@ function CanvasSkeleton() {
 const ROTATE_HINT_KEY = "graph_rotate_hint_dismissed";
 const SMALL_SCREEN_HINT_KEY = "graph_small_screen_hint_dismissed";
 
-function RotateForCanvasHint() {
+function DismissibleHint({
+  storageKey,
+  ariaLabel,
+  containerClass,
+  closeBtnClass,
+  closeIconClass,
+  dataAttr,
+  children,
+}: {
+  storageKey: string;
+  ariaLabel: string;
+  containerClass: string;
+  closeBtnClass: string;
+  closeIconClass: string;
+  dataAttr?: Record<string, string>;
+  children: ReactNode;
+}) {
   const [dismissed, setDismissed] = useState<boolean>(() => {
     if (typeof window === "undefined") return true;
-    return Boolean(window.localStorage.getItem(ROTATE_HINT_KEY));
+    return Boolean(safeStorage()?.getItem(storageKey));
   });
   if (dismissed) return null;
   return (
-    <div
-      role="status"
-      className="mx-4 mt-3 flex items-center gap-3 rounded-md border border-primary/25 bg-primary/8 px-3 py-2 text-xs text-foreground"
-    >
-      <Smartphone className="h-4 w-4 shrink-0 text-primary -rotate-90" aria-hidden="true" />
-      <span className="flex-1">
-        Rotate your phone for the interactive canvas.
-      </span>
+    <div role="status" className={containerClass} {...dataAttr}>
+      {children}
       <button
         type="button"
         onClick={() => {
           setDismissed(true);
-          try {
-            window.localStorage.setItem(ROTATE_HINT_KEY, "1");
-          } catch {
-            // localStorage may be unavailable (private mode); dismissal is in-memory only.
-          }
+          safeStorage()?.setItem(storageKey, "1");
         }}
-        aria-label="Dismiss rotate hint"
-        className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+        aria-label={ariaLabel}
+        className={closeBtnClass}
       >
-        <X className="h-3.5 w-3.5" aria-hidden="true" />
+        <X className={closeIconClass} aria-hidden="true" />
       </button>
     </div>
   );
 }
 
-function SmallScreenHint() {
-  const [dismissed, setDismissed] = useState<boolean>(() => {
-    if (typeof window === "undefined") return true;
-    return Boolean(window.localStorage.getItem(SMALL_SCREEN_HINT_KEY));
-  });
-  if (dismissed) return null;
+function RotateForCanvasHint() {
   return (
-    <div
-      role="status"
-      data-small-screen-hint
-      className="fixed bottom-3 left-1/2 z-30 -translate-x-1/2 flex items-center gap-2 rounded-full border border-border bg-card/95 backdrop-blur px-3 py-1.5 text-[11px] text-muted-foreground shadow-md"
+    <DismissibleHint
+      storageKey={ROTATE_HINT_KEY}
+      ariaLabel="Dismiss rotate hint"
+      containerClass="mx-4 mt-3 flex items-center gap-3 rounded-md border border-primary/25 bg-primary/8 px-3 py-2 text-xs text-foreground"
+      closeBtnClass="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+      closeIconClass="h-3.5 w-3.5"
+    >
+      <Smartphone className="h-4 w-4 shrink-0 text-primary -rotate-90" aria-hidden="true" />
+      <span className="flex-1">Rotate your phone for the interactive canvas.</span>
+    </DismissibleHint>
+  );
+}
+
+function SmallScreenHint() {
+  return (
+    <DismissibleHint
+      storageKey={SMALL_SCREEN_HINT_KEY}
+      ariaLabel="Dismiss small-screen hint"
+      containerClass="fixed bottom-3 left-1/2 z-30 -translate-x-1/2 flex items-center gap-2 rounded-full border border-border bg-card/95 backdrop-blur px-3 py-1.5 text-[11px] text-muted-foreground shadow-md"
+      closeBtnClass="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+      closeIconClass="h-3 w-3"
+      dataAttr={{ "data-small-screen-hint": "" }}
     >
       <span>Lineage Tracer works best on a larger screen.</span>
-      <button
-        type="button"
-        onClick={() => {
-          setDismissed(true);
-          try {
-            window.localStorage.setItem(SMALL_SCREEN_HINT_KEY, "1");
-          } catch {
-            // localStorage may be unavailable (private mode); dismissal is in-memory only.
-          }
-        }}
-        aria-label="Dismiss small-screen hint"
-        className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-      >
-        <X className="h-3 w-3" aria-hidden="true" />
-      </button>
-    </div>
+    </DismissibleHint>
   );
 }
