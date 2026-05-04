@@ -2,11 +2,12 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { ArrowRight, X } from "lucide-react";
+import { X } from "lucide-react";
 import type { GraphEdge, GraphNode, GraphSelection } from "@/lib/assetGraph";
 import type { EnrichedTransaction } from "@/lib/transactionEnrichment";
 import { TransactionCard, type TransactionData } from "@/components/TransactionCard";
 import { ManagerName } from "@/components/ManagerName";
+import { Button } from "@/components/ui/button";
 import { trackEvent } from "@/lib/analytics";
 
 function toTransactionData(tx: EnrichedTransaction): TransactionData {
@@ -249,13 +250,11 @@ function NodeDetail({
             {firstAsset.playerName}
           </p>
           {firstAsset.playerId && (
-            <Link
-              href={`/league/${familyId}/player/${encodeURIComponent(firstAsset.playerId)}`}
-              className="inline-flex items-center gap-1 mt-1 text-xs text-primary hover:underline"
-            >
-              Open player
-              <ArrowRight className="h-3 w-3" aria-hidden="true" />
-            </Link>
+            <Button asChild variant="outline" size="sm" className="mt-2 rounded-full">
+              <Link href={`/league/${familyId}/player/${encodeURIComponent(firstAsset.playerId)}`}>
+                Player Card
+              </Link>
+            </Button>
           )}
         </div>
       )}
@@ -294,13 +293,11 @@ function EdgeDetail({ edge, familyId }: { edge: GraphEdge | null; familyId: stri
             {edge.playerName}
           </p>
           {edge.playerId && (
-            <Link
-              href={`/league/${familyId}/player/${encodeURIComponent(edge.playerId)}`}
-              className="inline-flex items-center gap-1 mt-1 text-xs text-primary hover:underline"
-            >
-              Open player
-              <ArrowRight className="h-3 w-3" aria-hidden="true" />
-            </Link>
+            <Button asChild variant="outline" size="sm" className="mt-2 rounded-full">
+              <Link href={`/league/${familyId}/player/${encodeURIComponent(edge.playerId)}`}>
+                Player Card
+              </Link>
+            </Button>
           )}
         </div>
       ) : (
