@@ -1,3 +1,6 @@
+"use client";
+
+import { useState } from "react";
 import { initialsFromName } from "@/lib/demoAnonymize";
 
 type Variant = "team-or-display" | "display-only";
@@ -53,6 +56,8 @@ export function ManagerSecondaryName({
 
 // Avatar with initial-chip fallback. The server returns null avatar in demo
 // mode so this renders the chip with the swapped displayName's initials.
+// Falls back to the chip if the CDN image 404s — Sleeper avatars are stored
+// as a hash that goes stale when a user updates their avatar between syncs.
 export function ManagerAvatar({
   displayName,
   avatarUrl,
@@ -66,11 +71,12 @@ export function ManagerAvatar({
   size?: number;
   className?: string;
 }) {
+  const [imageFailed, setImageFailed] = useState(false);
   const dimension = `${size}px`;
   const baseClass =
     "inline-flex items-center justify-center rounded-full overflow-hidden flex-shrink-0";
 
-  if (avatarUrl) {
+  if (avatarUrl && !imageFailed) {
     return (
       // eslint-disable-next-line @next/next/no-img-element
       <img
@@ -80,6 +86,7 @@ export function ManagerAvatar({
         height={size}
         className={`${baseClass} ${className || ""}`}
         style={{ width: dimension, height: dimension }}
+        onError={() => setImageFailed(true)}
       />
     );
   }
