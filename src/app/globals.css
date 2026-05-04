@@ -132,6 +132,19 @@
     }
   }
 
+  /* Phone-class device in landscape: force the mobile nav variant (logo +
+     hamburger). The desktop nav at `sm:flex` (640px+) would otherwise show
+     on landscape phones at 700-900px wide and crowd the viewport. Detected
+     via short height (< 500px) AND landscape orientation. */
+  @media (max-height: 500px) and (orientation: landscape) {
+    [data-public-nav] [data-desktop-nav] {
+      display: none !important;
+    }
+    [data-public-nav] [data-mobile-menu-btn] {
+      display: inline-flex !important;
+    }
+  }
+
   /* Soft sage shimmer for tip text. Uses background-clip:text so the
      gradient animates across the glyph fills rather than the box. */
   .tip-shimmer {
