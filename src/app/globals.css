@@ -132,16 +132,40 @@
     }
   }
 
-  /* Phone-class device in landscape: force the mobile nav variant (logo +
-     hamburger). The desktop nav at `sm:flex` (640px+) would otherwise show
-     on landscape phones at 700-900px wide and crowd the viewport. Detected
-     via short height (< 500px) AND landscape orientation. */
+  /* Phone-class device in landscape: max canvas real estate.
+     - Hide the global PublicNav entirely (Lineage Tracer subheader becomes
+       the only chrome at the top).
+     - Hide the React Flow MiniMap (eats valuable corner real estate).
+     - Hide the canvas onboarding tooltip / dragged-position hint that
+       wraps under the canvas — too cramped here.
+     Detected via short height (< 500px) AND landscape orientation. */
   @media (max-height: 500px) and (orientation: landscape) {
-    [data-public-nav] [data-desktop-nav] {
+    body.page-fullbleed-mobile [data-public-nav] {
       display: none !important;
     }
-    [data-public-nav] [data-mobile-menu-btn] {
-      display: inline-flex !important;
+    body.page-fullbleed-mobile .react-flow__minimap {
+      display: none !important;
+    }
+    body.page-fullbleed-mobile [data-graph-stats] {
+      display: none !important;
+    }
+  }
+
+  /* Touch devices (no hover): hide cmd-click hints in the detail drawer.
+     There's no equivalent two-key gesture on touch and the kbd glyph is
+     misleading. We don't yet have a touch-equivalent affordance for the
+     compare flow, so the hint is simply suppressed. */
+  @media (hover: none) {
+    [data-cmd-click-tip] {
+      display: none !important;
+    }
+  }
+
+  /* Small-screen hint: only render on phone-class displays (either
+     dimension < 640px). Hidden when both dimensions clear 640px. */
+  @media (min-width: 640px) and (min-height: 640px) {
+    [data-small-screen-hint] {
+      display: none;
     }
   }
 

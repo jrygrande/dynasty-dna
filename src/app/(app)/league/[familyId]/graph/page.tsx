@@ -453,6 +453,7 @@ export default function GraphPage() {
       <>
         <Subheader title={subheaderTitle} rightSlot={subheaderRightSlot} />
         <RotateForCanvasHint />
+        <SmallScreenHint />
         <MobileTimeline
           familyId={familyId}
           response={response}
@@ -487,6 +488,7 @@ export default function GraphPage() {
   return (
     <>
       <Subheader title={subheaderTitle} rightSlot={subheaderRightSlot} />
+      <SmallScreenHint />
       <div className="flex flex-col h-[calc(100vh-var(--nav-height,3.5rem)-var(--subheader-height,3rem))] min-h-0">
         <div className="flex-1 flex min-h-0 relative">
           <div className="flex-1 relative min-w-0">
@@ -580,6 +582,7 @@ function CanvasSkeleton() {
 }
 
 const ROTATE_HINT_KEY = "graph_rotate_hint_dismissed";
+const SMALL_SCREEN_HINT_KEY = "graph_small_screen_hint_dismissed";
 
 function RotateForCanvasHint() {
   const [dismissed, setDismissed] = useState<boolean>(() => {
@@ -610,6 +613,38 @@ function RotateForCanvasHint() {
         className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
       >
         <X className="h-3.5 w-3.5" aria-hidden="true" />
+      </button>
+    </div>
+  );
+}
+
+function SmallScreenHint() {
+  const [dismissed, setDismissed] = useState<boolean>(() => {
+    if (typeof window === "undefined") return true;
+    return Boolean(window.localStorage.getItem(SMALL_SCREEN_HINT_KEY));
+  });
+  if (dismissed) return null;
+  return (
+    <div
+      role="status"
+      data-small-screen-hint
+      className="fixed bottom-3 left-1/2 z-30 -translate-x-1/2 flex items-center gap-2 rounded-full border border-border bg-card/95 backdrop-blur px-3 py-1.5 text-[11px] text-muted-foreground shadow-md"
+    >
+      <span>Lineage Tracer works best on a larger screen.</span>
+      <button
+        type="button"
+        onClick={() => {
+          setDismissed(true);
+          try {
+            window.localStorage.setItem(SMALL_SCREEN_HINT_KEY, "1");
+          } catch {
+            // localStorage may be unavailable (private mode); dismissal is in-memory only.
+          }
+        }}
+        aria-label="Dismiss small-screen hint"
+        className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+      >
+        <X className="h-3 w-3" aria-hidden="true" />
       </button>
     </div>
   );

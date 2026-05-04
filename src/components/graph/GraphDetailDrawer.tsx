@@ -332,7 +332,7 @@ function EdgeDetail({ edge, familyId }: { edge: GraphEdge | null; familyId: stri
         {edge.startSeason} W{edge.startWeek} – {endLabel}
       </p>
       {edge.assetKind === "player" && edge.playerId && (
-        <p className="text-[11px] tip-shimmer pt-1 border-t border-border/40">
+        <p data-cmd-click-tip className="text-[11px] tip-shimmer pt-1 border-t border-border/40">
           Tip: <kbd className="font-mono">⌘</kbd>-click another stint to compare.
         </p>
       )}
@@ -612,7 +612,7 @@ function EdgeCompare({
           ))}
         </div>
       </div>
-      <p className="text-[11px] tip-shimmer">
+      <p data-cmd-click-tip className="text-[11px] tip-shimmer">
         Tip: <kbd className="font-mono">⌘</kbd>-click an edge to add or remove it from this comparison.
       </p>
     </div>
