@@ -19,6 +19,7 @@ import { trackEvent } from "@/lib/analytics";
 import { AssetGraph } from "@/components/graph/AssetGraph";
 import { Button } from "@/components/ui/button";
 import { Subheader } from "@/components/Subheader";
+import { useScrolled } from "@/lib/useScrolled";
 import type { Pos } from "@/components/graph/layout";
 
 type FromSource = "overview" | "player" | "transactions" | "manager" | "deeplink";
@@ -108,6 +109,17 @@ export default function GraphPage() {
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, []);
+
+  // Fullbleed-on-mobile: lets the global nav scroll off so the subheader
+  // pins to viewport top, freeing screen space for the canvas/timeline.
+  useEffect(() => {
+    document.body.classList.add("page-fullbleed-mobile");
+    return () => {
+      document.body.classList.remove("page-fullbleed-mobile");
+    };
+  }, []);
+
+  const scrolled = useScrolled(8);
 
   const [response, setResponse] = useState<GraphResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -381,9 +393,13 @@ export default function GraphPage() {
     </h1>
   );
 
+  // On mobile, hide the stats once the user starts scrolling so the sticky
+  // subheader collapses to just title + Reset (more screen space for cards).
+  const showStats = graph && !(isNarrow && scrolled);
+
   const subheaderRightSlot = (
     <>
-      {graph && <GraphHeaderStats stats={graph.stats} />}
+      {showStats && <GraphHeaderStats stats={graph.stats} />}
       {!isNarrow && manualPositions.size > 0 && (
         <Button
           type="button"
@@ -396,7 +412,7 @@ export default function GraphPage() {
         </Button>
       )}
       {hasSeed && (
-        <Button type="button" onClick={handleReset} variant="outline" size="sm">
+        <Button type="button" onClick={handleReset} variant="ghost" size="sm">
           Reset
         </Button>
       )}

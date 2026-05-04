@@ -36,10 +36,11 @@ export function Subheader({ title, rightSlot }: SubheaderProps) {
   return (
     <div
       ref={ref}
+      data-subheader
       className={`sticky z-30 bg-background transition-shadow ${
         scrolled ? "shadow-sm" : ""
       }`}
-      style={{ top: "var(--nav-height, 0px)" }}
+      style={{ top: "var(--subheader-top, var(--nav-height, 0px))" }}
     >
       <div
         className={`container mx-auto px-4 sm:px-6 py-3 ${
