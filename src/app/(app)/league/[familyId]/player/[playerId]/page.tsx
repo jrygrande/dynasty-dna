@@ -105,9 +105,14 @@ function nflStatusColor(status: string | null, isByeWeek: boolean): string {
   }
 }
 
+function lineupSlotLabel(slot: string): string {
+  if (slot === "SUPER_FLEX") return "SF";
+  return slot;
+}
+
 function fantasyStatusBadge(entry: WeekEntry): { label: string; className: string } {
   if (entry.fantasyStatus === "starter") {
-    const slot = entry.lineupSlot || "Starter";
+    const slot = entry.lineupSlot ? lineupSlotLabel(entry.lineupSlot) : "Starter";
     if (entry.nflStatus === "RES" || entry.nflStatus === "INA") {
       return { label: slot, className: "bg-grade-f/12 text-grade-f" };
     }
