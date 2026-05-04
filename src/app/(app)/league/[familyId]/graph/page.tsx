@@ -139,10 +139,6 @@ export default function GraphPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const analyticsFiredRef = useRef(false);
-  const [tooltipDismissed, setTooltipDismissed] = useState<boolean>(() => {
-    if (typeof window === "undefined") return true;
-    return Boolean(window.localStorage.getItem("graph_tooltip_dismissed"));
-  });
 
   useEffect(() => {
     let cancelled = false;
@@ -287,15 +283,6 @@ export default function GraphPage() {
       season: response.seasons[0] || "",
     });
   }, [response, familyId, from]);
-
-  const showOnboarding =
-    !tooltipDismissed && visibility.visibleNodes.length > 0;
-  const dismissOnboarding = useCallback(() => {
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem("graph_tooltip_dismissed", "1");
-    }
-    setTooltipDismissed(true);
-  }, []);
 
   const handleSelectionChange = useCallback(
     (next: GraphSelection | null) => updateUrl({ selection: serializeSelection(next) }),
@@ -529,23 +516,6 @@ export default function GraphPage() {
               />
             )}
 
-            {showOnboarding && (
-              <div
-                role="status"
-                className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 max-w-md px-4 py-2.5 rounded-md bg-foreground text-background shadow-lg flex items-center gap-3"
-              >
-                <span className="text-xs">
-                  Click a card header to expand it. Click an asset to follow its thread across stints between managers.
-                </span>
-                <button
-                  type="button"
-                  onClick={dismissOnboarding}
-                  className="text-xs underline hover:no-underline"
-                >
-                  Got it
-                </button>
-              </div>
-            )}
           </div>
 
           {selection && visibleGraph && response && (
@@ -556,6 +526,7 @@ export default function GraphPage() {
               transactions={response.transactions}
               familyId={familyId}
               onSelectionChange={handleSelectionChange}
+              variant={isNarrow ? "sheet" : "drawer"}
             />
           )}
         </div>
