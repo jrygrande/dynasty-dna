@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { Dna } from "lucide-react";
+import { Dna, Smartphone, X } from "lucide-react";
 import {
   pickKey,
   type Graph,
@@ -20,6 +20,7 @@ import { AssetGraph } from "@/components/graph/AssetGraph";
 import { Button } from "@/components/ui/button";
 import { Subheader } from "@/components/Subheader";
 import { useScrolled } from "@/lib/useScrolled";
+import { safeStorage } from "@/lib/storedUsername";
 import type { Pos } from "@/components/graph/layout";
 
 type FromSource = "overview" | "player" | "transactions" | "manager" | "deeplink";
@@ -98,13 +99,17 @@ export default function GraphPage() {
     [router, searchParams],
   );
 
-  const [isNarrow, setIsNarrow] = useState<boolean>(() => {
+  const [isPortraitMobile, setIsPortraitMobile] = useState<boolean>(() => {
     if (typeof window === "undefined") return false;
-    return window.innerWidth < 1024;
+    return (
+      window.innerWidth < 1024 && window.innerWidth <= window.innerHeight
+    );
   });
   useEffect(() => {
     function onResize() {
-      setIsNarrow(window.innerWidth < 1024);
+      setIsPortraitMobile(
+        window.innerWidth < 1024 && window.innerWidth <= window.innerHeight,
+      );
     }
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
@@ -125,10 +130,6 @@ export default function GraphPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const analyticsFiredRef = useRef(false);
-  const [tooltipDismissed, setTooltipDismissed] = useState<boolean>(() => {
-    if (typeof window === "undefined") return true;
-    return Boolean(window.localStorage.getItem("graph_tooltip_dismissed"));
-  });
 
   useEffect(() => {
     let cancelled = false;
@@ -274,15 +275,6 @@ export default function GraphPage() {
     });
   }, [response, familyId, from]);
 
-  const showOnboarding =
-    !tooltipDismissed && visibility.visibleNodes.length > 0;
-  const dismissOnboarding = useCallback(() => {
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem("graph_tooltip_dismissed", "1");
-    }
-    setTooltipDismissed(true);
-  }, []);
-
   const handleSelectionChange = useCallback(
     (next: GraphSelection | null) => updateUrl({ selection: serializeSelection(next) }),
     [updateUrl],
@@ -386,15 +378,15 @@ export default function GraphPage() {
     selection?.type === "node" ? selection.nodeId : null;
 
   // Allowed per design: graph headers may use Source Serif 4 (relaxes marketing-only rule).
-  // On mobile, Reset rides the title row so the collapsed subheader stays one
-  // row tall (title + action). On desktop, Reset moves into the right slot.
+  // Portrait mobile: Reset rides the title row so the collapsed subheader stays
+  // one row tall. Landscape phones + desktop: Reset moves into the right slot.
   const subheaderTitle = (
     <div className="flex items-center gap-2">
       <h1 className="font-serif text-lg sm:text-xl font-medium text-sage-800 inline-flex items-center gap-2 flex-1 min-w-0">
         <Dna className="h-5 w-5 text-primary" aria-hidden="true" />
         Lineage Tracer
       </h1>
-      {isNarrow && hasSeed && (
+      {isPortraitMobile && hasSeed && (
         <Button
           type="button"
           onClick={handleReset}
@@ -408,14 +400,14 @@ export default function GraphPage() {
     </div>
   );
 
-  // On mobile, hide the stats once the user starts scrolling so the sticky
-  // subheader collapses to just title + Reset (more screen space for cards).
-  const showStats = graph && !(isNarrow && scrolled);
+  // Portrait mobile only: hide the stats once the user starts scrolling so the
+  // sticky subheader collapses to just title + Reset (more screen space for cards).
+  const showStats = graph && !(isPortraitMobile && scrolled);
 
   const subheaderRightSlot = (
     <>
       {showStats && <GraphHeaderStats stats={graph.stats} />}
-      {!isNarrow && manualPositions.size > 0 && (
+      {!isPortraitMobile && manualPositions.size > 0 && (
         <Button
           type="button"
           onClick={handleResetManualPositions}
@@ -426,7 +418,7 @@ export default function GraphPage() {
           Reset positions
         </Button>
       )}
-      {!isNarrow && hasSeed && (
+      {!isPortraitMobile && hasSeed && (
         <Button type="button" onClick={handleReset} variant="ghost" size="sm">
           Reset
         </Button>
@@ -434,10 +426,12 @@ export default function GraphPage() {
     </>
   );
 
-  if (isNarrow) {
+  if (isPortraitMobile) {
     return (
       <>
         <Subheader title={subheaderTitle} rightSlot={subheaderRightSlot} />
+        <RotateForCanvasHint />
+        <SmallScreenHint />
         <MobileTimeline
           familyId={familyId}
           response={response}
@@ -472,6 +466,7 @@ export default function GraphPage() {
   return (
     <>
       <Subheader title={subheaderTitle} rightSlot={subheaderRightSlot} />
+      <SmallScreenHint />
       <div className="flex flex-col h-[calc(100vh-var(--nav-height,3.5rem)-var(--subheader-height,3rem))] min-h-0">
         <div className="flex-1 flex min-h-0 relative">
           <div className="flex-1 relative min-w-0">
@@ -512,23 +507,6 @@ export default function GraphPage() {
               />
             )}
 
-            {showOnboarding && (
-              <div
-                role="status"
-                className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 max-w-md px-4 py-2.5 rounded-md bg-foreground text-background shadow-lg flex items-center gap-3"
-              >
-                <span className="text-xs">
-                  Click a card header to expand it. Click an asset to follow its thread across stints between managers.
-                </span>
-                <button
-                  type="button"
-                  onClick={dismissOnboarding}
-                  className="text-xs underline hover:no-underline"
-                >
-                  Got it
-                </button>
-              </div>
-            )}
           </div>
 
           {selection && visibleGraph && response && (
@@ -539,6 +517,7 @@ export default function GraphPage() {
               transactions={response.transactions}
               familyId={familyId}
               onSelectionChange={handleSelectionChange}
+              variant={isPortraitMobile ? "sheet" : "drawer"}
             />
           )}
         </div>
@@ -561,5 +540,78 @@ function CanvasSkeleton() {
         ))}
       </div>
     </div>
+  );
+}
+
+const ROTATE_HINT_KEY = "graph_rotate_hint_dismissed";
+const SMALL_SCREEN_HINT_KEY = "graph_small_screen_hint_dismissed";
+
+function DismissibleHint({
+  storageKey,
+  ariaLabel,
+  containerClass,
+  closeBtnClass,
+  closeIconClass,
+  dataAttr,
+  children,
+}: {
+  storageKey: string;
+  ariaLabel: string;
+  containerClass: string;
+  closeBtnClass: string;
+  closeIconClass: string;
+  dataAttr?: Record<string, string>;
+  children: ReactNode;
+}) {
+  const [dismissed, setDismissed] = useState<boolean>(() => {
+    if (typeof window === "undefined") return true;
+    return Boolean(safeStorage()?.getItem(storageKey));
+  });
+  if (dismissed) return null;
+  return (
+    <div role="status" className={containerClass} {...dataAttr}>
+      {children}
+      <button
+        type="button"
+        onClick={() => {
+          setDismissed(true);
+          safeStorage()?.setItem(storageKey, "1");
+        }}
+        aria-label={ariaLabel}
+        className={closeBtnClass}
+      >
+        <X className={closeIconClass} aria-hidden="true" />
+      </button>
+    </div>
+  );
+}
+
+function RotateForCanvasHint() {
+  return (
+    <DismissibleHint
+      storageKey={ROTATE_HINT_KEY}
+      ariaLabel="Dismiss rotate hint"
+      containerClass="mx-4 mt-3 flex items-center gap-3 rounded-md border border-primary/25 bg-primary/8 px-3 py-2 text-xs text-foreground"
+      closeBtnClass="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+      closeIconClass="h-3.5 w-3.5"
+    >
+      <Smartphone className="h-4 w-4 shrink-0 text-primary -rotate-90" aria-hidden="true" />
+      <span className="flex-1">Rotate your phone for the interactive canvas.</span>
+    </DismissibleHint>
+  );
+}
+
+function SmallScreenHint() {
+  return (
+    <DismissibleHint
+      storageKey={SMALL_SCREEN_HINT_KEY}
+      ariaLabel="Dismiss small-screen hint"
+      containerClass="fixed bottom-3 left-1/2 z-30 -translate-x-1/2 flex items-center gap-2 rounded-full border border-border bg-card/95 backdrop-blur px-3 py-1.5 text-[11px] text-muted-foreground shadow-md"
+      closeBtnClass="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+      closeIconClass="h-3 w-3"
+      dataAttr={{ "data-small-screen-hint": "" }}
+    >
+      <span>Lineage Tracer works best on a larger screen.</span>
+    </DismissibleHint>
   );
 }

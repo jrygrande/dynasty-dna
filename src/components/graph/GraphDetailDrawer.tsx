@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { IdCard, X } from "lucide-react";
 import type { GraphEdge, GraphNode, GraphSelection } from "@/lib/assetGraph";
@@ -126,9 +126,9 @@ export function GraphDetailDrawer({
       aria-label="Graph detail"
       className={containerClass}
     >
-      <div className="sticky top-0 flex items-center justify-between px-4 py-3 border-b border-border/60 bg-card">
+      <div className="sticky top-0 flex items-center justify-between max-lg:justify-end px-4 py-3 border-b border-border/60 bg-card max-lg:px-3 max-lg:py-2 max-lg:border-b-0">
         {/* Allowed per design: graph headers may use Source Serif 4 (relaxes marketing-only rule). */}
-        <h2 className="font-serif text-base text-sage-800">
+        <h2 className="font-serif text-base text-sage-800 max-lg:hidden">
           {isCompare ? `Comparing ${compareEdgeCount} stints` : "Details"}
         </h2>
         <button
@@ -142,7 +142,7 @@ export function GraphDetailDrawer({
         </button>
       </div>
 
-      <div className="p-4 space-y-4">
+      <div className="p-4 space-y-4 max-lg:p-3 max-lg:pt-0 max-lg:space-y-2">
         {selection.type === "node" ? (
           <NodeDetail
             node={nodes.find((n) => n.id === selection.nodeId) ?? null}
@@ -283,15 +283,16 @@ function EdgeDetail({ edge, familyId }: { edge: GraphEdge | null; familyId: stri
   const endLabel = edge.isOpen
     ? "Ongoing"
     : `${edge.endSeason ?? ""}${edge.endWeek ? ` · W${edge.endWeek}` : ""}`;
+  const startLabel = `${edge.startSeason} · W${edge.startWeek}`;
 
   return (
-    <div className="space-y-3 border rounded-lg p-3">
+    <div className="space-y-3 border rounded-lg p-3 max-lg:space-y-2 max-lg:p-2">
       <p className="font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
         {edge.isOpen ? "Active stint" : "Stint"}
       </p>
       {edge.assetKind === "player" ? (
         <div>
-          <p className="text-xs text-muted-foreground">Player</p>
+          <SubLabel>Player</SubLabel>
           <div className="flex items-center gap-2 min-w-0">
             <p className="text-sm font-semibold flex-1 min-w-0 truncate">
               {edge.playerPosition ? `${edge.playerPosition} · ` : ""}
@@ -311,12 +312,12 @@ function EdgeDetail({ edge, familyId }: { edge: GraphEdge | null; familyId: stri
         </div>
       ) : (
         <div>
-          <p className="text-xs text-muted-foreground">Pick</p>
+          <SubLabel>Pick</SubLabel>
           <p className="text-sm font-semibold">{edge.pickLabel}</p>
         </div>
       )}
       <div>
-        <p className="text-xs text-muted-foreground">Manager</p>
+        <SubLabel>Manager</SubLabel>
         <p className="text-sm">
           <ManagerName
             userId={edge.managerUserId}
@@ -329,10 +330,10 @@ function EdgeDetail({ edge, familyId }: { edge: GraphEdge | null; familyId: stri
         <PlayerStintStats familyId={familyId} edge={edge} />
       )}
       <p className="text-xs text-muted-foreground">
-        {edge.startSeason} W{edge.startWeek} – {endLabel}
+        {startLabel} – {endLabel}
       </p>
       {edge.assetKind === "player" && edge.playerId && (
-        <p className="text-[11px] tip-shimmer pt-1 border-t border-border/40">
+        <p data-cmd-click-tip className="text-[11px] tip-shimmer pt-1 border-t border-border/40">
           Tip: <kbd className="font-mono">⌘</kbd>-click another stint to compare.
         </p>
       )}
@@ -422,8 +423,8 @@ function PlayerStintStats({
   const stats = state.data;
   return (
     <div>
-      <p className="text-xs text-muted-foreground mb-1.5">Stint stats</p>
-      <div className="grid grid-cols-2 gap-2">
+      <SubLabel className="mb-1.5">Stint stats</SubLabel>
+      <div className="grid grid-cols-2 gap-2 max-lg:gap-1">
         <StatTile
           label="PPG"
           value={fmtNumber(stats.ppg)}
@@ -612,7 +613,7 @@ function EdgeCompare({
           ))}
         </div>
       </div>
-      <p className="text-[11px] tip-shimmer">
+      <p data-cmd-click-tip className="text-[11px] tip-shimmer">
         Tip: <kbd className="font-mono">⌘</kbd>-click an edge to add or remove it from this comparison.
       </p>
     </div>
@@ -724,6 +725,22 @@ function CompareCell({
   );
 }
 
+function SubLabel({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className?: string;
+}) {
+  return (
+    <p
+      className={`text-xs text-muted-foreground max-lg:hidden${className ? ` ${className}` : ""}`}
+    >
+      {children}
+    </p>
+  );
+}
+
 function StatTile({
   label,
   value,
@@ -734,14 +751,14 @@ function StatTile({
   hint: string;
 }) {
   return (
-    <div className="rounded-md border border-border/60 bg-background px-2.5 py-1.5">
-      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+    <div className="rounded-md border border-border/60 bg-background px-2.5 py-1.5 max-lg:px-2 max-lg:py-1">
+      <p className="text-[10px] uppercase tracking-wide text-muted-foreground max-lg:text-[9px]">
         {label}
       </p>
-      <p className="font-mono text-base font-semibold text-foreground leading-tight">
+      <p className="font-mono text-base font-semibold text-foreground leading-tight max-lg:text-sm">
         {value}
       </p>
-      <p className="font-mono text-[10px] text-muted-foreground">{hint}</p>
+      <p className="font-mono text-[10px] text-muted-foreground max-lg:text-[9px]">{hint}</p>
     </div>
   );
 }
