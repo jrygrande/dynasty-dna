@@ -526,7 +526,7 @@ export default function GraphPage() {
               transactions={response.transactions}
               familyId={familyId}
               onSelectionChange={handleSelectionChange}
-              variant={isNarrow ? "sheet" : "drawer"}
+              variant={isPortraitMobile ? "sheet" : "drawer"}
             />
           )}
         </div>

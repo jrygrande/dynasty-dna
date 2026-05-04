@@ -285,7 +285,7 @@ function EdgeDetail({ edge, familyId }: { edge: GraphEdge | null; familyId: stri
     : `${edge.endSeason ?? ""}${edge.endWeek ? ` · W${edge.endWeek}` : ""}`;
 
   return (
-    <div className="space-y-3 border rounded-lg p-3">
+    <div className="space-y-3 border rounded-lg p-3 max-lg:space-y-2 max-lg:p-2">
       <p className="font-mono text-[10px] uppercase tracking-wide text-muted-foreground">
         {edge.isOpen ? "Active stint" : "Stint"}
       </p>
@@ -422,8 +422,8 @@ function PlayerStintStats({
   const stats = state.data;
   return (
     <div>
-      <p className="text-xs text-muted-foreground mb-1.5">Stint stats</p>
-      <div className="grid grid-cols-2 gap-2">
+      <p className="text-xs text-muted-foreground mb-1.5 max-lg:mb-1">Stint stats</p>
+      <div className="grid grid-cols-2 gap-2 max-lg:gap-1">
         <StatTile
           label="PPG"
           value={fmtNumber(stats.ppg)}
@@ -734,14 +734,14 @@ function StatTile({
   hint: string;
 }) {
   return (
-    <div className="rounded-md border border-border/60 bg-background px-2.5 py-1.5">
-      <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+    <div className="rounded-md border border-border/60 bg-background px-2.5 py-1.5 max-lg:px-2 max-lg:py-1">
+      <p className="text-[10px] uppercase tracking-wide text-muted-foreground max-lg:text-[9px]">
         {label}
       </p>
-      <p className="font-mono text-base font-semibold text-foreground leading-tight">
+      <p className="font-mono text-base font-semibold text-foreground leading-tight max-lg:text-sm">
         {value}
       </p>
-      <p className="font-mono text-[10px] text-muted-foreground">{hint}</p>
+      <p className="font-mono text-[10px] text-muted-foreground max-lg:text-[9px]">{hint}</p>
     </div>
   );
 }
