@@ -386,11 +386,26 @@ export default function GraphPage() {
     selection?.type === "node" ? selection.nodeId : null;
 
   // Allowed per design: graph headers may use Source Serif 4 (relaxes marketing-only rule).
+  // On mobile, Reset rides the title row so the collapsed subheader stays one
+  // row tall (title + action). On desktop, Reset moves into the right slot.
   const subheaderTitle = (
-    <h1 className="font-serif text-lg sm:text-xl font-medium text-sage-800 inline-flex items-center gap-2">
-      <Dna className="h-5 w-5 text-primary" aria-hidden="true" />
-      Lineage Tracer
-    </h1>
+    <div className="flex items-center gap-2">
+      <h1 className="font-serif text-lg sm:text-xl font-medium text-sage-800 inline-flex items-center gap-2 flex-1 min-w-0">
+        <Dna className="h-5 w-5 text-primary" aria-hidden="true" />
+        Lineage Tracer
+      </h1>
+      {isNarrow && hasSeed && (
+        <Button
+          type="button"
+          onClick={handleReset}
+          variant="ghost"
+          size="sm"
+          className="shrink-0"
+        >
+          Reset
+        </Button>
+      )}
+    </div>
   );
 
   // On mobile, hide the stats once the user starts scrolling so the sticky
@@ -411,7 +426,7 @@ export default function GraphPage() {
           Reset positions
         </Button>
       )}
-      {hasSeed && (
+      {!isNarrow && hasSeed && (
         <Button type="button" onClick={handleReset} variant="ghost" size="sm">
           Reset
         </Button>
