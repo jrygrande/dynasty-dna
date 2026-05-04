@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { Fragment, useEffect, useMemo } from "react";
 import { ArrowDown } from "lucide-react";
 
 import type {
@@ -20,6 +20,36 @@ import {
   type TransactionNodeAsset,
 } from "./TransactionCardChrome";
 import { buildTransactionHeader, isHeaderExpanded } from "./transactionHeader";
+
+// Tailwind needs literal class strings to ship the underlying CSS, so we
+// pre-enumerate every chart-N class the rail might use rather than building
+// them via template literals.
+const RAIL_LINE_CLASSES = [
+  "bg-chart-1",
+  "bg-chart-2",
+  "bg-chart-3",
+  "bg-chart-4",
+  "bg-chart-5",
+  "bg-chart-6",
+] as const;
+const RAIL_LINE_PASSTHROUGH_CLASSES = [
+  "bg-chart-1/20",
+  "bg-chart-2/20",
+  "bg-chart-3/20",
+  "bg-chart-4/20",
+  "bg-chart-5/20",
+  "bg-chart-6/20",
+] as const;
+const THREAD_DOT_CLASSES = [
+  "bg-chart-1",
+  "bg-chart-2",
+  "bg-chart-3",
+  "bg-chart-4",
+  "bg-chart-5",
+  "bg-chart-6",
+] as const;
+
+type ThreadColorMap = Map<string, number>; // assetKey → palette index 0..5
 
 interface MobileTimelineProps {
   familyId: string;
@@ -191,23 +221,101 @@ function Timeline({
     return m;
   }, [expanded, edges]);
 
+  // Stable thread ordering by first appearance across the chronological list.
+  // The corresponding palette index (0..5) is assigned in this order so a
+  // given thread keeps the same color as the user expands more of the graph.
+  const threadKeys = useMemo<string[]>(() => {
+    const seen: string[] = [];
+    const seenSet = new Set<string>();
+    for (const node of nodes) {
+      const keys = chainAssetsByNode.get(node.id);
+      if (!keys) continue;
+      for (const k of keys) {
+        if (seenSet.has(k)) continue;
+        seenSet.add(k);
+        seen.push(k);
+      }
+    }
+    return seen;
+  }, [nodes, chainAssetsByNode]);
+
+  const threadColorMap = useMemo<ThreadColorMap>(() => {
+    const m = new Map<string, number>();
+    threadKeys.forEach((k, i) => m.set(k, i % 6));
+    return m;
+  }, [threadKeys]);
+
+  // Single-thread (or no-thread) graphs keep the existing layout — no rail.
+  const showRail = threadKeys.length >= 2;
+
+  if (!showRail) {
+    return (
+      <div className="flex flex-col items-stretch">
+        {nodes.map((node, idx) => {
+          const prev = idx > 0 ? nodes[idx - 1] : null;
+          return (
+            <div key={node.id}>
+              {prev && <Connector from={prev} to={node} edges={edges} threadColorMap={threadColorMap} showThreadColor={false} />}
+              <div className="flex justify-center">
+                <MobileCard
+                  node={node}
+                  chainAssetKeys={chainAssetsByNode.get(node.id) ?? new Set()}
+                  expandedAssets={nodeExpandedAssets.get(node.id) ?? new Set()}
+                  fullyExpanded={fullyExpanded}
+                  isSelected={selectedNodeId === node.id}
+                  onAssetClick={onAssetClick}
+                  onHeaderToggle={onHeaderToggle}
+                  onSelect={onSelect}
+                />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    );
+  }
+
+  // Rail width: 4px per thread + a small gap, capped reasonably. Each thread
+  // gets a 2px hairline with 2px breathing room.
+  const railWidth = `${Math.max(threadKeys.length * 6, 12)}px`;
+
   return (
-    <div className="flex flex-col items-stretch">
+    <div
+      className="grid gap-x-2"
+      style={{ gridTemplateColumns: `${railWidth} 1fr` }}
+    >
       {nodes.map((node, idx) => {
         const prev = idx > 0 ? nodes[idx - 1] : null;
+        const activeThreads = chainAssetsByNode.get(node.id) ?? new Set();
         return (
-          <div key={node.id}>
+          <Fragment key={node.id}>
             {prev && (
-              <Connector
-                from={prev}
-                to={node}
-                edges={edges}
-              />
+              <>
+                <RailSegment
+                  threadKeys={threadKeys}
+                  activeThreads={chainAssetsByNode.get(prev.id) ?? new Set()}
+                  threadColorMap={threadColorMap}
+                  variant="connector"
+                />
+                <Connector
+                  from={prev}
+                  to={node}
+                  edges={edges}
+                  threadColorMap={threadColorMap}
+                  showThreadColor={true}
+                />
+              </>
             )}
-            <div className="flex justify-center">
+            <RailSegment
+              threadKeys={threadKeys}
+              activeThreads={activeThreads}
+              threadColorMap={threadColorMap}
+              variant="card"
+            />
+            <div className="min-w-0">
               <MobileCard
                 node={node}
-                chainAssetKeys={chainAssetsByNode.get(node.id) ?? new Set()}
+                chainAssetKeys={activeThreads}
                 expandedAssets={nodeExpandedAssets.get(node.id) ?? new Set()}
                 fullyExpanded={fullyExpanded}
                 isSelected={selectedNodeId === node.id}
@@ -216,8 +324,39 @@ function Timeline({
                 onSelect={onSelect}
               />
             </div>
-          </div>
+          </Fragment>
         );
+      })}
+    </div>
+  );
+}
+
+function RailSegment({
+  threadKeys,
+  activeThreads,
+  threadColorMap,
+  variant,
+}: {
+  threadKeys: string[];
+  activeThreads: Set<string>;
+  threadColorMap: ThreadColorMap;
+  variant: "card" | "connector";
+}) {
+  // Each thread is a vertical hairline. Active = full-color saturation; passthrough = faded.
+  return (
+    <div
+      className={
+        variant === "card"
+          ? "flex items-stretch justify-around py-1"
+          : "flex items-stretch justify-around"
+      }
+      aria-hidden="true"
+    >
+      {threadKeys.map((key) => {
+        const color = threadColorMap.get(key) ?? 0;
+        const active = activeThreads.has(key);
+        const cls = active ? RAIL_LINE_CLASSES[color] : RAIL_LINE_PASSTHROUGH_CLASSES[color];
+        return <div key={key} className={`w-0.5 ${cls}`} />;
       })}
     </div>
   );
@@ -307,10 +446,14 @@ function Connector({
   from,
   to,
   edges,
+  threadColorMap,
+  showThreadColor,
 }: {
   from: TransactionNode;
   to: TransactionNode;
   edges: GraphEdge[];
+  threadColorMap: ThreadColorMap;
+  showThreadColor: boolean;
 }) {
   const bracketing = edges.filter(
     (e) =>
@@ -323,17 +466,27 @@ function Connector({
       <div className="h-3 w-px bg-border" aria-hidden="true" />
       {bracketing.length > 0 ? (
         <div className="flex flex-col items-center gap-0.5 px-2 py-1 text-[10px] text-muted-foreground">
-          {bracketing.map((edge) => (
-            <div key={edge.id} className="flex items-center gap-1">
-              <span className="font-mono">{edgeAssetLabel(edge)}</span>
-              <span aria-hidden>·</span>
-              <ManagerName
-                userId={edge.managerUserId}
-                displayName={edge.managerName}
-                variant="display-only"
-              />
-            </div>
-          ))}
+          {bracketing.map((edge) => {
+            const key = edgeAssetKey(edge);
+            const colorIdx = key ? threadColorMap.get(key) : undefined;
+            return (
+              <div key={edge.id} className="flex items-center gap-1">
+                {showThreadColor && colorIdx !== undefined && (
+                  <span
+                    className={`h-1.5 w-1.5 rounded-full ${THREAD_DOT_CLASSES[colorIdx]}`}
+                    aria-hidden="true"
+                  />
+                )}
+                <span className="font-mono">{edgeAssetLabel(edge)}</span>
+                <span aria-hidden>·</span>
+                <ManagerName
+                  userId={edge.managerUserId}
+                  displayName={edge.managerName}
+                  variant="display-only"
+                />
+              </div>
+            );
+          })}
         </div>
       ) : (
         <div className="px-2 py-1 text-[10px] italic text-muted-foreground inline-flex items-center gap-1">
