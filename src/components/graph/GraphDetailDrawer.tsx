@@ -126,11 +126,13 @@ export function GraphDetailDrawer({
       aria-label="Graph detail"
       className={containerClass}
     >
-      <div className="sticky top-0 flex items-center justify-between px-4 py-3 border-b border-border/60 bg-card">
+      <div className="sticky top-0 flex items-center justify-between px-4 py-3 border-b border-border/60 bg-card max-lg:px-3 max-lg:py-2 max-lg:border-b-0">
         {/* Allowed per design: graph headers may use Source Serif 4 (relaxes marketing-only rule). */}
-        <h2 className="font-serif text-base text-sage-800">
+        {/* Title hidden on narrow — saves vertical real estate; X is enough. */}
+        <h2 className="font-serif text-base text-sage-800 max-lg:hidden">
           {isCompare ? `Comparing ${compareEdgeCount} stints` : "Details"}
         </h2>
+        <span className="hidden max-lg:block" aria-hidden="true" />
         <button
           ref={closeBtnRef}
           type="button"
@@ -142,7 +144,7 @@ export function GraphDetailDrawer({
         </button>
       </div>
 
-      <div className="p-4 space-y-4">
+      <div className="p-4 space-y-4 max-lg:p-3 max-lg:pt-0 max-lg:space-y-2">
         {selection.type === "node" ? (
           <NodeDetail
             node={nodes.find((n) => n.id === selection.nodeId) ?? null}
@@ -291,7 +293,7 @@ function EdgeDetail({ edge, familyId }: { edge: GraphEdge | null; familyId: stri
       </p>
       {edge.assetKind === "player" ? (
         <div>
-          <p className="text-xs text-muted-foreground">Player</p>
+          <p className="text-xs text-muted-foreground max-lg:hidden">Player</p>
           <div className="flex items-center gap-2 min-w-0">
             <p className="text-sm font-semibold flex-1 min-w-0 truncate">
               {edge.playerPosition ? `${edge.playerPosition} · ` : ""}
@@ -311,12 +313,12 @@ function EdgeDetail({ edge, familyId }: { edge: GraphEdge | null; familyId: stri
         </div>
       ) : (
         <div>
-          <p className="text-xs text-muted-foreground">Pick</p>
+          <p className="text-xs text-muted-foreground max-lg:hidden">Pick</p>
           <p className="text-sm font-semibold">{edge.pickLabel}</p>
         </div>
       )}
       <div>
-        <p className="text-xs text-muted-foreground">Manager</p>
+        <p className="text-xs text-muted-foreground max-lg:hidden">Manager</p>
         <p className="text-sm">
           <ManagerName
             userId={edge.managerUserId}
@@ -422,7 +424,7 @@ function PlayerStintStats({
   const stats = state.data;
   return (
     <div>
-      <p className="text-xs text-muted-foreground mb-1.5 max-lg:mb-1">Stint stats</p>
+      <p className="text-xs text-muted-foreground mb-1.5 max-lg:hidden">Stint stats</p>
       <div className="grid grid-cols-2 gap-2 max-lg:gap-1">
         <StatTile
           label="PPG"
