@@ -9,7 +9,6 @@ import {
   getAllTimeStandings,
   getChampionRosterFromBracket,
 } from "@/services/familyStandings";
-import { refreshLeagueUsersIfStale } from "@/services/userSync";
 import type { SleeperBracketMatchup } from "@/lib/sleeper";
 
 export async function GET(
@@ -35,9 +34,6 @@ export async function GET(
     }
 
     const league = leagues[0];
-
-    await refreshLeagueUsersIfStale(league.id);
-
     const [rosters, users] = await Promise.all([
       db
         .select()
@@ -93,8 +89,6 @@ export async function GET(
   if (seasons.length === 0) {
     return NextResponse.json({ error: "League not found" }, { status: 404 });
   }
-
-  await refreshLeagueUsersIfStale(seasons[0].leagueId);
 
   const demoSwap = await getDemoSwapForRequest(req, resolvedFamilyId);
 

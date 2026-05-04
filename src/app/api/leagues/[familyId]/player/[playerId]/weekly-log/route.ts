@@ -4,7 +4,6 @@ import { eq, and, inArray, sql } from "drizzle-orm";
 import { resolveFamily } from "@/lib/familyResolution";
 import { getDemoSwapForRequest } from "@/lib/demoServer";
 import { lookupSwap } from "@/lib/demoAnonymize";
-import { refreshFamilyAvatarsIfStale } from "@/services/userSync";
 
 /**
  * GET /api/leagues/[familyId]/player/[playerId]/weekly-log
@@ -50,8 +49,6 @@ export async function GET(
   }
 
   const leagueSeasonMap = new Map(members.map((m) => [m.leagueId, m.season]));
-
-  await refreshFamilyAvatarsIfStale(members);
 
   // --- Load player info ---
   const playerRows = await db
