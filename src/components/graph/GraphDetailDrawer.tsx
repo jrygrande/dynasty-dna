@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { ArrowRight, X } from "lucide-react";
+import { IdCard, X } from "lucide-react";
 import type { GraphEdge, GraphNode, GraphSelection } from "@/lib/assetGraph";
 import type { EnrichedTransaction } from "@/lib/transactionEnrichment";
 import { TransactionCard, type TransactionData } from "@/components/TransactionCard";
@@ -244,19 +244,22 @@ function NodeDetail({
       {firstAsset && firstAsset.kind === "player" && (
         <div>
           <p className="text-xs text-muted-foreground">Player</p>
-          <p className="text-sm">
-            {firstAsset.playerPosition ? `${firstAsset.playerPosition} · ` : ""}
-            {firstAsset.playerName}
-          </p>
-          {firstAsset.playerId && (
-            <Link
-              href={`/league/${familyId}/player/${encodeURIComponent(firstAsset.playerId)}`}
-              className="inline-flex items-center gap-1 mt-1 text-xs text-primary hover:underline"
-            >
-              Open player
-              <ArrowRight className="h-3 w-3" aria-hidden="true" />
-            </Link>
-          )}
+          <div className="flex items-center gap-2 min-w-0">
+            <p className="text-sm flex-1 min-w-0 truncate">
+              {firstAsset.playerPosition ? `${firstAsset.playerPosition} · ` : ""}
+              {firstAsset.playerName}
+            </p>
+            {firstAsset.playerId && (
+              <Link
+                href={`/league/${familyId}/player/${encodeURIComponent(firstAsset.playerId)}`}
+                className="inline-flex items-center justify-center h-8 w-8 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors shrink-0"
+                aria-label={`View ${firstAsset.playerName} player card`}
+                title="Player card"
+              >
+                <IdCard className="h-4 w-4" />
+              </Link>
+            )}
+          </div>
         </div>
       )}
       {firstAsset && firstAsset.kind === "pick" && (
@@ -289,19 +292,22 @@ function EdgeDetail({ edge, familyId }: { edge: GraphEdge | null; familyId: stri
       {edge.assetKind === "player" ? (
         <div>
           <p className="text-xs text-muted-foreground">Player</p>
-          <p className="text-sm font-semibold">
-            {edge.playerPosition ? `${edge.playerPosition} · ` : ""}
-            {edge.playerName}
-          </p>
-          {edge.playerId && (
-            <Link
-              href={`/league/${familyId}/player/${encodeURIComponent(edge.playerId)}`}
-              className="inline-flex items-center gap-1 mt-1 text-xs text-primary hover:underline"
-            >
-              Open player
-              <ArrowRight className="h-3 w-3" aria-hidden="true" />
-            </Link>
-          )}
+          <div className="flex items-center gap-2 min-w-0">
+            <p className="text-sm font-semibold flex-1 min-w-0 truncate">
+              {edge.playerPosition ? `${edge.playerPosition} · ` : ""}
+              {edge.playerName}
+            </p>
+            {edge.playerId && (
+              <Link
+                href={`/league/${familyId}/player/${encodeURIComponent(edge.playerId)}`}
+                className="inline-flex items-center justify-center h-8 w-8 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors shrink-0"
+                aria-label={`View ${edge.playerName} player card`}
+                title="Player card"
+              >
+                <IdCard className="h-4 w-4" />
+              </Link>
+            )}
+          </div>
         </div>
       ) : (
         <div>
