@@ -22,6 +22,7 @@ import type { EnrichedTransaction } from "@/lib/transactionEnrichment";
 import { resolveFamily } from "@/lib/familyResolution";
 import { getDemoSwapForRequest } from "@/lib/demoServer";
 import { lookupSwap } from "@/lib/demoAnonymize";
+import { refreshFamilyAvatarsIfStale } from "@/services/userSync";
 import {
   buildGraphFromEvents,
   pickKey,
@@ -78,6 +79,8 @@ export async function GET(
     };
     return NextResponse.json(empty);
   }
+
+  await refreshFamilyAvatarsIfStale(members);
 
   const demoSwap = await getDemoSwapForRequest(req, resolvedFamilyId);
   const rosterOwnerMap = await buildRosterOwnerMap(allLeagueIds, demoSwap);

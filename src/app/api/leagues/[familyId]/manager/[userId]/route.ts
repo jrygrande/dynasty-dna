@@ -8,6 +8,7 @@ import { lookupSwap } from "@/lib/demoAnonymize";
 import { getAllTimeStandings } from "@/services/familyStandings";
 import { getActiveConfig } from "@/services/algorithmConfig";
 import { PILLAR_KEYS } from "@/lib/pillars";
+import { refreshLeagueUsersIfStale } from "@/services/userSync";
 
 interface ScoreWithRank {
   value: number;
@@ -78,6 +79,8 @@ export async function GET(
     );
     const mostRecentLeagueId = seasonsNewestFirst[0].leagueId;
     const mostRecentSeason = seasonsNewestFirst[0].season;
+
+    await refreshLeagueUsersIfStale(mostRecentLeagueId);
 
     const algoConfig = await getActiveConfig();
     const pillarWeights = algoConfig.pillarWeights as Record<string, number>;
