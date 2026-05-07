@@ -6,8 +6,10 @@ const STALENESS_MS = 12 * 60 * 60 * 1000; // 12 hours
 
 /**
  * Sync FantasyCalc dynasty trade values for a league's settings.
- * Upserts by (playerId, isSuperFlex, ppr) — each config gets one row per player.
- * Skips if data for this config is less than 12 hours old.
+ * Upserts by (playerId, isSuperFlex, ppr, numTeams, numQbs) — each format
+ * gets its own row per player. Skips if data for this config is less than
+ * 12 hours old.
+ *
  * Returns the fetchedAt timestamp, or null if no data.
  */
 export async function syncFantasyCalcValues(
@@ -43,7 +45,7 @@ export async function syncFantasyCalcValues(
 
   const numTeams = league.totalRosters || 12;
 
-  // Staleness check per config key (isSuperFlex + ppr)
+  // Staleness check per full config key (isSuperFlex, ppr, numTeams, numQbs)
   const [latestRow] = await db
     .select({
       latest: sql<string>`max(${schema.fantasyCalcValues.fetchedAt})`,
@@ -53,6 +55,8 @@ export async function syncFantasyCalcValues(
       and(
         eq(schema.fantasyCalcValues.isSuperFlex, isSuperFlex),
         eq(schema.fantasyCalcValues.ppr, ppr),
+        eq(schema.fantasyCalcValues.numTeams, numTeams),
+        eq(schema.fantasyCalcValues.numQbs, numQbs),
       ),
     );
 
@@ -93,6 +97,8 @@ export async function syncFantasyCalcValues(
           playerId: v.player.sleeperId!,
           isSuperFlex,
           ppr,
+          numTeams,
+          numQbs,
           playerName: v.player.name,
           value: v.value,
           rank: v.overallRank,
@@ -107,6 +113,8 @@ export async function syncFantasyCalcValues(
           schema.fantasyCalcValues.playerId,
           schema.fantasyCalcValues.isSuperFlex,
           schema.fantasyCalcValues.ppr,
+          schema.fantasyCalcValues.numTeams,
+          schema.fantasyCalcValues.numQbs,
         ],
         set: {
           playerName: sql`excluded.player_name`,
@@ -130,6 +138,8 @@ export async function syncFantasyCalcValues(
           playerId: `PICK_${v.player.name.replace(/\s+/g, "_")}`,
           isSuperFlex,
           ppr,
+          numTeams,
+          numQbs,
           playerName: v.player.name,
           value: v.value,
           rank: v.overallRank,
@@ -144,6 +154,8 @@ export async function syncFantasyCalcValues(
           schema.fantasyCalcValues.playerId,
           schema.fantasyCalcValues.isSuperFlex,
           schema.fantasyCalcValues.ppr,
+          schema.fantasyCalcValues.numTeams,
+          schema.fantasyCalcValues.numQbs,
         ],
         set: {
           playerName: sql`excluded.player_name`,
@@ -158,7 +170,54 @@ export async function syncFantasyCalcValues(
   }
 
   console.log(
-    `[fantasyCalcSync] Synced ${withSleeperId.length} players + ${pickEntries.length} picks (ppr=${ppr}, sf=${isSuperFlex}, teams=${numTeams})`,
+    `[fantasyCalcSync] Synced ${withSleeperId.length} players + ${pickEntries.length} picks (ppr=${ppr}, sf=${isSuperFlex}, teams=${numTeams}, qbs=${numQbs})`,
   );
   return fetchedAt;
+}
+
+/**
+ * Returns the distinct (isSuperFlex, ppr, numTeams, numQbs) combos in use
+ * across the `leagues` table. Cron jobs use this to refresh every active
+ * format with one API call per combo (rather than one per league).
+ */
+export async function getDistinctFantasyCalcConfigs(): Promise<
+  Array<{
+    isSuperFlex: boolean;
+    ppr: number;
+    numTeams: number;
+    numQbs: number;
+  }>
+> {
+  const db = getDb();
+  const rows = await db
+    .select({
+      scoringSettings: schema.leagues.scoringSettings,
+      rosterPositions: schema.leagues.rosterPositions,
+      totalRosters: schema.leagues.totalRosters,
+    })
+    .from(schema.leagues);
+
+  const seen = new Set<string>();
+  const combos: Array<{
+    isSuperFlex: boolean;
+    ppr: number;
+    numTeams: number;
+    numQbs: number;
+  }> = [];
+
+  for (const row of rows) {
+    const scoring = row.scoringSettings as Record<string, number> | null;
+    const ppr = scoring?.rec ?? 0.5;
+    const rosterPositions = (row.rosterPositions as string[]) || [];
+    const isSuperFlex = rosterPositions.includes("SUPER_FLEX");
+    const numQbs = isSuperFlex ? 2 : 1;
+    const numTeams = row.totalRosters || 12;
+
+    const key = `${isSuperFlex}|${ppr}|${numTeams}|${numQbs}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    combos.push({ isSuperFlex, ppr, numTeams, numQbs });
+  }
+
+  return combos;
 }

@@ -8,6 +8,50 @@ import {
 const NFLVERSE_GAMES_URL =
   "https://github.com/nflverse/nfldata/raw/master/data/games.csv";
 
+// In-process memoization of the nflverse games CSV. Multi-family cron
+// runs hit syncSchedule once per family, so without this, the same ~600KB
+// CSV gets re-downloaded N times back-to-back. Keyed by ISO date so the
+// cache naturally invalidates each calendar day.
+//
+// Module-level Map (no Redis dep). Stores the in-flight promise so
+// concurrent callers share a single fetch.
+const csvCache = new Map<string, Promise<string>>();
+
+function todayKey(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+async function fetchGamesCsv(): Promise<string> {
+  const key = todayKey();
+  const cached = csvCache.get(key);
+  if (cached) return cached;
+
+  const promise = (async () => {
+    const response = await fetch(NFLVERSE_GAMES_URL);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch schedule data: ${response.status}`);
+    }
+    return response.text();
+  })();
+
+  csvCache.set(key, promise);
+
+  // On error, evict so a retry can re-fetch instead of replaying the failure
+  promise.catch(() => {
+    if (csvCache.get(key) === promise) csvCache.delete(key);
+  });
+
+  return promise;
+}
+
+/**
+ * Test-only helper. Resets the in-process CSV memoization so each test
+ * starts from a known state.
+ */
+export function __resetScheduleCsvCache(): void {
+  csvCache.clear();
+}
+
 function parseCSVLine(line: string): string[] {
   const result: string[] = [];
   let current = "";
@@ -137,13 +181,9 @@ export async function syncSchedule(options?: {
     options?.seasons ??
     Array.from({ length: currentYear - 1999 + 1 }, (_, i) => 1999 + i);
 
-  // Fetch the full CSV once (contains all seasons)
-  const response = await fetch(NFLVERSE_GAMES_URL);
-  if (!response.ok) {
-    throw new Error(`Failed to fetch schedule data: ${response.status}`);
-  }
-
-  const csv = await response.text();
+  // Fetch the full CSV once per day (contains all seasons). Memoized so
+  // multi-family cron runs share a single download.
+  const csv = await fetchGamesCsv();
   const lines = csv.split("\n");
   if (lines.length < 2) return { total: 0, seasonResults: {} };
 

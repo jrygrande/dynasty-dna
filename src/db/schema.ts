@@ -504,6 +504,8 @@ export const fantasyCalcValues = pgTable(
     playerId: text("player_id").notNull(), // Mapped to Sleeper player_id
     isSuperFlex: boolean("is_super_flex").notNull().default(false),
     ppr: real("ppr").notNull().default(0.5),
+    numTeams: integer("num_teams").notNull().default(12),
+    numQbs: integer("num_qbs").notNull().default(1),
     playerName: text("player_name"),
     value: real("value").notNull(),
     rank: integer("rank"),
@@ -515,7 +517,15 @@ export const fantasyCalcValues = pgTable(
       .notNull(),
   },
   (fcv) => ({
-    pk: primaryKey({ columns: [fcv.playerId, fcv.isSuperFlex, fcv.ppr] }),
+    pk: primaryKey({
+      columns: [
+        fcv.playerId,
+        fcv.isSuperFlex,
+        fcv.ppr,
+        fcv.numTeams,
+        fcv.numQbs,
+      ],
+    }),
   })
 );
 
