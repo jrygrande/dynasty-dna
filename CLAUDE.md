@@ -30,6 +30,36 @@ vercel env pull      # Pull env vars to .env.local
 - Environment: `DATABASE_URL` set in Vercel
 - Connection string format: `postgresql://user:pass@host/db?sslmode=require&channel_binding=require`
 
+## Local development with dev DB
+
+`.env.local` is pulled from Vercel and carries the **prod** `DATABASE_URL`. Naive local commands like `npm run db:migrate` or scripts using `getDb()` would otherwise mutate prod. To work safely, point local code at the Neon `dev` branch (project: `dynasty-dna`, branch: `dev` — copy-on-write off `production`).
+
+### One-time setup
+1. `cp .env.development.example .env.development` (gitignored).
+2. Fill in `DATABASE_URL` and `DATABASE_URL_DEV` with the dev branch connection string from the Neon console.
+3. Apply schema to the dev branch: `npm run db:dev:push`.
+4. (Optional) Seed a representative league family from prod:
+   ```bash
+   DATABASE_URL_PROD_READ='postgresql://...prod...' npm run db:dev:seed -- --from-prod
+   ```
+   Idempotent. Defaults to the demo-eligible family. Override with `--root-league-id=<id>`.
+
+### URL selection (see `src/db/index.ts` → `resolveDatabaseUrl`)
+- **On Vercel** (any `VERCEL_ENV`) → always `DATABASE_URL`. Prod and preview are never redirected.
+- **Off Vercel** → `DATABASE_URL_DEV` if set, else fall back to `DATABASE_URL`.
+
+This means: if you set `DATABASE_URL_DEV` in `.env.local` (or `.env.development.local`), `npm run dev` and any `tsx` script transparently hit the dev branch. Unset it and you're back to prod (matches today's behaviour — no breakage).
+
+### Dev-DB scripts
+Each loads `.env.development` instead of `.env.local`, so prod is never touched even if `DATABASE_URL_DEV` is missing:
+```bash
+npm run db:dev:push       # drizzle-kit push   against dev
+npm run db:dev:migrate    # drizzle-kit migrate against dev
+npm run db:dev:studio     # Drizzle Studio     against dev
+npm run db:dev:reset      # DROP + CREATE schema public against dev
+npm run db:dev:seed       # copy one league family from prod -> dev (opt-in)
+```
+
 ## Development Workflow
 ```bash
 # Local development
