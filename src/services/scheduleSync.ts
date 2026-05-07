@@ -1,5 +1,9 @@
 import { getDb, getSyncDb, schema } from "@/db";
 import { sql, eq } from "drizzle-orm";
+import {
+  setNflverseWatermark,
+  shouldSkipSeasonSync,
+} from "@/services/nflverseWatermark";
 
 const NFLVERSE_GAMES_URL =
   "https://github.com/nflverse/nfldata/raw/master/data/games.csv";
@@ -28,7 +32,7 @@ function parseCSVLine(line: string): string[] {
   return result;
 }
 
-async function isSeasonSynced(season: number): Promise<boolean> {
+async function hasScheduleRows(season: number): Promise<boolean> {
   const db = getDb();
   const result = await db
     .select({ count: sql<number>`count(*)` })
@@ -43,7 +47,11 @@ async function syncScheduleSeason(
   headers: string[],
   force = false
 ): Promise<number> {
-  if (!force && (await isSeasonSynced(season))) {
+  const skip = await shouldSkipSeasonSync(season, {
+    force,
+    hasRows: hasScheduleRows,
+  });
+  if (skip) {
     return 0;
   }
 
@@ -101,6 +109,12 @@ async function syncScheduleSeason(
       count += batch.length;
     }
   });
+
+  const maxWeek = rows.reduce(
+    (m, r) => ((r.week ?? 0) > m ? r.week ?? 0 : m),
+    0
+  );
+  await setNflverseWatermark("schedule", season, maxWeek);
 
   return count;
 }

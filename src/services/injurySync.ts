@@ -1,5 +1,9 @@
 import { getDb, getSyncDb, schema } from "@/db";
 import { sql, eq, and } from "drizzle-orm";
+import {
+  setNflverseWatermark,
+  shouldSkipSeasonSync,
+} from "@/services/nflverseWatermark";
 
 const NFLVERSE_INJURY_URL =
   "https://github.com/nflverse/nflverse-data/releases/download/injuries/injuries_";
@@ -80,8 +84,9 @@ function parseCSVLine(line: string): string[] {
 
 /**
  * Check if a season's injury data has already been synced.
+ * Used as the historical-season skip optimization.
  */
-async function isSeasonSynced(season: number): Promise<boolean> {
+async function hasInjuryRows(season: number): Promise<boolean> {
   const db = getDb();
   const result = await db
     .select({ count: sql<number>`count(*)` })
@@ -98,7 +103,11 @@ async function syncInjurySeason(
   season: number,
   force = false
 ): Promise<number> {
-  if (!force && (await isSeasonSynced(season))) {
+  const skip = await shouldSkipSeasonSync(season, {
+    force,
+    hasRows: hasInjuryRows,
+  });
+  if (skip) {
     return 0;
   }
 
@@ -160,6 +169,9 @@ async function syncInjurySeason(
       count += batch.length;
     }
   });
+
+  const maxWeek = allValues.reduce((m, r) => (r.week > m ? r.week : m), 0);
+  await setNflverseWatermark("injuries", season, maxWeek);
 
   return count;
 }
