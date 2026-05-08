@@ -4,12 +4,52 @@ import { drizzle } from "drizzle-orm/neon-http";
 import { drizzle as drizzleWs } from "drizzle-orm/neon-serverless";
 import * as schema from "./schema";
 
-function getDbUrl(): string {
-  const url = process.env.DATABASE_URL;
-  if (!url) {
-    throw new Error("DATABASE_URL environment variable is not set");
+/**
+ * Resolve the database URL for the current environment.
+ *
+ * Selection rules (first match wins):
+ *   1. On Vercel (any `VERCEL_ENV`) -> `DATABASE_URL`. Production paths are
+ *      never redirected. This keeps prod and preview deployments stable.
+ *   2. Off-Vercel (local scripts, `next dev`, jest) -> `DATABASE_URL_DEV` if
+ *      set; otherwise fall back to `DATABASE_URL`.
+ *
+ * Why a separate `DATABASE_URL_DEV`:
+ *   `.env.local` carries the prod URL (it's pulled from Vercel) so naive
+ *   local commands like `npm run db:migrate` would mutate prod. Setting
+ *   `DATABASE_URL_DEV` in `.env.development` to point at a Neon `dev` branch
+ *   gives local work an isolated copy-on-write database without touching the
+ *   prod-facing variable.
+ *
+ * Exported for unit tests.
+ */
+export function resolveDatabaseUrl(env: NodeJS.ProcessEnv = process.env): {
+  url: string;
+  source: "DATABASE_URL" | "DATABASE_URL_DEV";
+} {
+  const onVercel = Boolean(env.VERCEL_ENV);
+  const prodUrl = env.DATABASE_URL;
+  const devUrl = env.DATABASE_URL_DEV;
+
+  if (onVercel) {
+    if (!prodUrl) {
+      throw new Error("DATABASE_URL environment variable is not set");
+    }
+    return { url: prodUrl, source: "DATABASE_URL" };
   }
-  return url;
+
+  if (devUrl) {
+    return { url: devUrl, source: "DATABASE_URL_DEV" };
+  }
+  if (prodUrl) {
+    return { url: prodUrl, source: "DATABASE_URL" };
+  }
+  throw new Error(
+    "DATABASE_URL environment variable is not set (and no DATABASE_URL_DEV fallback configured)"
+  );
+}
+
+function getDbUrl(): string {
+  return resolveDatabaseUrl().url;
 }
 
 // Use globalThis to persist across Next.js hot reloads in dev
