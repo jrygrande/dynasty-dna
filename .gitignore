@@ -7,6 +7,9 @@ node_modules/
 # Env
 .env
 .env.*
+# Allow committed example files (no secrets)
+!.env.development.example
+!.env.example
 
 # Logs
 npm-debug.log*

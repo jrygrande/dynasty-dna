@@ -50,6 +50,41 @@ npm run db:push      # Push schema changes
 - `src/services/` - Business logic and data services
 - `src/db/` - Database configuration and schema
 - `src/lib/` - Shared utilities and configurations
+- `src/lib/observability/` - Sentry breadcrumbs and transaction wrappers (issue #152)
+
+## Observability (Sentry)
+
+Sentry is the durable error/perf observability layer for sync runs (issue #152). It is fully DSN-driven: every helper and config file no-ops when `NEXT_PUBLIC_SENTRY_DSN` and `SENTRY_DSN` are unset.
+
+### Env vars
+
+| Var | Where | Purpose |
+|---|---|---|
+| `NEXT_PUBLIC_SENTRY_DSN` | Vercel (production + preview), `.env.local` | Browser/client init |
+| `SENTRY_DSN` | Vercel (production + preview), `.env.local` | Server + edge runtime init |
+| `SENTRY_AUTH_TOKEN` | Vercel only (CI/build) | Source map upload at build time |
+| `NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE` / `SENTRY_TRACES_SAMPLE_RATE` | Optional | Per-runtime traces sampling (default `0.1`) |
+| `NEXT_PUBLIC_SENTRY_ENVIRONMENT` / `SENTRY_ENVIRONMENT` | Optional | Override the `environment` tag |
+
+### Local dev without Sentry
+
+Leave the DSN env vars unset. Sync breadcrumbs print to the dev console as `[sync] { source, trigger, scope, durationMs, apiCalls, outcome, error }`. `withSyncTransaction` becomes a passthrough. No Sentry network traffic is generated.
+
+### Setting up Sentry (one-time, maintainer)
+
+1. Create a Sentry project at https://sentry.io (Next.js platform).
+2. Copy the DSN from the project's "Client Keys (DSN)" page.
+3. In the Vercel dashboard for `dynasty-dna`, add the DSN to **production** and **preview** environments as both `NEXT_PUBLIC_SENTRY_DSN` and `SENTRY_DSN` (same value).
+4. Create a Sentry auth token (Settings -> Account -> API -> Auth Tokens with `project:releases` + `org:read`) and add it to Vercel as `SENTRY_AUTH_TOKEN` (production + preview only — not development).
+5. Optionally `vercel env pull` and copy `NEXT_PUBLIC_SENTRY_DSN` + `SENTRY_DSN` into your local `.env.local` to validate Sentry locally.
+6. The full Wave 2 work (breadcrumbs in every sync call, syncJobs audit fields, alerts) lands in follow-up PRs against issue #152.
+
+### Files
+- Per-runtime init: `sentry.client.config.ts`, `sentry.server.config.ts`, `sentry.edge.config.ts`
+- Next.js entrypoint: `instrumentation.ts`
+- Build wrapper: `next.config.mjs` (uses `withSentryConfig`)
+- Breadcrumb helper: `src/lib/observability/syncBreadcrumb.ts`
+- Transaction wrapper: `src/lib/observability/withSyncTransaction.ts`
 
 ## Common URLs
 - Health check: `/api/health`
