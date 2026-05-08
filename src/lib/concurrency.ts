@@ -2,6 +2,13 @@
 /**
  * Maps over an array with a concurrency limit.
  *
+ * Error semantics: first-error rejection. The first failing mapper rejects the
+ * returned promise, but in-flight sibling workers continue draining their
+ * current item — there is no AbortSignal threaded through. Workers that have
+ * not yet started a new item will exit early once the queue is exhausted, but
+ * they will NOT abandon work already in progress. Callers that need true
+ * cancellation should pass an AbortController through `mapper` themselves.
+ *
  * @param items Array of items to map over
  * @param mapper Async function to apply to each item
  * @param concurrency Maximum number of concurrent executions
@@ -18,11 +25,7 @@ export async function pMap<T, R>(
     const worker = async () => {
         while (index < items.length) {
             const i = index++;
-            try {
-                results[i] = await mapper(items[i], i);
-            } catch (err) {
-                throw err; // Fail fast
-            }
+            results[i] = await mapper(items[i], i);
         }
     };
 

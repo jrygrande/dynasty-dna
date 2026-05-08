@@ -281,4 +281,27 @@ describe("syncLeague per-week parallelization", () => {
     // All 18 weeks were still attempted (allSettled within the batch).
     expect(sleeperMock.getTransactions).toHaveBeenCalledTimes(18);
   });
+
+  it("does NOT advance the transactions watermark when any week fails", async () => {
+    // Pin the atomic-failure guarantee: if 1 of 18 weeks fails, the watermark
+    // must NOT be set — otherwise the next sync would skip past the missing
+    // week and we'd silently lose data forever.
+    sleeperMock.getTransactions.mockImplementation(
+      async (_: string, week: number) => {
+        if (week === 11) throw new Error("Sleeper 500 for week 11");
+        return [];
+      }
+    );
+
+    await expect(
+      syncLeague("L1", undefined, undefined, { skipGlobalSyncs: true })
+    ).rejects.toThrow(/transactions fetch failed/i);
+
+    // setWatermark inserts/upserts into the syncWatermarks table. If it ran,
+    // we'd see at least one insertCalls entry for that table.
+    const watermarkWrites = insertCalls.filter(
+      (c) => c.table === "syncWatermarks"
+    );
+    expect(watermarkWrites).toHaveLength(0);
+  });
 });

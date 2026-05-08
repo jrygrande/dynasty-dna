@@ -517,7 +517,15 @@ function getMaxWeek(status: string): number {
 }
 
 const COMPLETED_STALENESS_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
-const PARALLEL_CONCURRENCY = 3;
+// Cross-season concurrency. Kept at 1 because each season already runs
+// PER_WEEK_FETCH_CONCURRENCY (=5) concurrent Sleeper fetches internally, plus
+// the global Sleeper rate limiter (15 RPS). Stacking 3 seasons * 5 weeks =
+// up to 15 in-flight TCP sockets per Vercel function would risk exhausting
+// the small-Lambda connection budget and amplify head-of-line blocking on
+// any stalled fetch. The Sleeper rate limiter paces request *starts*, but
+// nothing else caps in-flight count — within-season parallelism is already
+// the meaningful win, so we serialize across seasons.
+const PARALLEL_CONCURRENCY = 1;
 
 /**
  * Sync the entire league family (all seasons).
