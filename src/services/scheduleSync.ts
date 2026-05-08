@@ -10,21 +10,29 @@ const NFLVERSE_GAMES_URL =
 
 // In-process memoization of the nflverse games CSV. Multi-family cron
 // runs hit syncSchedule once per family, so without this, the same ~600KB
-// CSV gets re-downloaded N times back-to-back. Keyed by ISO date so the
-// cache naturally invalidates each calendar day.
+// CSV gets re-downloaded N times back-to-back.
 //
-// Module-level Map (no Redis dep). Stores the in-flight promise so
-// concurrent callers share a single fetch.
-const csvCache = new Map<string, Promise<string>>();
+// Cached for 1 hour so a long-warm Vercel instance picks up mid-day
+// nflverse corrections within an hour rather than holding stale data
+// for up to 24h. Stores the in-flight promise so concurrent callers
+// share a single fetch.
+const CSV_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 
-function todayKey(): string {
-  return new Date().toISOString().slice(0, 10);
+interface CsvCacheEntry {
+  cachedAt: number;
+  promise: Promise<string>;
 }
 
+let csvCacheEntry: CsvCacheEntry | null = null;
+
+// Indirection so tests can inject a fake clock.
+let nowFn: () => number = () => Date.now();
+
 async function fetchGamesCsv(): Promise<string> {
-  const key = todayKey();
-  const cached = csvCache.get(key);
-  if (cached) return cached;
+  const now = nowFn();
+  if (csvCacheEntry && now - csvCacheEntry.cachedAt < CSV_CACHE_TTL_MS) {
+    return csvCacheEntry.promise;
+  }
 
   const promise = (async () => {
     const response = await fetch(NFLVERSE_GAMES_URL);
@@ -34,11 +42,12 @@ async function fetchGamesCsv(): Promise<string> {
     return response.text();
   })();
 
-  csvCache.set(key, promise);
+  const entry: CsvCacheEntry = { cachedAt: now, promise };
+  csvCacheEntry = entry;
 
   // On error, evict so a retry can re-fetch instead of replaying the failure
   promise.catch(() => {
-    if (csvCache.get(key) === promise) csvCache.delete(key);
+    if (csvCacheEntry === entry) csvCacheEntry = null;
   });
 
   return promise;
@@ -49,7 +58,15 @@ async function fetchGamesCsv(): Promise<string> {
  * starts from a known state.
  */
 export function __resetScheduleCsvCache(): void {
-  csvCache.clear();
+  csvCacheEntry = null;
+}
+
+/**
+ * Test-only helper. Injects a fake clock for TTL expiry assertions.
+ * Pass `null` to restore Date.now.
+ */
+export function __setScheduleCsvNow(fn: (() => number) | null): void {
+  nowFn = fn ?? (() => Date.now());
 }
 
 function parseCSVLine(line: string): string[] {

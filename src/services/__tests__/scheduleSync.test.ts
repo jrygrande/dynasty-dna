@@ -44,6 +44,7 @@ import { getDb, getSyncDb } from "@/db";
 import {
   syncSchedule,
   __resetScheduleCsvCache,
+  __setScheduleCsvNow,
 } from "../scheduleSync";
 
 const mockedGetDb = getDb as jest.MockedFunction<typeof getDb>;
@@ -95,6 +96,7 @@ describe("syncSchedule — CSV memoization", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     __resetScheduleCsvCache();
+    __setScheduleCsvNow(null);
 
     mockedGetDb.mockReturnValue(makeReadDb() as unknown as ReturnType<
       typeof getDb
@@ -116,6 +118,7 @@ describe("syncSchedule — CSV memoization", () => {
 
   afterEach(() => {
     fetchSpy.mockRestore();
+    __setScheduleCsvNow(null);
   });
 
   it("downloads the games CSV only once across multiple syncSchedule calls", async () => {
@@ -132,6 +135,26 @@ describe("syncSchedule — CSV memoization", () => {
 
     __resetScheduleCsvCache();
 
+    await syncSchedule({ seasons: [2024] });
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it("re-fetches after the 1-hour TTL expires", async () => {
+    // Inject a fake clock so we can fast-forward past the TTL without
+    // depending on real timers or Date.
+    let fakeNow = 1_700_000_000_000;
+    __setScheduleCsvNow(() => fakeNow);
+
+    await syncSchedule({ seasons: [2024] });
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+
+    // 30 minutes later — still within TTL, no new fetch.
+    fakeNow += 30 * 60 * 1000;
+    await syncSchedule({ seasons: [2024] });
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+
+    // 61 minutes from the original cache entry — TTL expired, re-fetch.
+    fakeNow += 31 * 60 * 1000 + 1;
     await syncSchedule({ seasons: [2024] });
     expect(fetchSpy).toHaveBeenCalledTimes(2);
   });

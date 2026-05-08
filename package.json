@@ -18,6 +18,7 @@
     "db:dev:seed": "dotenv -e .env.development -- tsx scripts/seed-dev-db.ts",
     "db:dev:reset": "dotenv -e .env.development -- tsx scripts/reset-db.ts",
     "notify-waitlist": "tsx scripts/notify-waitlist.ts",
+    "backfill:fantasycalc": "dotenv -e .env.local -- tsx scripts/backfill-fantasycalc-keys.ts",
     "test": "jest"
   },
   "dependencies": {

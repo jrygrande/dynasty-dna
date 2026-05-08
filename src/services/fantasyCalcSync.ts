@@ -4,46 +4,27 @@ import { getFantasyCalcValues } from "@/lib/fantasycalc";
 
 const STALENESS_MS = 12 * 60 * 60 * 1000; // 12 hours
 
+export interface FantasyCalcConfig {
+  isSuperFlex: boolean;
+  ppr: number;
+  numTeams: number;
+  numQbs: number;
+}
+
 /**
- * Sync FantasyCalc dynasty trade values for a league's settings.
- * Upserts by (playerId, isSuperFlex, ppr, numTeams, numQbs) — each format
- * gets its own row per player. Skips if data for this config is less than
- * 12 hours old.
+ * Sync FantasyCalc dynasty trade values for an explicit config combo.
+ * Used by the cron job and the one-shot post-migration backfill — neither
+ * has a leagueId in hand. Upserts by (playerId, isSuperFlex, ppr, numTeams,
+ * numQbs). Skips if data for this config is less than 12 hours old.
  *
  * Returns the fetchedAt timestamp, or null if no data.
  */
-export async function syncFantasyCalcValues(
-  leagueId: string,
+export async function syncFantasyCalcValuesForConfig(
+  config: FantasyCalcConfig,
   opts?: { force?: boolean },
 ): Promise<Date | null> {
+  const { isSuperFlex, ppr, numTeams, numQbs } = config;
   const db = getDb();
-
-  // Read league settings to determine scoring format
-  const [league] = await db
-    .select({
-      scoringSettings: schema.leagues.scoringSettings,
-      rosterPositions: schema.leagues.rosterPositions,
-      totalRosters: schema.leagues.totalRosters,
-    })
-    .from(schema.leagues)
-    .where(eq(schema.leagues.id, leagueId))
-    .limit(1);
-
-  if (!league) {
-    console.warn(`[fantasyCalcSync] League ${leagueId} not found in DB`);
-    return null;
-  }
-
-  // Extract PPR setting
-  const scoring = league.scoringSettings as Record<string, number> | null;
-  const ppr = scoring?.rec ?? 0.5;
-
-  // Detect superflex: check for SUPER_FLEX in roster positions
-  const rosterPositions = (league.rosterPositions as string[]) || [];
-  const isSuperFlex = rosterPositions.includes("SUPER_FLEX");
-  const numQbs = isSuperFlex ? 2 : 1;
-
-  const numTeams = league.totalRosters || 12;
 
   // Staleness check per full config key (isSuperFlex, ppr, numTeams, numQbs)
   const [latestRow] = await db
@@ -173,6 +154,53 @@ export async function syncFantasyCalcValues(
     `[fantasyCalcSync] Synced ${withSleeperId.length} players + ${pickEntries.length} picks (ppr=${ppr}, sf=${isSuperFlex}, teams=${numTeams}, qbs=${numQbs})`,
   );
   return fetchedAt;
+}
+
+/**
+ * Sync FantasyCalc dynasty trade values for a league's settings.
+ * Upserts by (playerId, isSuperFlex, ppr, numTeams, numQbs) — each format
+ * gets its own row per player. Skips if data for this config is less than
+ * 12 hours old.
+ *
+ * Returns the fetchedAt timestamp, or null if no data.
+ */
+export async function syncFantasyCalcValues(
+  leagueId: string,
+  opts?: { force?: boolean },
+): Promise<Date | null> {
+  const db = getDb();
+
+  // Read league settings to determine scoring format
+  const [league] = await db
+    .select({
+      scoringSettings: schema.leagues.scoringSettings,
+      rosterPositions: schema.leagues.rosterPositions,
+      totalRosters: schema.leagues.totalRosters,
+    })
+    .from(schema.leagues)
+    .where(eq(schema.leagues.id, leagueId))
+    .limit(1);
+
+  if (!league) {
+    console.warn(`[fantasyCalcSync] League ${leagueId} not found in DB`);
+    return null;
+  }
+
+  // Extract PPR setting
+  const scoring = league.scoringSettings as Record<string, number> | null;
+  const ppr = scoring?.rec ?? 0.5;
+
+  // Detect superflex: check for SUPER_FLEX in roster positions
+  const rosterPositions = (league.rosterPositions as string[]) || [];
+  const isSuperFlex = rosterPositions.includes("SUPER_FLEX");
+  const numQbs = isSuperFlex ? 2 : 1;
+
+  const numTeams = league.totalRosters || 12;
+
+  return syncFantasyCalcValuesForConfig(
+    { isSuperFlex, ppr, numTeams, numQbs },
+    opts,
+  );
 }
 
 /**
