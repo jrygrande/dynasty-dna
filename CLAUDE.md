@@ -60,6 +60,15 @@ npm run db:dev:reset      # DROP + CREATE schema public against dev
 npm run db:dev:seed       # copy one league family from prod -> dev (opt-in)
 ```
 
+### Reset-DB safety guard
+`npm run db:dev:reset` issues `DROP SCHEMA public CASCADE` and would silently nuke prod if `dotenv -e .env.development` failed to load (missing file, typo) and the script fell back to `.env.local`. To make that impossible, `scripts/reset-db.ts` resolves the URL via `resolveDatabaseUrl()` and refuses to run unless ANY of:
+
+- The resolved hostname contains `-dev.` or `dev-branch` (the convention for Neon dev-branch hosts).
+- The hostname appears in the comma-separated `NEON_DEV_HOST_ALLOWLIST` env var (use this if you renamed the dev branch).
+- The CLI flag `--i-know-this-is-prod` is passed. **Escape hatch only** — for the rare maintenance case where you really do mean to wipe prod (e.g., recreating the prod schema from migrations). Combine with `dotenv -e .env.production.local` or similar; never run it casually.
+
+On rejection the script prints the resolved host and the env-var path that produced it, then exits 1 before touching SQL. Tests live in `scripts/__tests__/reset-db-guard.test.ts`.
+
 ## Development Workflow
 ```bash
 # Local development
