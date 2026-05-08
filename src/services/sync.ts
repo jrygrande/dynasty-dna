@@ -13,6 +13,15 @@ import { gradeLeagueDrafts } from "@/services/draftGrading";
 import { gradeLeagueWaivers } from "@/services/waiverGrading";
 import { rollupManagerGrades } from "@/services/managerGrades";
 import { batchInsert, BATCH_SIZE } from "@/services/batchHelper";
+import { pMapSettled } from "@/lib/concurrency";
+
+/**
+ * Per-week fetch concurrency for transactions/matchups within a single season.
+ * Sits ABOVE the Sleeper rate limiter (src/lib/sleeper.ts) — the limiter still
+ * paces every individual request at <=15 RPS, so concurrency just bounds
+ * in-flight latency, never doubles up on tokens.
+ */
+const PER_WEEK_FETCH_CONCURRENCY = 5;
 
 interface SyncProgress {
   step: string;
@@ -245,14 +254,28 @@ export async function syncLeague(
   const maxWeek = getMaxWeek(league.status);
   const watermarks = await getWatermarks(leagueId);
 
-  // Sync transactions (incremental via watermark)
+  // Sync transactions (incremental via watermark, concurrent per-week fetches)
   onProgress?.({ step: "transactions", detail: "Fetching transactions" });
   const startTxWeek = (watermarks.get("transactions") ?? 0) + 1;
-  const allTxValues: Array<typeof schema.transactions.$inferInsert> = [];
+  const txWeeks: number[] = [];
+  for (let week = startTxWeek; week <= maxWeek; week++) txWeeks.push(week);
 
-  for (let week = startTxWeek; week <= maxWeek; week++) {
-    const txs = await Sleeper.getTransactions(leagueId, week);
-    for (const tx of txs) {
+  const txResults = await pMapSettled(
+    txWeeks,
+    (week) => Sleeper.getTransactions(leagueId, week),
+    PER_WEEK_FETCH_CONCURRENCY
+  );
+
+  const allTxValues: Array<typeof schema.transactions.$inferInsert> = [];
+  const txErrors: Array<{ week: number; reason: unknown }> = [];
+  for (let i = 0; i < txResults.length; i++) {
+    const r = txResults[i];
+    const week = txWeeks[i];
+    if (r.status === "rejected") {
+      txErrors.push({ week, reason: r.reason });
+      continue;
+    }
+    for (const tx of r.value) {
       if (tx.status !== "complete") continue;
       allTxValues.push({
         id: tx.transaction_id,
@@ -270,6 +293,20 @@ export async function syncLeague(
     }
   }
 
+  if (txErrors.length > 0) {
+    for (const { week, reason } of txErrors) {
+      console.warn(
+        `[sync] transactions fetch failed for ${leagueId} week ${week}:`,
+        reason
+      );
+    }
+    throw new Error(
+      `Sleeper transactions fetch failed for league ${leagueId} on ${txErrors.length} week(s): ${txErrors
+        .map((e) => e.week)
+        .join(", ")}`
+    );
+  }
+
   await batchInsert(schema.transactions, allTxValues, (q) =>
     q.onConflictDoNothing()
   );
@@ -282,14 +319,32 @@ export async function syncLeague(
     await setWatermark(leagueId, "transactions", txWatermarkValue);
   }
 
-  // Sync matchups + player scores (incremental via watermark, collected then batched)
+  // Sync matchups + player scores (incremental via watermark, concurrent per-week fetches)
   onProgress?.({ step: "matchups", detail: "Fetching matchups & scores" });
   const startMatchupWeek = (watermarks.get("matchups") ?? 0) + 1;
+  const matchupWeeks: number[] = [];
+  for (let week = startMatchupWeek; week <= maxWeek; week++) {
+    matchupWeeks.push(week);
+  }
+
+  const matchupResults = await pMapSettled(
+    matchupWeeks,
+    (week) => Sleeper.getMatchups(leagueId, week),
+    PER_WEEK_FETCH_CONCURRENCY
+  );
+
   const allMatchupValues: Array<typeof schema.matchups.$inferInsert> = [];
   const allScoreValues: Array<typeof schema.playerScores.$inferInsert> = [];
+  const matchupErrors: Array<{ week: number; reason: unknown }> = [];
 
-  for (let week = startMatchupWeek; week <= maxWeek; week++) {
-    const matchups = await Sleeper.getMatchups(leagueId, week);
+  for (let i = 0; i < matchupResults.length; i++) {
+    const r = matchupResults[i];
+    const week = matchupWeeks[i];
+    if (r.status === "rejected") {
+      matchupErrors.push({ week, reason: r.reason });
+      continue;
+    }
+    const matchups = r.value;
     if (!matchups || matchups.length === 0) continue;
 
     for (const m of matchups) {
@@ -323,6 +378,20 @@ export async function syncLeague(
         }
       }
     }
+  }
+
+  if (matchupErrors.length > 0) {
+    for (const { week, reason } of matchupErrors) {
+      console.warn(
+        `[sync] matchups fetch failed for ${leagueId} week ${week}:`,
+        reason
+      );
+    }
+    throw new Error(
+      `Sleeper matchups fetch failed for league ${leagueId} on ${matchupErrors.length} week(s): ${matchupErrors
+        .map((e) => e.week)
+        .join(", ")}`
+    );
   }
 
   await batchInsert(schema.matchups, allMatchupValues, (q) =>
@@ -448,7 +517,15 @@ function getMaxWeek(status: string): number {
 }
 
 const COMPLETED_STALENESS_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
-const PARALLEL_CONCURRENCY = 3;
+// Cross-season concurrency. Kept at 1 because each season already runs
+// PER_WEEK_FETCH_CONCURRENCY (=5) concurrent Sleeper fetches internally, plus
+// the global Sleeper rate limiter (15 RPS). Stacking 3 seasons * 5 weeks =
+// up to 15 in-flight TCP sockets per Vercel function would risk exhausting
+// the small-Lambda connection budget and amplify head-of-line blocking on
+// any stalled fetch. The Sleeper rate limiter paces request *starts*, but
+// nothing else caps in-flight count — within-season parallelism is already
+// the meaningful win, so we serialize across seasons.
+const PARALLEL_CONCURRENCY = 1;
 
 /**
  * Sync the entire league family (all seasons).
@@ -543,7 +620,10 @@ export async function syncLeagueFamily(
     });
   }
 
-  // Process completed seasons in parallel (concurrency limited)
+  // Process completed seasons in parallel (concurrency limited).
+  // Use allSettled semantics so a single season's failure doesn't poison the family.
+  const seasonFailures: Array<{ leagueId: string; reason: unknown }> = [];
+
   if (completedIds.length > 0) {
     onProgress?.({
       step: "family",
@@ -551,23 +631,41 @@ export async function syncLeagueFamily(
     });
     for (let i = 0; i < completedIds.length; i += PARALLEL_CONCURRENCY) {
       const batch = completedIds.slice(i, i + PARALLEL_CONCURRENCY);
-      await Promise.all(
+      const settled = await Promise.allSettled(
         batch.map((id) =>
           syncLeague(id, undefined, familyId, { skipGlobalSyncs: true })
         )
       );
+      for (let j = 0; j < settled.length; j++) {
+        const r = settled[j];
+        if (r.status === "rejected") {
+          console.warn(
+            `[sync] season sync failed for league ${batch[j]}:`,
+            r.reason
+          );
+          seasonFailures.push({ leagueId: batch[j], reason: r.reason });
+        }
+      }
     }
   }
 
-  // Process active seasons sequentially
+  // Process active seasons sequentially. Catch per-season so siblings still run.
   for (let i = 0; i < activeIds.length; i++) {
     onProgress?.({
       step: "family",
       detail: `Syncing active season ${i + 1} of ${activeIds.length}`,
     });
-    await syncLeague(activeIds[i], onProgress, familyId, {
-      skipGlobalSyncs: true,
-    });
+    try {
+      await syncLeague(activeIds[i], onProgress, familyId, {
+        skipGlobalSyncs: true,
+      });
+    } catch (err) {
+      console.warn(
+        `[sync] active season sync failed for league ${activeIds[i]}:`,
+        err
+      );
+      seasonFailures.push({ leagueId: activeIds[i], reason: err });
+    }
   }
 
   // Roll up all_time + MPS after all per-league grading is done
@@ -584,5 +682,16 @@ export async function syncLeagueFamily(
         err
       );
     }
+  }
+
+  // If every season we attempted failed, surface the error rather than
+  // silently returning a partial sync. Partial failures (some seasons OK)
+  // are logged but don't poison the family.
+  const attempted = completedIds.length + activeIds.length;
+  if (attempted > 0 && seasonFailures.length === attempted) {
+    throw new Error(
+      `All ${attempted} season sync(s) failed for family ${familyId ?? "(none)"}: ` +
+        seasonFailures.map((f) => f.leagueId).join(", ")
+    );
   }
 }
