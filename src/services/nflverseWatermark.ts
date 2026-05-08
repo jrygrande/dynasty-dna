@@ -1,4 +1,4 @@
-import { getDb, schema } from "@/db";
+import { getDb, getSyncDb, schema } from "@/db";
 import { and, eq } from "drizzle-orm";
 
 /**
@@ -10,10 +10,18 @@ export type NflverseSource = "roster_status" | "injuries" | "schedule";
 
 /**
  * Returns the current NFL season year. Extracted as a function so tests can
- * stub it to exercise the current-vs-historical branch.
+ * stub it (or pass `now`) to exercise the current-vs-historical branch.
+ *
+ * The NFL season `N` runs from September of year `N` through early February
+ * of year `N+1`. A naive `new Date().getFullYear()` would roll the label
+ * forward on Jan 1, prematurely classifying the in-progress
+ * playoff/Week-18 season as "historical" and short-circuiting weekly
+ * nflverse fetches for injuries, roster status, and schedule. We treat
+ * months Aug–Dec as season=year and Jan–July as season=year-1.
  */
-export function currentSeason(): number {
-  return new Date().getFullYear();
+export function currentSeason(now: Date = new Date()): number {
+  const month = now.getMonth(); // 0-indexed: 0 = Jan, 7 = Aug
+  return month >= 7 ? now.getFullYear() : now.getFullYear() - 1;
 }
 
 /**
@@ -46,10 +54,48 @@ export async function shouldSkipSeasonSync(
 }
 
 /**
- * Record a successful season sync. `lastSyncedWeek` is the highest week
- * ingested in this run; for sources without a meaningful week granularity
- * (e.g. schedule), pass 0 — the row still serves as a "synced at least once"
- * marker for the season.
+ * The argument passed to a `db.transaction(async (tx) => ...)` callback by
+ * the WebSocket-backed sync drizzle instance. Inferred from the actual
+ * transaction signature so we stay in sync with whatever drizzle exposes
+ * without hand-typing PgTransaction generics.
+ */
+type SyncTx = Parameters<
+  Parameters<ReturnType<typeof getSyncDb>["transaction"]>[0]
+>[0];
+
+/**
+ * Upsert a watermark row using a caller-supplied transaction handle. Call
+ * this from inside `db.transaction(async (tx) => ...)` so the watermark
+ * write commits atomically with the data write — if the data insert
+ * rolls back, the watermark is not stamped; if the watermark write fails,
+ * the data write rolls back. This closes the previous footgun where
+ * `setNflverseWatermark()` opened a separate connection after the
+ * transaction committed: a rolled-back data insert could leave a stamped
+ * watermark (skipping the season forever), and a post-commit watermark
+ * failure would silently re-do the work next run.
+ */
+export async function setNflverseWatermarkTx(
+  tx: SyncTx,
+  source: NflverseSource,
+  season: number,
+  lastSyncedWeek: number
+): Promise<void> {
+  await tx
+    .insert(schema.nflverseWatermarks)
+    .values({ source, season, lastSyncedWeek })
+    .onConflictDoUpdate({
+      target: [
+        schema.nflverseWatermarks.source,
+        schema.nflverseWatermarks.season,
+      ],
+      set: { lastSyncedWeek, lastSyncedAt: new Date() },
+    });
+}
+
+/**
+ * Record a successful season sync without a transaction context. Prefer
+ * `setNflverseWatermarkTx` from inside an existing transaction — this
+ * form is kept for callers (and tests) that don't have one.
  */
 export async function setNflverseWatermark(
   source: NflverseSource,

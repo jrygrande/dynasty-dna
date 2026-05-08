@@ -1,7 +1,7 @@
 import { getDb, getSyncDb, schema } from "@/db";
 import { sql, eq, and } from "drizzle-orm";
 import {
-  setNflverseWatermark,
+  setNflverseWatermarkTx,
   shouldSkipSeasonSync,
 } from "@/services/nflverseWatermark";
 
@@ -155,6 +155,11 @@ async function syncInjurySeason(
   const BATCH_SIZE = 200;
   let count = 0;
 
+  const maxWeek = allValues.reduce((m, r) => (r.week > m ? r.week : m), 0);
+
+  // Watermark write lives inside the transaction so it commits atomically
+  // with the data write — if the inserts roll back, the watermark is not
+  // stamped, and vice versa.
   await syncDb.transaction(async (tx) => {
     await tx
       .delete(schema.nflInjuries)
@@ -168,10 +173,9 @@ async function syncInjurySeason(
         .onConflictDoNothing();
       count += batch.length;
     }
-  });
 
-  const maxWeek = allValues.reduce((m, r) => (r.week > m ? r.week : m), 0);
-  await setNflverseWatermark("injuries", season, maxWeek);
+    await setNflverseWatermarkTx(tx, "injuries", season, maxWeek);
+  });
 
   return count;
 }

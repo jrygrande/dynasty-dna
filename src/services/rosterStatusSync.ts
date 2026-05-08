@@ -1,7 +1,7 @@
 import { getDb, getSyncDb, schema } from "@/db";
 import { sql, eq, and } from "drizzle-orm";
 import {
-  setNflverseWatermark,
+  setNflverseWatermarkTx,
   shouldSkipSeasonSync,
 } from "@/services/nflverseWatermark";
 
@@ -146,6 +146,11 @@ async function syncRosterStatusSeason(
   const BATCH_SIZE = 200;
   let count = 0;
 
+  const maxWeek = rows.reduce((m, r) => (r.week > m ? r.week : m), 0);
+
+  // Watermark write lives inside the transaction so it commits atomically
+  // with the data write — if the inserts roll back, the watermark is not
+  // stamped, and vice versa.
   await syncDb.transaction(async (tx) => {
     await tx
       .delete(schema.nflWeeklyRosterStatus)
@@ -171,6 +176,8 @@ async function syncRosterStatusSeason(
 
       count += values.length;
     }
+
+    await setNflverseWatermarkTx(tx, "roster_status", season, maxWeek);
   });
 
   // Backfill gsis_id into players table using sleeper_id crosswalk
@@ -191,9 +198,6 @@ async function syncRosterStatusSeason(
       console.log(`  Backfilled gsis_id for ${backfilled} players from ${season} roster data`);
     }
   }
-
-  const maxWeek = rows.reduce((m, r) => (r.week > m ? r.week : m), 0);
-  await setNflverseWatermark("roster_status", season, maxWeek);
 
   return count;
 }
