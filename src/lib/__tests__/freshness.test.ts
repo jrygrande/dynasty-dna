@@ -29,7 +29,8 @@ jest.mock("@/services/sync", () => ({
 const acquireSyncLockMock = jest.fn();
 const releaseSyncLockMock = jest.fn();
 jest.mock("@/services/syncLock", () => ({
-  acquireSyncLock: (ref: string) => acquireSyncLockMock(ref),
+  acquireSyncLock: (ref: string, opts?: unknown) =>
+    acquireSyncLockMock(ref, opts),
   releaseSyncLock: (jobId: string, status: string, error?: string) =>
     releaseSyncLockMock(jobId, status, error),
 }));
@@ -290,12 +291,15 @@ describe("ensureLeagueFresh — stale path", () => {
     const result = await ensureLeagueFresh(FAMILY_ID, { now });
 
     expect(result).toEqual({ ready: true, familyId: FAMILY_ID });
-    expect(acquireSyncLockMock).toHaveBeenCalledWith(ROOT_LEAGUE);
+    expect(acquireSyncLockMock).toHaveBeenCalledWith(ROOT_LEAGUE, {
+      trigger: "lazy",
+    });
     expect(syncLeagueFamilyMock).toHaveBeenCalledTimes(1);
     expect(syncLeagueFamilyMock).toHaveBeenCalledWith(
       [MEMBERS[0].leagueId, MEMBERS[1].leagueId],
       undefined,
-      FAMILY_ID
+      FAMILY_ID,
+      { trigger: "lazy" }
     );
     expect(releaseSyncLockMock).toHaveBeenCalledWith(
       "job-1",

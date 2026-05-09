@@ -53,8 +53,8 @@ export const OFF_SEASON_FRESHNESS_MS = 60 * 60 * 1000; // 1 hour
  * Implementation note: months are 0-indexed (`getMonth() === 0` is January).
  */
 export function isInSeason(d: Date = new Date()): boolean {
-  const month = d.getMonth();
-  const day = d.getDate();
+  const month = d.getUTCMonth();
+  const day = d.getUTCDate();
 
   // September (8) through December (11): always in-season.
   if (month >= 8 && month <= 11) return true;
@@ -243,7 +243,7 @@ export async function ensureLeagueFresh(
     return { ready: true, familyId };
   }
 
-  const jobId = await acquireSyncLock(ref);
+  const jobId = await acquireSyncLock(ref, { trigger: "lazy" });
 
   // Lock contended -> someone else is already syncing. Cold visitors get
   // the in-flight job id so they can poll. Stale visitors fall through to
@@ -282,7 +282,8 @@ export async function ensureLeagueFresh(
     await withSyncTransaction(
       `freshness.ensureLeagueFresh(${familyId})`,
       "sync.lazy",
-      () => syncLeagueFamily(leagueIds, undefined, familyId)
+      () =>
+        syncLeagueFamily(leagueIds, undefined, familyId, { trigger: "lazy" })
     );
     await releaseSyncLock(jobId, "success");
   } catch (err) {
