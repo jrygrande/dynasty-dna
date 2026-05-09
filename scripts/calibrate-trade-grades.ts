@@ -19,6 +19,7 @@ import { neon } from "@neondatabase/serverless";
 import { drizzle } from "drizzle-orm/neon-http";
 import { eq, and, inArray, sql } from "drizzle-orm";
 import * as schema from "../src/db/schema";
+import { Sleeper } from "../src/lib/sleeper";
 import * as fs from "fs";
 import * as path from "path";
 
@@ -69,18 +70,6 @@ async function fetchFantasyCalcValues(opts: {
 // Sleeper API helpers
 // ============================================================
 
-async function fetchSleeperDraft(
-  draftId: string
-): Promise<{
-  draft_id: string;
-  slot_to_roster_id?: Record<string, number>;
-  type: string;
-  status: string;
-}> {
-  const res = await fetch(`https://api.sleeper.app/v1/draft/${draftId}`);
-  if (!res.ok) throw new Error(`Sleeper API error: ${res.status}`);
-  return res.json();
-}
 
 // ============================================================
 // Pick resolution (mirrors src/services/tradeGrading.ts)
@@ -576,7 +565,7 @@ async function run() {
     // If we don't have slot_to_roster_id, fetch from Sleeper API
     if (!slotToRosterId && draft.status === "complete") {
       try {
-        const sleeperDraft = await fetchSleeperDraft(draft.id);
+        const sleeperDraft = await Sleeper.getDraft(draft.id);
         slotToRosterId = sleeperDraft.slot_to_roster_id || null;
         if (slotToRosterId) {
           // Store it in DB for future use

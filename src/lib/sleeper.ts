@@ -242,6 +242,11 @@ export const Sleeper = {
   getDrafts: (leagueId: string) =>
     get<SleeperDraft[]>(`/league/${leagueId}/drafts`),
 
+  // The list endpoint above returns summary entries that omit
+  // `slot_to_roster_id`. Fetch the per-draft endpoint to get it.
+  getDraft: (draftId: string) =>
+    get<SleeperDraft>(`/draft/${draftId}`),
+
   getDraftPicks: (draftId: string) =>
     get<SleeperDraftPick[]>(`/draft/${draftId}/picks`),
 

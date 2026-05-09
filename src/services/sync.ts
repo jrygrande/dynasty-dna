@@ -221,9 +221,27 @@ async function runSyncLeague(
       })
   );
 
-  // Sync drafts (bulk upsert)
+  // Sync drafts (bulk upsert).
+  //
+  // The /league/{id}/drafts list endpoint returns summary entries that omit
+  // `slot_to_roster_id`. Fetch the per-draft endpoint for each so the slot
+  // map lands in the DB; without it, the lineage tracer's pick→player
+  // remap (graph route) silently no-ops and traded picks fail to resolve
+  // to the player drafted with them (#173).
   onProgress?.({ step: "drafts", detail: "Fetching draft data" });
-  const drafts = await Sleeper.getDrafts(leagueId);
+  const draftSummaries = await Sleeper.getDrafts(leagueId);
+  // Cap fan-out at the same limit transactions/matchups use. Falls back to
+  // the summary on a per-draft fetch failure so a flaky /draft/{id} can't
+  // sink the whole league sync — the COALESCE in the upsert below
+  // preserves any prior populated slot_to_roster_id when that happens.
+  const draftFetches = await pMapSettled(
+    draftSummaries,
+    (s) => Sleeper.getDraft(s.draft_id),
+    PER_WEEK_FETCH_CONCURRENCY
+  );
+  const drafts = draftFetches.map((r, i) =>
+    r.status === "fulfilled" ? r.value : draftSummaries[i]
+  );
 
   await batchInsert(
     schema.drafts,
@@ -243,7 +261,9 @@ async function runSyncLeague(
         set: {
           status: sql`excluded.status`,
           settings: sql`excluded.settings`,
-          slotToRosterId: sql`excluded.slot_to_roster_id`,
+          // COALESCE so a transient null from a flaky /draft/{id} fetch
+          // never overwrites a populated slot map (defense in depth).
+          slotToRosterId: sql`COALESCE(excluded.slot_to_roster_id, ${schema.drafts.slotToRosterId})`,
         },
       })
   );

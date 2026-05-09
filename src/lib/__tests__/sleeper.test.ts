@@ -120,6 +120,16 @@ describe("Sleeper API method routing", () => {
     );
   });
 
+  it("getDraft hits /v1/draft/:id (returns slot_to_roster_id)", async () => {
+    const fetchMock = jest.fn(() => Promise.resolve(jsonResponse({})));
+    global.fetch = fetchMock as unknown as typeof fetch;
+    const { Sleeper } = await import("../sleeper");
+    await Sleeper.getDraft("D1");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.sleeper.app/v1/draft/D1"
+    );
+  });
+
   it("getDraftPicks hits /v1/draft/:id/picks", async () => {
     const fetchMock = jest.fn(() => Promise.resolve(jsonResponse([])));
     global.fetch = fetchMock as unknown as typeof fetch;

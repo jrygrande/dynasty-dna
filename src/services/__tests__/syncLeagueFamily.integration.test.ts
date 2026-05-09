@@ -69,6 +69,7 @@ const sleeperMock = {
   getLeagueUsers: jest.fn(),
   getRosters: jest.fn(),
   getDrafts: jest.fn(),
+  getDraft: jest.fn(),
   getDraftPicks: jest.fn(),
   getTradedPicks: jest.fn(),
   getTransactions: jest.fn(),
@@ -186,9 +187,18 @@ function buildSleeperFixtures() {
       status: "complete",
       start_time: 1_700_000_000_000,
       settings: {},
-      slot_to_roster_id: { "1": 1, "2": 2 },
     },
   ]);
+  sleeperMock.getDraft.mockResolvedValue({
+    draft_id: TEST_DRAFT_ID,
+    league_id: TEST_LEAGUE_ID,
+    season: "2024",
+    type: "snake",
+    status: "complete",
+    start_time: 1_700_000_000_000,
+    settings: {},
+    slot_to_roster_id: { "1": 1, "2": 2 },
+  });
 
   sleeperMock.getDraftPicks.mockResolvedValue([
     {
