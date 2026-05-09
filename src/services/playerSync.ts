@@ -1,6 +1,8 @@
 import { Sleeper } from "@/lib/sleeper";
 import { getDb, schema } from "@/db";
 import { sql, isNull } from "drizzle-orm";
+import { recordSyncBreadcrumb } from "@/lib/observability/syncBreadcrumb";
+import type { SyncTrigger } from "@/lib/observability/syncBreadcrumb";
 
 const FANTASY_POSITIONS = new Set(["QB", "RB", "WR", "TE", "K", "DEF"]);
 const STALENESS_MS = 24 * 60 * 60 * 1000; // 24 hours
@@ -24,11 +26,55 @@ async function isStale(): Promise<boolean> {
  * Skips if data is less than 24 hours old.
  * Returns the number of players synced, or 0 if skipped.
  */
-export async function syncPlayers(force = false): Promise<number> {
+export async function syncPlayers(
+  force = false,
+  opts?: { trigger?: SyncTrigger; scope?: string },
+): Promise<number> {
+  const trigger = opts?.trigger ?? "manual";
+  const scope = opts?.scope ?? "all-players";
+  const startedAt = Date.now();
+
   if (!force && !(await isStale())) {
+    // Even when we skip, emit the breadcrumb so we can see "syncPlayers
+    // was invoked but skipped fresh data" — that's a real signal when
+    // debugging cold starts.
+    recordSyncBreadcrumb({
+      source: "sleeper",
+      trigger,
+      scope,
+      outcome: "success",
+      durationMs: Date.now() - startedAt,
+      apiCalls: 0,
+    });
     return 0;
   }
 
+  try {
+    const result = await runSyncPlayers();
+    recordSyncBreadcrumb({
+      source: "sleeper",
+      trigger,
+      scope,
+      outcome: "success",
+      durationMs: Date.now() - startedAt,
+      apiCalls: 1, // single getPlayers() call
+    });
+    return result;
+  } catch (err) {
+    recordSyncBreadcrumb({
+      source: "sleeper",
+      trigger,
+      scope,
+      outcome: "failed",
+      durationMs: Date.now() - startedAt,
+      apiCalls: 1,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    throw err;
+  }
+}
+
+async function runSyncPlayers(): Promise<number> {
   const db = getDb();
   const playerMap = await Sleeper.getPlayers();
 

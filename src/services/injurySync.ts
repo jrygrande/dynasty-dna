@@ -4,6 +4,8 @@ import {
   setNflverseWatermarkTx,
   shouldSkipSeasonSync,
 } from "@/services/nflverseWatermark";
+import { recordSyncBreadcrumb } from "@/lib/observability/syncBreadcrumb";
+import type { SyncTrigger } from "@/lib/observability/syncBreadcrumb";
 
 const NFLVERSE_INJURY_URL =
   "https://github.com/nflverse/nflverse-data/releases/download/injuries/injuries_";
@@ -101,7 +103,8 @@ async function hasInjuryRows(season: number): Promise<boolean> {
  */
 async function syncInjurySeason(
   season: number,
-  force = false
+  force = false,
+  onApiCall?: () => void,
 ): Promise<number> {
   const skip = await shouldSkipSeasonSync(season, {
     force,
@@ -112,6 +115,7 @@ async function syncInjurySeason(
   }
 
   const url = `${NFLVERSE_INJURY_URL}${season}.csv`;
+  onApiCall?.();
   const response = await fetch(url);
 
   if (!response.ok) {
@@ -190,7 +194,46 @@ async function syncInjurySeason(
 export async function syncInjuries(options?: {
   seasons?: number[];
   force?: boolean;
+  trigger?: SyncTrigger;
 }): Promise<{ total: number; seasonResults: Record<number, number> }> {
+  const trigger = options?.trigger ?? "manual";
+  const seasonScope = options?.seasons?.length
+    ? `seasons=${options.seasons.join(",")}`
+    : "seasons=all";
+  const startedAt = Date.now();
+  let apiCalls = 0;
+
+  try {
+    const result = await runSyncInjuries(options, () => {
+      apiCalls += 1;
+    });
+    recordSyncBreadcrumb({
+      source: "nflverse",
+      trigger,
+      scope: `injuries|${seasonScope}`,
+      outcome: "success",
+      durationMs: Date.now() - startedAt,
+      apiCalls,
+    });
+    return result;
+  } catch (err) {
+    recordSyncBreadcrumb({
+      source: "nflverse",
+      trigger,
+      scope: `injuries|${seasonScope}`,
+      outcome: "failed",
+      durationMs: Date.now() - startedAt,
+      apiCalls,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    throw err;
+  }
+}
+
+async function runSyncInjuries(
+  options: { seasons?: number[]; force?: boolean } | undefined,
+  onApiCall: () => void,
+): Promise<{ total: number; seasonResults: Record<number, number> }> {
   const force = options?.force ?? false;
   const seasons =
     options?.seasons ??
@@ -208,7 +251,7 @@ export async function syncInjuries(options?: {
       continue;
     }
 
-    const count = await syncInjurySeason(season, force);
+    const count = await syncInjurySeason(season, force, onApiCall);
     seasonResults[season] = count;
     total += count;
   }

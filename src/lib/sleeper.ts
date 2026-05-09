@@ -6,6 +6,8 @@
  * Auth: None required (public, read-only)
  */
 
+import { recordSleeperCall } from "@/lib/sleeper/rateLimit";
+
 const BASE_URL = "https://api.sleeper.app/v1";
 
 // Rate limiting: max 15 requests per second (~900/min, well under 1000 limit)
@@ -51,6 +53,9 @@ async function fetchWithRetry(
   backoff = 1000
 ): Promise<Response> {
   for (let attempt = 0; attempt <= retries; attempt++) {
+    // Record every outbound call (including retries) so the rate gauge
+    // reflects what Sleeper actually saw, not just what callers requested.
+    recordSleeperCall();
     const res = await fetch(url);
     if (res.ok) return res;
     if (res.status === 429 || res.status >= 500) {

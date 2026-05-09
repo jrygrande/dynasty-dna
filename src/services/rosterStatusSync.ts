@@ -4,6 +4,8 @@ import {
   setNflverseWatermarkTx,
   shouldSkipSeasonSync,
 } from "@/services/nflverseWatermark";
+import { recordSyncBreadcrumb } from "@/lib/observability/syncBreadcrumb";
+import type { SyncTrigger } from "@/lib/observability/syncBreadcrumb";
 
 const NFLVERSE_WEEKLY_ROSTER_URL =
   "https://github.com/nflverse/nflverse-data/releases/download/weekly_rosters/roster_weekly_";
@@ -69,7 +71,8 @@ async function hasRosterStatusRows(season: number): Promise<boolean> {
  */
 async function syncRosterStatusSeason(
   season: number,
-  force = false
+  force = false,
+  onApiCall?: () => void,
 ): Promise<number> {
   const skip = await shouldSkipSeasonSync(season, {
     force,
@@ -80,6 +83,7 @@ async function syncRosterStatusSeason(
   }
 
   const url = `${NFLVERSE_WEEKLY_ROSTER_URL}${season}.csv`;
+  onApiCall?.();
   const response = await fetch(url);
 
   if (!response.ok) {
@@ -210,7 +214,46 @@ async function syncRosterStatusSeason(
 export async function syncRosterStatus(options?: {
   seasons?: number[];
   force?: boolean;
+  trigger?: SyncTrigger;
 }): Promise<{ total: number; seasonResults: Record<number, number> }> {
+  const trigger = options?.trigger ?? "manual";
+  const seasonScope = options?.seasons?.length
+    ? `seasons=${options.seasons.join(",")}`
+    : "seasons=all";
+  const startedAt = Date.now();
+  let apiCalls = 0;
+
+  try {
+    const result = await runSyncRosterStatus(options, () => {
+      apiCalls += 1;
+    });
+    recordSyncBreadcrumb({
+      source: "nflverse",
+      trigger,
+      scope: `roster-status|${seasonScope}`,
+      outcome: "success",
+      durationMs: Date.now() - startedAt,
+      apiCalls,
+    });
+    return result;
+  } catch (err) {
+    recordSyncBreadcrumb({
+      source: "nflverse",
+      trigger,
+      scope: `roster-status|${seasonScope}`,
+      outcome: "failed",
+      durationMs: Date.now() - startedAt,
+      apiCalls,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    throw err;
+  }
+}
+
+async function runSyncRosterStatus(
+  options: { seasons?: number[]; force?: boolean } | undefined,
+  onApiCall: () => void,
+): Promise<{ total: number; seasonResults: Record<number, number> }> {
   const force = options?.force ?? false;
   const currentYear = new Date().getFullYear();
   const seasons =
@@ -229,7 +272,7 @@ export async function syncRosterStatus(options?: {
       continue;
     }
 
-    const count = await syncRosterStatusSeason(season, force);
+    const count = await syncRosterStatusSeason(season, force, onApiCall);
     seasonResults[season] = count;
     total += count;
   }

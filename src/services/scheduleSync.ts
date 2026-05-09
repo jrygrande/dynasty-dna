@@ -4,6 +4,8 @@ import {
   setNflverseWatermarkTx,
   shouldSkipSeasonSync,
 } from "@/services/nflverseWatermark";
+import { recordSyncBreadcrumb } from "@/lib/observability/syncBreadcrumb";
+import type { SyncTrigger } from "@/lib/observability/syncBreadcrumb";
 
 const NFLVERSE_GAMES_URL =
   "https://github.com/nflverse/nfldata/raw/master/data/games.csv";
@@ -189,6 +191,42 @@ async function syncScheduleSeason(
  * Downloads the full games CSV once and extracts requested seasons.
  */
 export async function syncSchedule(options?: {
+  seasons?: number[];
+  force?: boolean;
+  trigger?: SyncTrigger;
+}): Promise<{ total: number; seasonResults: Record<number, number> }> {
+  const trigger = options?.trigger ?? "manual";
+  const seasonScope = options?.seasons?.length
+    ? `seasons=${options.seasons.join(",")}`
+    : "seasons=all";
+  const startedAt = Date.now();
+
+  try {
+    const result = await runSyncSchedule(options);
+    recordSyncBreadcrumb({
+      source: "nflverse",
+      trigger,
+      scope: `schedule|${seasonScope}`,
+      outcome: "success",
+      durationMs: Date.now() - startedAt,
+      apiCalls: 1, // single CSV fetch (memoized across seasons)
+    });
+    return result;
+  } catch (err) {
+    recordSyncBreadcrumb({
+      source: "nflverse",
+      trigger,
+      scope: `schedule|${seasonScope}`,
+      outcome: "failed",
+      durationMs: Date.now() - startedAt,
+      apiCalls: 1,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    throw err;
+  }
+}
+
+async function runSyncSchedule(options?: {
   seasons?: number[];
   force?: boolean;
 }): Promise<{ total: number; seasonResults: Record<number, number> }> {

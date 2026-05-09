@@ -14,6 +14,9 @@ import { gradeLeagueWaivers } from "@/services/waiverGrading";
 import { rollupManagerGrades } from "@/services/managerGrades";
 import { batchInsert, BATCH_SIZE } from "@/services/batchHelper";
 import { pMapSettled } from "@/lib/concurrency";
+import { recordSyncBreadcrumb } from "@/lib/observability/syncBreadcrumb";
+import type { SyncTrigger } from "@/lib/observability/syncBreadcrumb";
+import { withSyncTransaction } from "@/lib/observability/withSyncTransaction";
 
 /**
  * Per-week fetch concurrency for transactions/matchups within a single season.
@@ -74,15 +77,51 @@ export async function syncLeague(
   leagueId: string,
   onProgress?: ProgressCallback,
   familyId?: string,
-  opts?: { skipGlobalSyncs?: boolean }
+  opts?: { skipGlobalSyncs?: boolean; trigger?: SyncTrigger }
+): Promise<void> {
+  const trigger = opts?.trigger ?? "manual";
+  const startedAt = Date.now();
+
+  try {
+    await withSyncTransaction(
+      `syncLeague:${leagueId}`,
+      "sync.league",
+      () => runSyncLeague(leagueId, onProgress, familyId, opts),
+    );
+    recordSyncBreadcrumb({
+      source: "league-family",
+      trigger,
+      scope: `league=${leagueId}${familyId ? `|family=${familyId}` : ""}`,
+      outcome: "success",
+      durationMs: Date.now() - startedAt,
+    });
+  } catch (err) {
+    recordSyncBreadcrumb({
+      source: "league-family",
+      trigger,
+      scope: `league=${leagueId}${familyId ? `|family=${familyId}` : ""}`,
+      outcome: "failed",
+      durationMs: Date.now() - startedAt,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    throw err;
+  }
+}
+
+async function runSyncLeague(
+  leagueId: string,
+  onProgress?: ProgressCallback,
+  familyId?: string,
+  opts?: { skipGlobalSyncs?: boolean; trigger?: SyncTrigger }
 ): Promise<void> {
   const db = getDb();
   const skipGlobal = opts?.skipGlobalSyncs ?? false;
+  const trigger = opts?.trigger ?? "manual";
 
   // Ensure player metadata is available (skips if fresh)
   if (!skipGlobal) {
     onProgress?.({ step: "players", detail: "Checking player data freshness" });
-    await syncPlayers();
+    await syncPlayers(false, { trigger, scope: `league=${leagueId}` });
   }
 
   onProgress?.({ step: "league", detail: "Fetching league info" });
@@ -465,14 +504,14 @@ export async function syncLeague(
         step: "nfl_data",
         detail: `Syncing NFL roster status, injuries & schedule (${seasons.length} seasons)`,
       });
-      await syncRosterStatus({ seasons });
-      await syncInjuries({ seasons });
-      await syncSchedule({ seasons });
+      await syncRosterStatus({ seasons, trigger });
+      await syncInjuries({ seasons, trigger });
+      await syncSchedule({ seasons, trigger });
     }
 
     // Sync FantasyCalc dynasty trade values
     onProgress?.({ step: "values", detail: "Syncing dynasty trade values" });
-    await syncFantasyCalcValues(leagueId);
+    await syncFantasyCalcValues(leagueId, { trigger });
   }
 
   // Grade trades + drafts (requires familyId)
@@ -536,13 +575,55 @@ const PARALLEL_CONCURRENCY = 1;
 export async function syncLeagueFamily(
   leagueIds: string[],
   onProgress?: ProgressCallback,
-  familyId?: string
+  familyId?: string,
+  opts?: { trigger?: SyncTrigger }
+): Promise<void> {
+  const trigger = opts?.trigger ?? "manual";
+  const scope = familyId
+    ? `family=${familyId}`
+    : `leagues=${leagueIds.join(",") || "(none)"}`;
+  const startedAt = Date.now();
+
+  try {
+    await withSyncTransaction(
+      "syncLeagueFamily",
+      "sync.family",
+      () => runSyncLeagueFamily(leagueIds, onProgress, familyId, trigger),
+    );
+    recordSyncBreadcrumb({
+      source: "league-family",
+      trigger,
+      scope,
+      outcome: "success",
+      durationMs: Date.now() - startedAt,
+    });
+  } catch (err) {
+    recordSyncBreadcrumb({
+      source: "league-family",
+      trigger,
+      scope,
+      outcome: "failed",
+      durationMs: Date.now() - startedAt,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    throw err;
+  }
+}
+
+async function runSyncLeagueFamily(
+  leagueIds: string[],
+  onProgress: ProgressCallback | undefined,
+  familyId: string | undefined,
+  trigger: SyncTrigger,
 ): Promise<void> {
   const db = getDb();
 
   // --- Hoisted global syncs: run once for the whole family ---
   onProgress?.({ step: "players", detail: "Checking player data freshness" });
-  await syncPlayers();
+  await syncPlayers(false, {
+    trigger,
+    scope: familyId ? `family=${familyId}` : "manual",
+  });
 
   // Gather all family seasons for nflverse sync
   const familySeasons: number[] = [];
@@ -563,15 +644,15 @@ export async function syncLeagueFamily(
       step: "nfl_data",
       detail: `Syncing NFL data (${uniqueSeasons.length} seasons)`,
     });
-    await syncRosterStatus({ seasons: uniqueSeasons });
-    await syncInjuries({ seasons: uniqueSeasons });
-    await syncSchedule({ seasons: uniqueSeasons });
+    await syncRosterStatus({ seasons: uniqueSeasons, trigger });
+    await syncInjuries({ seasons: uniqueSeasons, trigger });
+    await syncSchedule({ seasons: uniqueSeasons, trigger });
   }
 
   // FantasyCalc: sync once using the most recent league's settings
   const mostRecentLeagueId = leagueIds[leagueIds.length - 1];
   onProgress?.({ step: "values", detail: "Syncing dynasty trade values" });
-  await syncFantasyCalcValues(mostRecentLeagueId);
+  await syncFantasyCalcValues(mostRecentLeagueId, { trigger });
 
   // --- Partition into completed (parallelizable) vs in-progress (sequential) ---
   // Single batched query instead of N individual queries
@@ -633,7 +714,10 @@ export async function syncLeagueFamily(
       const batch = completedIds.slice(i, i + PARALLEL_CONCURRENCY);
       const settled = await Promise.allSettled(
         batch.map((id) =>
-          syncLeague(id, undefined, familyId, { skipGlobalSyncs: true })
+          syncLeague(id, undefined, familyId, {
+            skipGlobalSyncs: true,
+            trigger,
+          })
         )
       );
       for (let j = 0; j < settled.length; j++) {
@@ -658,6 +742,7 @@ export async function syncLeagueFamily(
     try {
       await syncLeague(activeIds[i], onProgress, familyId, {
         skipGlobalSyncs: true,
+        trigger,
       });
     } catch (err) {
       console.warn(

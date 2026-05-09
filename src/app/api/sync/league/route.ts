@@ -18,8 +18,10 @@ export async function POST(req: NextRequest) {
     // Ensure the league family exists (discovers all seasons via Sleeper API)
     const familyId = await ensureLeagueFamily(leagueId);
 
-    // Acquire sync lock — return 409 if already running
-    const jobId = await acquireSyncLock(leagueId);
+    // Acquire sync lock — return 409 if already running. The /api/sync/league
+    // route is the manual entry point (button click in UI / direct call), so
+    // we record trigger=manual on the audit row.
+    const jobId = await acquireSyncLock(leagueId, { trigger: "manual" });
     if (!jobId) {
       return NextResponse.json(
         { error: "A sync is already running for this league family" },
@@ -41,10 +43,14 @@ export async function POST(req: NextRequest) {
 
       if (allLeagueIds.length === 0) {
         // Fallback: sync just the requested league
-        await syncLeagueFamily([leagueId], undefined, familyId);
+        await syncLeagueFamily([leagueId], undefined, familyId, {
+          trigger: "manual",
+        });
       } else {
         // Sync all seasons in the family
-        await syncLeagueFamily(allLeagueIds, undefined, familyId);
+        await syncLeagueFamily(allLeagueIds, undefined, familyId, {
+          trigger: "manual",
+        });
       }
 
       await releaseSyncLock(jobId, "success");
