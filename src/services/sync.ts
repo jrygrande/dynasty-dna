@@ -127,7 +127,9 @@ async function runSyncLeague(
   onProgress?.({ step: "league", detail: "Fetching league info" });
   const league = await Sleeper.getLeague(leagueId);
 
-  // Upsert league
+  // lastSyncedAt is set on both INSERT and UPDATE so the warm-path skip
+  // in syncLeagueFamily can recognize first-time-synced leagues without
+  // needing a second pass.
   await db
     .insert(schema.leagues)
     .values({
@@ -140,6 +142,7 @@ async function runSyncLeague(
       scoringSettings: league.scoring_settings,
       rosterPositions: league.roster_positions,
       totalRosters: league.total_rosters,
+      lastSyncedAt: new Date(),
     })
     .onConflictDoUpdate({
       target: schema.leagues.id,
