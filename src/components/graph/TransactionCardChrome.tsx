@@ -37,8 +37,8 @@ export interface TransactionCardChromeData {
   header: TransactionHeader;
   managers: Array<{ userId: string; displayName: string }>;
   assets: TransactionNodeAsset[];
-  expandedAssets: Set<string>;
-  chainAssetKeys: Set<string>;
+  expandedAssets: ReadonlySet<string>;
+  chainAssetKeys: ReadonlySet<string>;
   headerExpanded: boolean;
   selected?: boolean;
   dimmed?: boolean;

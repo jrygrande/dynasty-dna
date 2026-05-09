@@ -12,7 +12,13 @@
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
+    "db:dev:push": "dotenv -e .env.development -- drizzle-kit push",
+    "db:dev:migrate": "dotenv -e .env.development -- drizzle-kit migrate",
+    "db:dev:studio": "dotenv -e .env.development -- drizzle-kit studio",
+    "db:dev:seed": "dotenv -e .env.development -- tsx scripts/seed-dev-db.ts",
+    "db:dev:reset": "dotenv -e .env.development -- tsx scripts/reset-db.ts",
     "notify-waitlist": "tsx scripts/notify-waitlist.ts",
+    "backfill:fantasycalc": "dotenv -e .env.local -- tsx scripts/backfill-fantasycalc-keys.ts",
     "test": "jest"
   },
   "dependencies": {
@@ -52,6 +58,7 @@
     "@types/react-dom": "^18.3.0",
     "autoprefixer": "^10.4.19",
     "dotenv": "^17.2.2",
+    "dotenv-cli": "^11.0.0",
     "drizzle-kit": "^0.31.7",
     "eslint": "^8.57.0",
     "eslint-config-next": "^14.2.5",

@@ -399,13 +399,18 @@ export async function gradeLeagueTrades(
     return 0;
   }
 
-  const { ppr, isSuperFlex } =
+  const { ppr, isSuperFlex, numTeams, numQbs } =
     await loadLeagueScoringConfig(leagueId);
   const { familyLeagueIds, leagueSeasonMap } =
     await loadFamilyLeagueMap(familyId);
   if (familyLeagueIds.length === 0) return 0;
 
-  const snapshot = await loadFantasyCalcSnapshot(isSuperFlex, ppr);
+  const snapshot = await loadFantasyCalcSnapshot(
+    isSuperFlex,
+    ppr,
+    numTeams,
+    numQbs,
+  );
 
   const { draftsBySeason, draftPicksMap } =
     await resolveDraftPicks(familyLeagueIds);
@@ -421,6 +426,8 @@ export async function gradeLeagueTrades(
       and(
         eq(schema.fantasyCalcValues.isSuperFlex, isSuperFlex),
         eq(schema.fantasyCalcValues.ppr, ppr),
+        eq(schema.fantasyCalcValues.numTeams, numTeams),
+        eq(schema.fantasyCalcValues.numQbs, numQbs),
         eq(schema.fantasyCalcValues.position, "PICK"),
       ),
     );

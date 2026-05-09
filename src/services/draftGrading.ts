@@ -96,13 +96,18 @@ export async function gradeLeagueDrafts(
     return 0;
   }
 
-  const { ppr, isSuperFlex } =
+  const { ppr, isSuperFlex, numTeams, numQbs } =
     await loadLeagueScoringConfig(leagueId);
   const { familyLeagueIds, leagueSeasonMap } =
     await loadFamilyLeagueMap(familyId);
   if (familyLeagueIds.length === 0) return 0;
 
-  const snapshot = await loadFantasyCalcSnapshot(isSuperFlex, ppr);
+  const snapshot = await loadFantasyCalcSnapshot(
+    isSuperFlex,
+    ppr,
+    numTeams,
+    numQbs,
+  );
 
   // Pre-compute seasonal data with PAR info
   const seasonalData = await computeSeasonalRanks(

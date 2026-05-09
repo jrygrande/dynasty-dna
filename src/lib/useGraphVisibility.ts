@@ -191,9 +191,13 @@ export function computeVisibility(
 
   for (const id of removed) visible.delete(id);
 
-  const visibleNodes = graph.nodes
-    .filter((n) => visible.has(n.id))
-    .map((n) => ({ ...n, layout: undefined }));
+  // Filter without cloning: keeping the original `n` references stable across
+  // recomputes lets the per-node `data` cache in AssetGraph reuse prior data
+  // objects when nothing about a node actually changed. Spreading here would
+  // bust that cache on every expansion and force every visible card to
+  // re-render. The `layout` field on GraphNode is unread (dead) so there's
+  // nothing to strip.
+  const visibleNodes = graph.nodes.filter((n) => visible.has(n.id));
 
   const visibleEdges = graph.edges.filter(
     (e) =>

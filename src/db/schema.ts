@@ -504,6 +504,8 @@ export const fantasyCalcValues = pgTable(
     playerId: text("player_id").notNull(), // Mapped to Sleeper player_id
     isSuperFlex: boolean("is_super_flex").notNull().default(false),
     ppr: real("ppr").notNull().default(0.5),
+    numTeams: integer("num_teams").notNull().default(12),
+    numQbs: integer("num_qbs").notNull().default(1),
     playerName: text("player_name"),
     value: real("value").notNull(),
     rank: integer("rank"),
@@ -515,7 +517,15 @@ export const fantasyCalcValues = pgTable(
       .notNull(),
   },
   (fcv) => ({
-    pk: primaryKey({ columns: [fcv.playerId, fcv.isSuperFlex, fcv.ppr] }),
+    pk: primaryKey({
+      columns: [
+        fcv.playerId,
+        fcv.isSuperFlex,
+        fcv.ppr,
+        fcv.numTeams,
+        fcv.numQbs,
+      ],
+    }),
   })
 );
 
@@ -623,5 +633,25 @@ export const syncWatermarks = pgTable(
   },
   (sw) => ({
     pk: primaryKey({ columns: [sw.leagueId, sw.dataType] }),
+  })
+);
+
+// Per-(source, season) watermark for nflverse-sourced data.
+// Distinct from `sync_watermarks` (which is league-scoped) because nflverse
+// data is global and not tied to any league. `lastSyncedWeek` lets the current
+// season re-fetch incrementally without forcing every cron tick to be a full
+// season reload.
+export const nflverseWatermarks = pgTable(
+  "nflverse_watermarks",
+  {
+    source: text("source").notNull(), // 'roster_status' | 'injuries' | 'schedule'
+    season: integer("season").notNull(),
+    lastSyncedWeek: integer("last_synced_week").notNull().default(0),
+    lastSyncedAt: timestamp("last_synced_at", { mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (nw) => ({
+    pk: primaryKey({ columns: [nw.source, nw.season] }),
   })
 );

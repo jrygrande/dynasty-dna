@@ -156,12 +156,18 @@ export async function gradeLeagueWaivers(
     return 0;
   }
 
-  const { ppr, isSuperFlex } = await loadLeagueScoringConfig(leagueId);
+  const { ppr, isSuperFlex, numTeams, numQbs } =
+    await loadLeagueScoringConfig(leagueId);
   const { familyLeagueIds, leagueSeasonMap } =
     await loadFamilyLeagueMap(familyId);
   if (familyLeagueIds.length === 0) return 0;
 
-  const snapshot = await loadFantasyCalcSnapshot(isSuperFlex, ppr);
+  const snapshot = await loadFantasyCalcSnapshot(
+    isSuperFlex,
+    ppr,
+    numTeams,
+    numQbs,
+  );
 
   // Load production context concurrently
   const [seasonalData, weeklyScores, matchupOutcomes, playoffConfig, leagueOwnerRoster] =
