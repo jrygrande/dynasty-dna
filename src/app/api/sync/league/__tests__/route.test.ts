@@ -64,6 +64,8 @@ beforeEach(() => {
   acquireSyncLockMock.mockReset();
   releaseSyncLockMock.mockReset();
   dbSelectChain.mockReset();
+  // Default sync result so route handlers can read .apiCallsMade.
+  syncLeagueFamilyMock.mockResolvedValue({ apiCallsMade: 0 });
   process.env.CRON_SECRET = "test-cron-secret";
 });
 
@@ -104,7 +106,7 @@ describe("POST /api/sync/league", () => {
     dbSelectChain.mockResolvedValueOnce([
       { leagueId: "l-2025", season: "2025", familyId: "fam-origin" },
     ]);
-    syncLeagueFamilyMock.mockResolvedValueOnce(undefined);
+    syncLeagueFamilyMock.mockResolvedValueOnce({ apiCallsMade: 7 });
 
     const res = await POST(
       makeRequest(
@@ -150,7 +152,7 @@ describe("POST /api/sync/league — fail-closed when CRON_SECRET never set", () 
     dbSelectChain.mockResolvedValueOnce([
       { leagueId: "l-2025", season: "2025", familyId: "fam-no-secret" },
     ]);
-    syncLeagueFamilyMock.mockResolvedValueOnce(undefined);
+    syncLeagueFamilyMock.mockResolvedValueOnce({ apiCallsMade: 0 });
 
     const res = await POST(
       makeRequest(
@@ -192,7 +194,7 @@ describe("POST /api/sync/league — happy paths", () => {
       { leagueId: "l-2024", season: "2024", familyId: "fam-1" },
       { leagueId: "l-2025", season: "2025", familyId: "fam-1" },
     ]);
-    syncLeagueFamilyMock.mockResolvedValueOnce(undefined);
+    syncLeagueFamilyMock.mockResolvedValueOnce({ apiCallsMade: 23 });
 
     const res = await POST(
       makeRequest(
@@ -210,6 +212,12 @@ describe("POST /api/sync/league — happy paths", () => {
       "fam-1",
       { trigger: "manual" }
     );
-    expect(releaseSyncLockMock).toHaveBeenCalledWith("job-1", "success");
+    // Audit fields wired through so sync_jobs reflects API spend (#177).
+    expect(releaseSyncLockMock).toHaveBeenCalledWith(
+      "job-1",
+      "success",
+      undefined,
+      { apiCallsMade: 23 }
+    );
   });
 });

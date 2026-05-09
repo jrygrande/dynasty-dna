@@ -23,6 +23,13 @@ const FLUSH_INTERVAL_MS = 60 * 1000;
 
 const callTimestamps: number[] = [];
 let lastFlushAt = 0;
+/**
+ * Monotonic count of every Sleeper call made since process start. Snapshot
+ * with `getTotalSleeperCalls()` before/after a sync to attribute API-call
+ * counts to a `sync_jobs` row. Separate from the rolling window (which
+ * prunes); never decrements.
+ */
+let totalCalls = 0;
 
 function isDsnConfigured(): boolean {
   return Boolean(
@@ -117,6 +124,7 @@ export function flushSleeperRateGauge(now: number = Date.now()): void {
  */
 export function recordSleeperCall(now: number = Date.now()): void {
   callTimestamps.push(now);
+  totalCalls++;
   pruneOldCalls(now);
 
   if (now - lastFlushAt >= FLUSH_INTERVAL_MS) {
@@ -124,10 +132,19 @@ export function recordSleeperCall(now: number = Date.now()): void {
   }
 }
 
+/**
+ * Snapshot the lifetime call count. Used by sync entry points to attribute
+ * Sleeper API spend to a `sync_jobs` row by diffing before/after.
+ */
+export function getTotalSleeperCalls(): number {
+  return totalCalls;
+}
+
 /** Test-only: drop every retained call timestamp. */
 export function __resetSleeperRateState(): void {
   callTimestamps.length = 0;
   lastFlushAt = 0;
+  totalCalls = 0;
 }
 
 /** Test-only: read the lastFlushAt cursor. */

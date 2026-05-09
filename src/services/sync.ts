@@ -17,6 +17,7 @@ import { pMapSettled } from "@/lib/concurrency";
 import { recordSyncBreadcrumb } from "@/lib/observability/syncBreadcrumb";
 import type { SyncTrigger } from "@/lib/observability/syncBreadcrumb";
 import { withSyncTransaction } from "@/lib/observability/withSyncTransaction";
+import { getTotalSleeperCalls } from "@/lib/sleeper/rateLimit";
 
 /**
  * Per-week fetch concurrency for transactions/matchups within a single season.
@@ -589,6 +590,12 @@ const COMPLETED_STALENESS_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 // the meaningful win, so we serialize across seasons.
 const PARALLEL_CONCURRENCY = 1;
 
+export interface SyncLeagueFamilyResult {
+  /** Sleeper API calls made during this run. Snapshotted at entry/exit so it
+   *  attributes correctly even when the global rate-limit window churns. */
+  apiCallsMade: number;
+}
+
 /**
  * Sync the entire league family (all seasons).
  * Hoists shared syncs (players, nflverse, fantasyCalc) to run once.
@@ -600,12 +607,13 @@ export async function syncLeagueFamily(
   onProgress?: ProgressCallback,
   familyId?: string,
   opts?: { trigger?: SyncTrigger }
-): Promise<void> {
+): Promise<SyncLeagueFamilyResult> {
   const trigger = opts?.trigger ?? "manual";
   const scope = familyId
     ? `family=${familyId}`
     : `leagues=${leagueIds.join(",") || "(none)"}`;
   const startedAt = Date.now();
+  const apiCallsBefore = getTotalSleeperCalls();
 
   try {
     await withSyncTransaction(
@@ -613,20 +621,25 @@ export async function syncLeagueFamily(
       "sync.family",
       () => runSyncLeagueFamily(leagueIds, onProgress, familyId, trigger),
     );
+    const apiCallsMade = getTotalSleeperCalls() - apiCallsBefore;
     recordSyncBreadcrumb({
       source: "league-family",
       trigger,
       scope,
       outcome: "success",
       durationMs: Date.now() - startedAt,
+      apiCalls: apiCallsMade,
     });
+    return { apiCallsMade };
   } catch (err) {
+    const apiCallsMade = getTotalSleeperCalls() - apiCallsBefore;
     recordSyncBreadcrumb({
       source: "league-family",
       trigger,
       scope,
       outcome: "failed",
       durationMs: Date.now() - startedAt,
+      apiCalls: apiCallsMade,
       error: err instanceof Error ? err.message : String(err),
     });
     throw err;
@@ -722,6 +735,17 @@ async function runSyncLeagueFamily(
       step: "family",
       detail: `Skipping ${skipIds.length} recently-synced season(s)`,
     });
+
+    // Bump lastSyncedAt for skipped leagues. The freshness gate
+    // (`ensureLeagueFresh`) reads MIN(lastSyncedAt) across the family — without
+    // this bump, the watermark stays pinned to whichever skipped season is
+    // oldest and the gate fires on every visit instead of once per window.
+    // Verifying "this league does not need a fetch" IS a sync event from the
+    // gate's perspective. See #177.
+    await db
+      .update(schema.leagues)
+      .set({ lastSyncedAt: new Date() })
+      .where(inArray(schema.leagues.id, skipIds));
   }
 
   // Process completed seasons in parallel (concurrency limited).

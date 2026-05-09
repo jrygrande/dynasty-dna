@@ -31,8 +31,12 @@ const releaseSyncLockMock = jest.fn();
 jest.mock("@/services/syncLock", () => ({
   acquireSyncLock: (ref: string, opts?: unknown) =>
     acquireSyncLockMock(ref, opts),
-  releaseSyncLock: (jobId: string, status: string, error?: string) =>
-    releaseSyncLockMock(jobId, status, error),
+  releaseSyncLock: (
+    jobId: string,
+    status: string,
+    error?: string,
+    audit?: unknown
+  ) => releaseSyncLockMock(jobId, status, error, audit),
 }));
 
 const recordBreadcrumbMock = jest.fn();
@@ -172,6 +176,8 @@ beforeEach(() => {
 
   // Default happy-path resolution.
   resolveFamilyMock.mockResolvedValue(FAMILY_ID);
+  // Default sync result — tests can override per case.
+  syncLeagueFamilyMock.mockResolvedValue({ apiCallsMade: 0 });
   // Default: family row + members exist.
   dbState.family = [{ rootLeagueId: ROOT_LEAGUE }];
   dbState.members = MEMBERS;
@@ -264,7 +270,8 @@ describe("ensureLeagueFresh — fresh path", () => {
     expect(releaseSyncLockMock).toHaveBeenCalledWith(
       "job-stale-1",
       "success",
-      undefined
+      undefined,
+      { apiCallsMade: 0 }
     );
   });
 
@@ -304,7 +311,8 @@ describe("ensureLeagueFresh — stale path", () => {
     expect(releaseSyncLockMock).toHaveBeenCalledWith(
       "job-1",
       "success",
-      undefined
+      undefined,
+      { apiCallsMade: 0 }
     );
     expect(recordBreadcrumbMock).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -313,6 +321,26 @@ describe("ensureLeagueFresh — stale path", () => {
         scope: FAMILY_ID,
         outcome: "success",
       })
+    );
+  });
+
+  it("threads apiCallsMade from syncLeagueFamily into releaseSyncLock + breadcrumb", async () => {
+    const now = new Date("2025-04-15T12:00:00Z");
+    const stale = new Date(now.getTime() - 2 * 60 * 60 * 1000);
+    dbState.leagues = [{ lastSyncedAt: stale }];
+    acquireSyncLockMock.mockResolvedValue("job-counted-1");
+    syncLeagueFamilyMock.mockResolvedValue({ apiCallsMade: 42 });
+
+    await ensureLeagueFresh(FAMILY_ID, { now });
+
+    expect(releaseSyncLockMock).toHaveBeenCalledWith(
+      "job-counted-1",
+      "success",
+      undefined,
+      { apiCallsMade: 42 }
+    );
+    expect(recordBreadcrumbMock).toHaveBeenCalledWith(
+      expect.objectContaining({ apiCalls: 42, outcome: "success" })
     );
   });
 
@@ -329,7 +357,8 @@ describe("ensureLeagueFresh — stale path", () => {
     expect(releaseSyncLockMock).toHaveBeenCalledWith(
       "job-fail-1",
       "failed",
-      "boom"
+      "boom",
+      { apiCallsMade: 0 }
     );
     expect(recordBreadcrumbMock).toHaveBeenCalledWith(
       expect.objectContaining({ outcome: "failed", error: "boom" })
