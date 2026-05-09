@@ -7,8 +7,19 @@ const customJestConfig = {
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1',
   },
+  // ts-jest needs JSX overridden to "react-jsx" because the project's
+  // tsconfig is set to "preserve" (Next.js handles JSX itself in prod).
+  // Without this override, .test.tsx files fail to parse.
+  transform: {
+    '^.+\\.tsx?$': ['ts-jest', {
+      tsconfig: {
+        jsx: 'react-jsx',
+      },
+    }],
+  },
   testMatch: [
     '<rootDir>/src/**/__tests__/**/*.test.ts',
+    '<rootDir>/src/**/__tests__/**/*.test.tsx',
     '<rootDir>/scripts/**/__tests__/**/*.test.ts',
   ],
   // Coverage gate for the sync pipeline. Each listed file must clear 80%
