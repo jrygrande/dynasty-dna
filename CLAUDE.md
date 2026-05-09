@@ -69,6 +69,60 @@ npm run db:dev:seed       # copy one league family from prod -> dev (opt-in)
 
 On rejection the script prints the resolved host and the env-var path that produced it, then exits 1 before touching SQL. Tests live in `scripts/__tests__/reset-db-guard.test.ts`.
 
+## Sync benchmark
+
+The sync pipeline has a CI smoke benchmark that exercises the **real** `syncLeagueFamily()` against the dev Neon branch with a synthetic in-memory Sleeper mock — no recorded fixtures, no live Sleeper traffic. See [`scripts/benchmark-sync.ts`](scripts/benchmark-sync.ts) and [`scripts/sync-bench-mock.ts`](scripts/sync-bench-mock.ts).
+
+### Running locally
+
+```bash
+# Best-of-3 timing run; prints per-run + summary to stderr
+npm run bench:sync
+
+# Customize
+npm run bench:sync -- --runs=5 --latency=50 --seasons=5
+
+# JSON output for scripting
+npm run bench:sync -- --json
+
+# Compare against committed baseline (CI mode)
+npm run bench:sync -- --check
+
+# Refresh the baseline after an intentional architectural change
+npm run bench:sync -- --update-baseline
+```
+
+Requires `DATABASE_URL_DEV` to resolve to a Neon dev branch (per [`scripts/reset-db.ts`](scripts/reset-db.ts) — host contains `-dev.` / `dev-branch`, OR is in `NEON_DEV_HOST_ALLOWLIST`). The script refuses to run otherwise.
+
+### What it measures
+
+- **`wall_time_ms`** — best-of-N total wall time. CI fails when `actual > baseline * 1.20`.
+- **`api_calls`** — exact count of Sleeper requests the sync made. Any change is meaningful — CI fails on mismatch.
+- **`peak_concurrency`** — observed peak in-flight Sleeper requests. Documented; not gated.
+- **`db_writes`** — total bench rows written across the family. Documented; not gated.
+
+A 5ms minimum-floor in [`scripts/bench-helpers.ts`](scripts/bench-helpers.ts) skips the wall comparison when both sides round to zero — keeps tiny absolute deltas from blowing up percent-based regressions.
+
+### When to update the baseline
+
+Refresh the baseline (`npm run bench:sync -- --update-baseline` and commit `scripts/sync-baseline.json`) when:
+
+- A sync code change INTENTIONALLY adds/removes Sleeper calls (CI will flag the api_calls mismatch immediately — that's the prompt).
+- An architectural change INTENTIONALLY shifts wall time by more than ~20% (more parallelism, fewer DB roundtrips, etc.). Note the reason in the commit message.
+
+Do NOT refresh the baseline to silence a flaky-feeling regression. Investigate first — `api_calls` is exact and never flakes; `wall_time_ms` only flakes when both sides are tiny (covered by the floor).
+
+### CI
+
+[`.github/workflows/sync-benchmark.yml`](.github/workflows/sync-benchmark.yml) runs on PRs touching:
+
+- `src/services/sync*.ts`
+- `src/lib/sleeper.ts` (and `src/lib/sleeper/**`)
+- `src/lib/concurrency.ts`
+- the benchmark scripts / baseline / workflow itself
+
+It runs in **fixture mode** (synthetic mock — no live Sleeper traffic) against the Neon dev branch via the `DATABASE_URL_DEV` repo secret. Each workflow run uses a unique `BENCH_ID_PREFIX` (run-id-keyed) so concurrent PRs don't collide on the shared dev branch. The job self-skips with a green status when the secret isn't configured (forks, first-time setup).
+
 ## Development Workflow
 ```bash
 # Local development
