@@ -19,6 +19,10 @@
     "db:dev:reset": "dotenv -e .env.development -- tsx scripts/reset-db.ts",
     "notify-waitlist": "tsx scripts/notify-waitlist.ts",
     "backfill:fantasycalc": "dotenv -e .env.local -- tsx scripts/backfill-fantasycalc-keys.ts",
+    "sync:family": "dotenv -e .env.local -- tsx scripts/sync-family.ts",
+    "sync:season": "dotenv -e .env.local -- tsx scripts/sync-season.ts",
+    "sync:players": "dotenv -e .env.local -- tsx scripts/sync-players.ts",
+    "sync:fantasycalc": "dotenv -e .env.local -- tsx scripts/sync-fantasycalc.ts",
     "test": "jest"
   },
   "dependencies": {

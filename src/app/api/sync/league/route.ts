@@ -4,8 +4,20 @@ import { ensureLeagueFamily } from "@/services/leagueFamily";
 import { acquireSyncLock, releaseSyncLock } from "@/services/syncLock";
 import { getDb, schema } from "@/db";
 import { eq } from "drizzle-orm";
+import { isAuthorizedCron } from "@/app/api/cron/_lib/auth";
 
 export async function POST(req: NextRequest) {
+  // /api/sync/league is the manual debug entry point. Reuses the cron bearer
+  // check (CRON_SECRET) so the public internet can't trigger a family sync.
+  // No UI button is wired up — the only legitimate callers are operators
+  // hitting it via curl.
+  if (!isAuthorizedCron(req)) {
+    return NextResponse.json(
+      { error: "unauthorized" },
+      { status: 401 }
+    );
+  }
+
   const { leagueId } = await req.json();
   if (!leagueId) {
     return NextResponse.json(
