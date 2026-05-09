@@ -492,40 +492,46 @@ function useStintStatsByEdge(
 
   useEffect(() => {
     let cancelled = false;
-    const next = new Map<string, StintStatsState>();
+    // Seed all edges as loading so the skeleton grid renders at full size
+    // immediately. Final-result reveal is then a single coordinated update.
+    const loadingMap = new Map<string, StintStatsState>();
     for (const edge of edges) {
-      next.set(edge.id, { status: "loading" });
+      loadingMap.set(edge.id, { status: "loading" });
     }
-    setResults(next);
+    setResults(loadingMap);
 
-    edges.forEach((edge) => {
-      const url = buildStintStatsUrl(familyId, edge);
-      if (!url) {
-        setResults((prev) => {
-          const m = new Map(prev);
-          m.set(edge.id, { status: "error" });
-          return m;
-        });
-        return;
+    // Fan out fetches in parallel, but commit results as ONE setState after
+    // they all settle. Previously each fetch fired its own setState, so cells
+    // populated progressively and unrelated table state churned N+1 times.
+    Promise.allSettled(
+      edges.map(async (edge): Promise<[string, StintStatsState]> => {
+        const url = buildStintStatsUrl(familyId, edge);
+        if (!url) return [edge.id, { status: "error" }];
+        try {
+          const res = await fetch(url);
+          if (!res.ok) return [edge.id, { status: "error" }];
+          const data = (await res.json()) as StintStatsResponse;
+          return [edge.id, { status: "ok", data }];
+        } catch {
+          return [edge.id, { status: "error" }];
+        }
+      }),
+    ).then((settled) => {
+      if (cancelled) return;
+      const next = new Map<string, StintStatsState>();
+      for (const result of settled) {
+        if (result.status === "fulfilled") {
+          const [id, state] = result.value;
+          next.set(id, state);
+        }
       }
-      fetch(url)
-        .then((res) => (res.ok ? res.json() : Promise.reject()))
-        .then((data: StintStatsResponse) => {
-          if (cancelled) return;
-          setResults((prev) => {
-            const m = new Map(prev);
-            m.set(edge.id, { status: "ok", data });
-            return m;
-          });
-        })
-        .catch(() => {
-          if (cancelled) return;
-          setResults((prev) => {
-            const m = new Map(prev);
-            m.set(edge.id, { status: "error" });
-            return m;
-          });
-        });
+      // Preserve any edges still in loading (defensive — Promise.allSettled
+      // shouldn't lose entries, but if the edges list changed mid-flight we
+      // skip the stale ids and keep the current loading sentinel).
+      for (const edge of edges) {
+        if (!next.has(edge.id)) next.set(edge.id, { status: "error" });
+      }
+      setResults(next);
     });
 
     return () => {
