@@ -62,15 +62,35 @@ function usePrefersReducedMotion(): boolean {
 }
 
 /**
+ * Brand sage-500 (matches `--sage-500` in `globals.css`). Used as the
+ * graceful-degradation fallback when an HSL-triplet token can't be parsed —
+ * if the design system ever migrates to `oklch()` or another format, the
+ * helix renders sage instead of going pure black.
+ */
+const FALLBACK_SAGE_HEX = "#6F8A60";
+
+/**
  * Convert an HSL-triplet CSS var ("95 18% 46%") to hex. shadcn-style tokens
  * (--primary, --background, --muted-foreground, etc.) are stored this way so
  * Tailwind's `<alpha-value>` substitution works. three.js needs hex/rgb.
+ *
+ * On parse failure (e.g., a future `oklch()` migration): warns in dev so the
+ * regression is visible, then returns the brand sage so the helix still
+ * renders something on-brand instead of pure black on the cream canvas.
  */
 function hslTripletToHex(triplet: string): string {
   const match = triplet
     .trim()
     .match(/^(\d+(?:\.\d+)?)\s+(\d+(?:\.\d+)?)%\s+(\d+(?:\.\d+)?)%$/);
-  if (!match) return "#000000";
+  if (!match) {
+    if (process.env.NODE_ENV !== "production") {
+      console.warn(
+        `[DnaHelix3D] could not parse HSL triplet "${triplet}" — falling back to sage. ` +
+          `If the design tokens migrated off HSL, update hslTripletToHex.`
+      );
+    }
+    return FALLBACK_SAGE_HEX;
+  }
   const h = Number(match[1]) / 360;
   const s = Number(match[2]) / 100;
   const l = Number(match[3]) / 100;
@@ -243,7 +263,7 @@ export function DnaHelix3D({
       style={{ width, height }}
       role="img"
       aria-label={ariaLabel}
-      data-testid="dna-helix-3d"
+      data-testid="dna-helix"
     >
       <Canvas
         camera={{ position: [0, 0, 5.6], fov: 38 }}
