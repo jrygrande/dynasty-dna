@@ -1,5 +1,7 @@
+import { Suspense } from "react";
 import { ensureLeagueFresh } from "@/lib/freshness";
 import { ColdSyncLoadingScreen } from "@/components/loading/ColdSyncLoadingScreen";
+import LeagueFamilyLoading from "./loading";
 
 /**
  * Server-component layout for every page under `/league/[familyId]/...`.
@@ -16,27 +18,43 @@ import { ColdSyncLoadingScreen } from "@/components/loading/ColdSyncLoadingScree
  *                              navigates to the dashboard when the chunked
  *                              executor reports `completed`.
  *
- * The gate is single-pass per request — `ensureLeagueFresh` short-circuits
- * cheaply when data is fresh, and concurrency is enforced by the existing
- * `syncJobs` lock. When the same family is being indexed by another
- * visitor, `ensureLeagueFresh` returns the in-flight `jobId`, so both
- * tabs share one chunked run.
+ * Streaming contract (#177 follow-up): the layout itself MUST stay
+ * synchronous and return immediately. The slow `await ensureLeagueFresh()`
+ * lives inside `<FreshnessGate>`, which is wrapped in a `<Suspense>`
+ * boundary so the helix fallback flushes in the first response chunk. If
+ * the layout `await`ed at the top level, the server couldn't send any
+ * bytes until the gate resolved — the browser would stay frozen on the
+ * previous page for the full sync duration before the helix appeared.
  */
-export default async function LeagueFamilyLayout({
+export default function LeagueFamilyLayout({
   children,
   params,
 }: {
   children: React.ReactNode;
   params: { familyId: string };
 }) {
-  const result = await ensureLeagueFresh(params.familyId);
+  return (
+    <Suspense fallback={<LeagueFamilyLoading />}>
+      <FreshnessGate familyId={params.familyId}>{children}</FreshnessGate>
+    </Suspense>
+  );
+}
+
+async function FreshnessGate({
+  familyId,
+  children,
+}: {
+  familyId: string;
+  children: React.ReactNode;
+}) {
+  const result = await ensureLeagueFresh(familyId);
 
   if (!result.ready) {
     // `result.familyId` is guaranteed when `ready === false` — the cold
     // path resolves the family before deciding to lazy-sync.
     return (
       <ColdSyncLoadingScreen
-        familyId={result.familyId ?? params.familyId}
+        familyId={result.familyId ?? familyId}
         initialJobId={result.jobId}
       />
     );
