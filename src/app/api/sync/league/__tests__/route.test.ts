@@ -72,7 +72,7 @@ afterAll(() => {
 });
 
 describe("POST /api/sync/league", () => {
-  it("returns 401 without bearer token", async () => {
+  it("returns 401 without bearer or matching origin", async () => {
     const res = await POST(makeRequest({ leagueId: "abc" }));
     expect(res.status).toBe(401);
     expect(ensureLeagueFamilyMock).not.toHaveBeenCalled();
@@ -87,7 +87,36 @@ describe("POST /api/sync/league", () => {
     expect(ensureLeagueFamilyMock).not.toHaveBeenCalled();
   });
 
-  it("returns 401 when CRON_SECRET is unset (fail closed)", async () => {
+  it("returns 401 when origin does not match host (cross-site forge)", async () => {
+    const res = await POST(
+      makeRequest(
+        { leagueId: "abc" },
+        { origin: "https://evil-site.com", host: "localhost" }
+      )
+    );
+    expect(res.status).toBe(401);
+    expect(ensureLeagueFamilyMock).not.toHaveBeenCalled();
+  });
+
+  it("accepts a same-origin browser request (in-app auto-warm path)", async () => {
+    ensureLeagueFamilyMock.mockResolvedValueOnce("fam-origin");
+    acquireSyncLockMock.mockResolvedValueOnce("job-origin");
+    dbSelectChain.mockResolvedValueOnce([
+      { leagueId: "l-2025", season: "2025", familyId: "fam-origin" },
+    ]);
+    syncLeagueFamilyMock.mockResolvedValueOnce(undefined);
+
+    const res = await POST(
+      makeRequest(
+        { leagueId: "abc" },
+        { origin: "https://localhost", host: "localhost" }
+      )
+    );
+    expect(res.status).toBe(200);
+    expect(ensureLeagueFamilyMock).toHaveBeenCalled();
+  });
+
+  it("returns 401 when CRON_SECRET is unset (fail closed) — even with valid-looking bearer", async () => {
     delete process.env.CRON_SECRET;
     const res = await POST(
       makeRequest(
@@ -97,6 +126,43 @@ describe("POST /api/sync/league", () => {
     );
     expect(res.status).toBe(401);
   });
+});
+
+describe("POST /api/sync/league — fail-closed when CRON_SECRET never set", () => {
+  // Separate describe with its own beforeEach that DELETES env, so the test
+  // can't accidentally pass because beforeEach set it. Catches a regression
+  // where the helper treats unset == empty-string == set.
+  beforeEach(() => {
+    delete process.env.CRON_SECRET;
+  });
+
+  it("rejects bearer auth", async () => {
+    const res = await POST(
+      makeRequest({ leagueId: "abc" }, { authorization: "Bearer anything" })
+    );
+    expect(res.status).toBe(401);
+    expect(ensureLeagueFamilyMock).not.toHaveBeenCalled();
+  });
+
+  it("still accepts same-origin (origin check is independent of bearer)", async () => {
+    ensureLeagueFamilyMock.mockResolvedValueOnce("fam-no-secret");
+    acquireSyncLockMock.mockResolvedValueOnce("job-no-secret");
+    dbSelectChain.mockResolvedValueOnce([
+      { leagueId: "l-2025", season: "2025", familyId: "fam-no-secret" },
+    ]);
+    syncLeagueFamilyMock.mockResolvedValueOnce(undefined);
+
+    const res = await POST(
+      makeRequest(
+        { leagueId: "abc" },
+        { origin: "https://localhost", host: "localhost" }
+      )
+    );
+    expect(res.status).toBe(200);
+  });
+});
+
+describe("POST /api/sync/league — happy paths", () => {
 
   it("returns 400 when leagueId is missing", async () => {
     const res = await POST(

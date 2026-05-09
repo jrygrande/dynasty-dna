@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { syncPlayers } from "@/services/playerSync";
+import { isAuthorizedCron } from "@/app/api/cron/_lib/auth";
 
 export async function POST(req: NextRequest) {
+  // Admin-only: no in-app caller, bearer-required.
+  if (!isAuthorizedCron(req)) {
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
   try {
     const body = await req.json().catch(() => ({}));
     const force = body?.force === true;

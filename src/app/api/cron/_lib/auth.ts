@@ -23,3 +23,26 @@ export function isAuthorizedCron(req: NextRequest | Request): boolean {
   const token = header.slice(7).trim();
   return token === expected;
 }
+
+/**
+ * Returns true when the request's `Origin` header matches its `Host` —
+ * i.e., it was issued by a browser navigating the same deployment.
+ * Used to gate routes that have a legitimate in-app caller (page.tsx
+ * auto-warm) without requiring a session/cookie auth layer.
+ *
+ * Browsers enforce same-origin: evil-site.com cannot forge Origin to
+ * match our deployment. Non-browser callers (curl, server-to-server)
+ * typically don't send Origin and must bearer-auth instead. Acceptable
+ * model for an unauthenticated read-only product whose only mutation
+ * trigger is "warm a league a user is currently viewing."
+ */
+export function isSameOriginRequest(req: NextRequest | Request): boolean {
+  const origin = req.headers.get("origin");
+  const host = req.headers.get("host");
+  if (!origin || !host) return false;
+  try {
+    return new URL(origin).host === host;
+  } catch {
+    return false;
+  }
+}
