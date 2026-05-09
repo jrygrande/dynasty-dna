@@ -375,6 +375,69 @@ describe("updateSyncJobStage", () => {
     });
   });
 
+  it("uses a CAS-style WHERE when stagesCompleted is provided (concurrent-tick safety)", async () => {
+    // bug_005 from ultrareview: concurrent ticks against the same jobId
+    // both pass `if (status === "running")` and run runChunk in parallel.
+    // A slow tick that finished stage 4 must NOT overwrite the cursor when
+    // a fast tick already advanced it to 5. The CAS predicate
+    // (`stages_completed IS NULL OR stages_completed < new`) makes Postgres
+    // reject the late write atomically.
+    const whereArgs: unknown[] = [];
+    const failingDb = {
+      update: jest.fn(() => ({
+        set: jest.fn(() => ({
+          where: jest.fn((arg: unknown) => {
+            whereArgs.push(arg);
+            return Promise.resolve();
+          }),
+        })),
+      })),
+    };
+    mockedGetDb.mockReturnValue(
+      failingDb as unknown as ReturnType<typeof getDb>
+    );
+
+    await updateSyncJobStage("job_a", "season 4 of 5", 4);
+
+    // The where predicate must NOT be a plain eq(id) — it carries the
+    // additional CAS clause as a tagged sql template.
+    expect(whereArgs).toHaveLength(1);
+    // The drizzle-orm mock at the top of this file produces `{ op: "sql",
+    // strings, values }` for sql-tagged templates and `{ op: "eq", col,
+    // value }` for eq(). The CAS path uses sql; the eq() path doesn't.
+    const predicate = whereArgs[0] as { op: string; strings?: string[] };
+    expect(predicate.op).toBe("sql");
+    const text = (predicate.strings ?? []).join("?");
+    expect(text).toContain(" < ");
+    expect(text).toContain("IS NULL");
+  });
+
+  it("currentStage-only update (no stagesCompleted) uses simple eq() WHERE — no CAS overhead", async () => {
+    // The label-only path is for slightly-stale stage labels. CAS would be
+    // overkill there. Confirm it stays on the simple eq() predicate.
+    const whereArgs: unknown[] = [];
+    const db = {
+      update: jest.fn(() => ({
+        set: jest.fn(() => ({
+          where: jest.fn((arg: unknown) => {
+            whereArgs.push(arg);
+            return Promise.resolve();
+          }),
+        })),
+      })),
+    };
+    mockedGetDb.mockReturnValue(
+      db as unknown as ReturnType<typeof getDb>
+    );
+
+    await updateSyncJobStage("job_a", "season 4 of 5");
+
+    expect(whereArgs).toHaveLength(1);
+    // Label-only updates take the cheap eq(id) path, not sql.
+    const predicate = whereArgs[0] as { op: string };
+    expect(predicate.op).toBe("eq");
+  });
+
   it("noops on an empty jobId", async () => {
     const calls: DbCalls = {
       selectResults: [],

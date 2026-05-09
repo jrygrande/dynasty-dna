@@ -34,7 +34,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { eq, sql } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import { getDb, schema } from "@/db";
 import { releaseSyncLock } from "@/services/syncLock";
 import { buildFamilyStages, runChunk } from "@/services/chunkedSync";
@@ -184,12 +184,11 @@ export async function POST(
 
   const deadlineAt = startedAt + TICK_BUDGET_MS;
 
-  recordSyncBreadcrumb({
-    source: "league-family",
-    trigger: "lazy",
-    scope: `chunked-tick:${family.familyId}`,
-    outcome: "success",
-  });
+  // No "tick started" breadcrumb here — `withSyncTransaction` records the
+  // start signal natively, and the chunked-complete / chunked-failed
+  // breadcrumbs below capture the terminal outcome. A leading
+  // outcome:"success" breadcrumb (per the SyncOutcome contract) would
+  // misrepresent unfinished work as complete.
 
   try {
     const result = await withSyncTransaction(
@@ -203,11 +202,16 @@ export async function POST(
       // fresh family on the very next request. The per-stage syncLeague
       // call already does this for seasons it visits, but on a fully-
       // resumed family every stage may have been a watermark no-op — in
-      // that case we still want the row marked fresh.
-      await db
-        .update(schema.leagues)
-        .set({ lastSyncedAt: new Date() })
-        .where(sql`${schema.leagues.id} IN (${sql.join(family.leagueIds.map((id) => sql`${id}`), sql`, `)})`);
+      // that case we still want the row marked fresh. `inArray` short-
+      // circuits to a no-op predicate on an empty list, which protects
+      // against an orphan family (members table empty) producing
+      // `WHERE id IN ()` — a Postgres parser error.
+      if (family.leagueIds.length > 0) {
+        await db
+          .update(schema.leagues)
+          .set({ lastSyncedAt: new Date() })
+          .where(inArray(schema.leagues.id, family.leagueIds));
+      }
 
       await releaseSyncLock(jobId, "success", undefined, {
         stagesCompleted: result.stagesCompleted,

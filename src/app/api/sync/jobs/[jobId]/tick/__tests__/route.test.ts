@@ -43,6 +43,11 @@ jest.mock("@/db", () => ({
 
 jest.mock("drizzle-orm", () => ({
   eq: (col: { name: string }, value: unknown) => ({ op: "eq", col, value }),
+  inArray: (col: { name: string }, values: unknown[]) => ({
+    op: "inArray",
+    col,
+    values,
+  }),
   sql: Object.assign(
     (strings: TemplateStringsArray, ...values: unknown[]) => ({
       op: "sql",
@@ -285,6 +290,53 @@ describe("POST /api/sync/jobs/[jobId]/tick", () => {
       "success",
       undefined,
       { stagesCompleted: 8 }
+    );
+  });
+
+  test("completed tick with empty leagueIds (orphan family) skips the leagues UPDATE without crashing", async () => {
+    // Reachable when a leagueFamilies row exists but leagueFamilyMembers is
+    // empty (interrupted family creation). Pre-fix this rendered
+    // `WHERE leagues.id IN ()` and Postgres rejected it as a parser error.
+    const state = makeMockDb({
+      selectResponses: [
+        [
+          {
+            id: "j-orphan",
+            ref: "root",
+            status: "running",
+            stagesCompleted: 0,
+            stagesTotal: 4,
+            currentStage: null,
+            trigger: "lazy",
+          },
+        ],
+        [{ id: "fam-orphan" }],
+        [], // empty members -> family.leagueIds is empty
+      ],
+    });
+    buildFamilyStagesMock.mockResolvedValue([
+      { key: "x", label: "x", run: jest.fn() },
+    ]);
+    runChunkMock.mockResolvedValue({
+      status: "completed",
+      stagesCompleted: 4,
+      stagesTotal: 4,
+      currentStageKey: null,
+      currentStageLabel: null,
+    });
+
+    const res = await POST(makeRequest() as never, ctx("j-orphan"));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.status).toBe("completed");
+    // The bug was: db.update(leagues).where(IN ()) -> SQL error -> failed.
+    // After the fix, we skip the UPDATE entirely on empty leagueIds.
+    expect(state.update).not.toHaveBeenCalled();
+    expect(releaseSyncLockMock).toHaveBeenCalledWith(
+      "j-orphan",
+      "success",
+      undefined,
+      { stagesCompleted: 4 }
     );
   });
 

@@ -154,9 +154,14 @@ export function ColdSyncLoadingScreen({
 
         if (body.status === "completed") {
           stoppedRef.current = true;
-          // Hard refresh + navigate so the layout's freshness gate re-runs
-          // with the now-fresh data.
-          router.replace(`/league/${familyId}`);
+          // `router.refresh()` re-runs the route tree (including this
+          // layout's `ensureLeagueFresh`) for the CURRENT URL — which
+          // preserves any sub-route the visitor deep-linked to (e.g.
+          // /league/X/graph from a share link). Do NOT call
+          // `router.replace(/league/${familyId})` here; that would strip
+          // /graph, /transactions, /manager/... and silently drop the
+          // visitor on the dashboard root. The layout's gate now returns
+          // ready=true so the original route's children render.
           router.refresh();
           return;
         }

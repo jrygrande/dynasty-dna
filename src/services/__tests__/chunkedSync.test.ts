@@ -149,28 +149,35 @@ describe("runChunk", () => {
 
   test("yields cleanly when the deadline is reached between stages", async () => {
     makeMockDb(0);
-    const stages = [
-      makeStage("a"),
-      makeStage("b", async () => {
-        // Push the clock past the deadline mid-execution so the loop
-        // exits before the next stage starts.
-        const real = Date.now;
-        Date.now = () => real() + 30_000;
-      }),
-      makeStage("c"),
-    ];
+    // Capture the original `Date.now` at the test scope so the `finally`
+    // can guarantee restoration even if assertions throw. The previous
+    // implementation reassigned `Date.now = Date.now.bind(Date)` which
+    // bound the already-patched lambda back to itself instead of restoring
+    // the native function — leaking a +30s skew into every subsequent test
+    // in this Jest worker.
+    const realNow = Date.now;
+    try {
+      const stages = [
+        makeStage("a"),
+        makeStage("b", async () => {
+          // Push the clock past the deadline mid-execution so the loop
+          // exits before the next stage starts.
+          Date.now = () => realNow() + 30_000;
+        }),
+        makeStage("c"),
+      ];
 
-    const result = await runChunk("job-1", stages, {
-      deadlineAt: Date.now() + 1_000,
-    });
+      const result = await runChunk("job-1", stages, {
+        deadlineAt: realNow() + 1_000,
+      });
 
-    expect(result.status).toBe("in_progress");
-    expect(result.stagesCompleted).toBe(2);
-    expect(result.currentStageKey).toBe("c");
-    expect(result.currentStageLabel).toBe("stage:c");
-
-    // restore Date.now
-    Date.now = Date.now.bind(Date);
+      expect(result.status).toBe("in_progress");
+      expect(result.stagesCompleted).toBe(2);
+      expect(result.currentStageKey).toBe("c");
+      expect(result.currentStageLabel).toBe("stage:c");
+    } finally {
+      Date.now = realNow;
+    }
   });
 
   test("resumes from the persisted cursor on a follow-up tick", async () => {
