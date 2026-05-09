@@ -543,11 +543,24 @@ export const syncJobs = pgTable(
     total: integer("total").default(0),
     done: integer("done").default(0),
     error: text("error"),
+    // Audit fields (Sync 9 / #152). `trigger` records what kicked off the
+    // sync (cron|lazy|manual) so dashboards can split success rate by
+    // origin. `apiCallsMade` is incremented during the run so we can
+    // correlate sync cost against the rolling Sleeper rate-limit gauge.
+    // `stagesCompleted` / `stagesTotal` / `currentStage` are placeholders
+    // for the chunked-stage executor (#151) — they default to NULL today
+    // and become meaningful once the executor lands.
+    trigger: text("trigger"), // cron | lazy | manual
+    apiCallsMade: integer("api_calls_made").default(0),
+    stagesCompleted: integer("stages_completed").default(0),
+    stagesTotal: integer("stages_total"),
+    currentStage: text("current_stage"),
     startedAt: timestamp("started_at", { mode: "date" }).defaultNow().notNull(),
     finishedAt: timestamp("finished_at", { mode: "date" }),
   },
   (sj) => ({
     refStatusIdx: index("sync_jobs_ref_status_idx").on(sj.ref, sj.status),
+    startedAtIdx: index("sync_jobs_started_at_idx").on(sj.startedAt),
   })
 );
 

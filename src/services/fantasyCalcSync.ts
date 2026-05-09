@@ -1,6 +1,8 @@
 import { getDb, schema } from "@/db";
 import { eq, and, sql } from "drizzle-orm";
 import { getFantasyCalcValues } from "@/lib/fantasycalc";
+import { recordSyncBreadcrumb } from "@/lib/observability/syncBreadcrumb";
+import type { SyncTrigger } from "@/lib/observability/syncBreadcrumb";
 
 const STALENESS_MS = 12 * 60 * 60 * 1000; // 12 hours
 
@@ -9,6 +11,11 @@ export interface FantasyCalcConfig {
   ppr: number;
   numTeams: number;
   numQbs: number;
+}
+
+interface FantasyCalcSyncOpts {
+  force?: boolean;
+  trigger?: SyncTrigger;
 }
 
 /**
@@ -21,7 +28,42 @@ export interface FantasyCalcConfig {
  */
 export async function syncFantasyCalcValuesForConfig(
   config: FantasyCalcConfig,
-  opts?: { force?: boolean },
+  opts?: FantasyCalcSyncOpts,
+): Promise<Date | null> {
+  const { isSuperFlex, ppr, numTeams, numQbs } = config;
+  const db = getDb();
+  const trigger = opts?.trigger ?? "manual";
+  const scope = `sf=${isSuperFlex}|ppr=${ppr}|teams=${numTeams}|qbs=${numQbs}`;
+  const startedAt = Date.now();
+  let apiCalls = 0;
+  let outcome: "success" | "failed" = "success";
+  let errorMessage: string | undefined;
+
+  try {
+    return await runSyncFantasyCalcForConfig(config, opts, () => {
+      apiCalls += 1;
+    });
+  } catch (err) {
+    outcome = "failed";
+    errorMessage = err instanceof Error ? err.message : String(err);
+    throw err;
+  } finally {
+    recordSyncBreadcrumb({
+      source: "fantasycalc",
+      trigger,
+      scope,
+      outcome,
+      durationMs: Date.now() - startedAt,
+      apiCalls,
+      error: errorMessage,
+    });
+  }
+}
+
+async function runSyncFantasyCalcForConfig(
+  config: FantasyCalcConfig,
+  opts: FantasyCalcSyncOpts | undefined,
+  onApiCall: () => void,
 ): Promise<Date | null> {
   const { isSuperFlex, ppr, numTeams, numQbs } = config;
   const db = getDb();
@@ -49,6 +91,7 @@ export async function syncFantasyCalcValuesForConfig(
   }
 
   // Fetch from FantasyCalc API
+  onApiCall();
   const values = await getFantasyCalcValues({
     isDynasty: true,
     numQbs,
@@ -166,7 +209,7 @@ export async function syncFantasyCalcValuesForConfig(
  */
 export async function syncFantasyCalcValues(
   leagueId: string,
-  opts?: { force?: boolean },
+  opts?: FantasyCalcSyncOpts,
 ): Promise<Date | null> {
   const db = getDb();
 
