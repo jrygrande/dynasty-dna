@@ -19,6 +19,12 @@ jest.mock("@/db", () => {
         awayScore: stubColumn("away_score"),
         gameDate: stubColumn("game_date"),
       },
+      nflverseWatermarks: {
+        source: stubColumn("source"),
+        season: stubColumn("season"),
+        lastSyncedWeek: stubColumn("last_synced_week"),
+        lastSyncedAt: stubColumn("last_synced_at"),
+      },
     },
     getDb: jest.fn(),
     getSyncDb: jest.fn(),
@@ -75,11 +81,14 @@ type SyncTx = {
 
 function makeSyncDb() {
   // Capture the transaction callback execution so we can resolve cleanly.
+  // Insert chain supports both onConflictDoNothing (schedule rows) and
+  // onConflictDoUpdate (nflverseWatermarks row, written in the same tx).
   const tx: SyncTx = {
     delete: jest.fn(() => ({ where: jest.fn(() => Promise.resolve()) })),
     insert: jest.fn(() => ({
       values: jest.fn(() => ({
         onConflictDoNothing: jest.fn(() => Promise.resolve()),
+        onConflictDoUpdate: jest.fn(() => Promise.resolve()),
       })),
     })),
   };
