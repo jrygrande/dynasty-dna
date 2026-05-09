@@ -21,6 +21,7 @@ import { syncSchedule } from "@/services/scheduleSync";
 import { currentSeason } from "@/services/nflverseWatermark";
 import { recordSyncBreadcrumb } from "@/lib/observability/syncBreadcrumb";
 import { classifyOutcome, runCron } from "../_lib/runCron";
+import { isFirstSundayOfMonth } from "../_lib/cronSchedule";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -40,16 +41,6 @@ interface SourceResult {
 interface SyncSummary {
   total: number;
   seasonResults: Record<number, number>;
-}
-
-/**
- * Returns true on the first Sunday of any month. Vercel Hobby supports
- * daily, not monthly cron, so we register `0 9 * * 0` (every Sunday) and
- * gate here to approximate monthly cadence. Visible for testing.
- */
-export function isFirstSundayOfMonth(now: Date = new Date()): boolean {
-  if (now.getUTCDay() !== 0) return false; // 0 = Sunday in UTC
-  return now.getUTCDate() <= 7;
 }
 
 async function runSource(

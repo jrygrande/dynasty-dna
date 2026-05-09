@@ -29,7 +29,8 @@ jest.mock("@/lib/observability/syncBreadcrumb", () => ({
   recordSyncBreadcrumb: (...args: unknown[]) => recordSyncBreadcrumbMock(...args),
 }));
 
-import { GET, isFirstSundayOfMonth } from "../route";
+import { GET } from "../route";
+import { isFirstSundayOfMonth } from "../../_lib/cronSchedule";
 
 function makeRequest(headers: Record<string, string> = {}) {
   return new Request("http://localhost/api/cron/nflverse-historical", {
