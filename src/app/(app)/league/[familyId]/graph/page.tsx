@@ -363,15 +363,33 @@ export default function GraphPage() {
     setManualPositions((prev) => (prev.size === 0 ? prev : new Map()));
   }, []);
   const seedKey = seed.join(",");
-  // Sorted so insertion order doesn't trigger spurious resets.
-  const visibleNodeHash = useMemo(() => {
-    const ids = visibility.visibleNodes.map((n) => n.id);
-    ids.sort();
-    return ids.join(",");
-  }, [visibility.visibleNodes]);
+  // Wipe manualPositions ONLY on a fresh seed (different player/pick traced).
+  // Previously this also fired whenever the visible-node set changed (thread
+  // expand/collapse), which had the user-visible side effect of snapping any
+  // dragged card back to auto-layout in a single frame — read as a flash. Now
+  // we keep the Map across expansions and just prune ids that no longer exist
+  // in the visible graph (orphaned entries are harmless but waste memory).
   useEffect(() => {
     setManualPositions((prev) => (prev.size === 0 ? prev : new Map()));
-  }, [seedKey, visibleNodeHash]);
+  }, [seedKey]);
+
+  const visibleNodeIds = useMemo(
+    () => new Set(visibility.visibleNodes.map((n) => n.id)),
+    [visibility.visibleNodes],
+  );
+  useEffect(() => {
+    setManualPositions((prev) => {
+      if (prev.size === 0) return prev;
+      let pruned: Map<string, Pos> | null = null;
+      for (const id of prev.keys()) {
+        if (!visibleNodeIds.has(id)) {
+          if (!pruned) pruned = new Map(prev);
+          pruned.delete(id);
+        }
+      }
+      return pruned ?? prev;
+    });
+  }, [visibleNodeIds]);
 
   const hasSeed = seed.length > 0;
   const selectedNodeId =
