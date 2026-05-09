@@ -1,5 +1,9 @@
 import { getDb, getSyncDb, schema } from "@/db";
 import { sql, eq, and } from "drizzle-orm";
+import {
+  setNflverseWatermarkTx,
+  shouldSkipSeasonSync,
+} from "@/services/nflverseWatermark";
 
 const NFLVERSE_WEEKLY_ROSTER_URL =
   "https://github.com/nflverse/nflverse-data/releases/download/weekly_rosters/roster_weekly_";
@@ -48,8 +52,9 @@ interface RosterRow {
 
 /**
  * Check if a season's roster status data has already been synced.
+ * Used as the historical-season skip optimization.
  */
-async function isSeasonSynced(season: number): Promise<boolean> {
+async function hasRosterStatusRows(season: number): Promise<boolean> {
   const db = getDb();
   const result = await db
     .select({ count: sql<number>`count(*)` })
@@ -66,7 +71,11 @@ async function syncRosterStatusSeason(
   season: number,
   force = false
 ): Promise<number> {
-  if (!force && (await isSeasonSynced(season))) {
+  const skip = await shouldSkipSeasonSync(season, {
+    force,
+    hasRows: hasRosterStatusRows,
+  });
+  if (skip) {
     return 0;
   }
 
@@ -137,6 +146,11 @@ async function syncRosterStatusSeason(
   const BATCH_SIZE = 200;
   let count = 0;
 
+  const maxWeek = rows.reduce((m, r) => (r.week > m ? r.week : m), 0);
+
+  // Watermark write lives inside the transaction so it commits atomically
+  // with the data write — if the inserts roll back, the watermark is not
+  // stamped, and vice versa.
   await syncDb.transaction(async (tx) => {
     await tx
       .delete(schema.nflWeeklyRosterStatus)
@@ -162,6 +176,8 @@ async function syncRosterStatusSeason(
 
       count += values.length;
     }
+
+    await setNflverseWatermarkTx(tx, "roster_status", season, maxWeek);
   });
 
   // Backfill gsis_id into players table using sleeper_id crosswalk

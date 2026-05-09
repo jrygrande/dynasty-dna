@@ -625,3 +625,23 @@ export const syncWatermarks = pgTable(
     pk: primaryKey({ columns: [sw.leagueId, sw.dataType] }),
   })
 );
+
+// Per-(source, season) watermark for nflverse-sourced data.
+// Distinct from `sync_watermarks` (which is league-scoped) because nflverse
+// data is global and not tied to any league. `lastSyncedWeek` lets the current
+// season re-fetch incrementally without forcing every cron tick to be a full
+// season reload.
+export const nflverseWatermarks = pgTable(
+  "nflverse_watermarks",
+  {
+    source: text("source").notNull(), // 'roster_status' | 'injuries' | 'schedule'
+    season: integer("season").notNull(),
+    lastSyncedWeek: integer("last_synced_week").notNull().default(0),
+    lastSyncedAt: timestamp("last_synced_at", { mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (nw) => ({
+    pk: primaryKey({ columns: [nw.source, nw.season] }),
+  })
+);

@@ -1,5 +1,9 @@
 import { getDb, getSyncDb, schema } from "@/db";
 import { sql, eq } from "drizzle-orm";
+import {
+  setNflverseWatermarkTx,
+  shouldSkipSeasonSync,
+} from "@/services/nflverseWatermark";
 
 const NFLVERSE_GAMES_URL =
   "https://github.com/nflverse/nfldata/raw/master/data/games.csv";
@@ -28,7 +32,7 @@ function parseCSVLine(line: string): string[] {
   return result;
 }
 
-async function isSeasonSynced(season: number): Promise<boolean> {
+async function hasScheduleRows(season: number): Promise<boolean> {
   const db = getDb();
   const result = await db
     .select({ count: sql<number>`count(*)` })
@@ -43,7 +47,11 @@ async function syncScheduleSeason(
   headers: string[],
   force = false
 ): Promise<number> {
-  if (!force && (await isSeasonSynced(season))) {
+  const skip = await shouldSkipSeasonSync(season, {
+    force,
+    hasRows: hasScheduleRows,
+  });
+  if (skip) {
     return 0;
   }
 
@@ -90,6 +98,14 @@ async function syncScheduleSeason(
   const BATCH_SIZE = 200;
   let count = 0;
 
+  const maxWeek = rows.reduce(
+    (m, r) => ((r.week ?? 0) > m ? r.week ?? 0 : m),
+    0
+  );
+
+  // Watermark write lives inside the transaction so it commits atomically
+  // with the data write — if the inserts roll back, the watermark is not
+  // stamped, and vice versa.
   await syncDb.transaction(async (tx) => {
     await tx
       .delete(schema.nflSchedule)
@@ -100,6 +116,8 @@ async function syncScheduleSeason(
       await tx.insert(schema.nflSchedule).values(batch).onConflictDoNothing();
       count += batch.length;
     }
+
+    await setNflverseWatermarkTx(tx, "schedule", season, maxWeek);
   });
 
   return count;
