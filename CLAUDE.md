@@ -83,6 +83,59 @@ npm run db:migrate   # Run migrations
 npm run db:push      # Push schema changes
 ```
 
+## Manual sync (debugging)
+
+The sync pipeline runs on cron + lazy warm paths in production. The hooks below are for **debugging only** — there is deliberately no UI button. Reach for them when:
+
+- A family is missing data and you want to force-refresh end-to-end
+- nflverse republished a corrected CSV for a historical season
+- A schema migration changed how a sync writes rows and you need to re-ingest
+- You're verifying a code change against a real family before merging
+
+All scripts call the same internal services as cron / lazy paths, so the result is identical to a triggered sync.
+
+### npm scripts
+
+`.env.local` is loaded automatically; if `DATABASE_URL_DEV` is set there, every script targets the dev Neon branch (see `resolveDatabaseUrl` in `src/db`). Unset it to point at prod — and triple-check before passing `--force`.
+
+| Script | Purpose | Common usage |
+|---|---|---|
+| `npm run sync:family -- <id>` | Sync one league family (root league id or family id). Same path as the lazy warm + manual API. | `-- <id> --force` to bypass the 7-day completed-season skip |
+| `npm run sync:season -- <year>` | Force-refresh the three nflverse sources (roster status, injuries, schedule) for one historical season | `-- 2023` |
+| `npm run sync:players` | Sleeper player dictionary; respects 24h staleness gate | `-- --force` to bypass |
+| `npm run sync:fantasycalc` | Refresh FantasyCalc values for every distinct (sf, ppr, teams, qbs) combo | `-- --force`, `-- --dry-run` |
+
+Each script supports `-- --help`. Exit code 0 = success; 1 = failure (mirrored to a Sentry breadcrumb via the underlying service).
+
+### Hitting `/api/sync/league` against the deployed app
+
+Bearer-gated against `CRON_SECRET` (same secret cron uses). The route triggers a full family sync end-to-end.
+
+```bash
+curl -X POST https://dynasty-dna.vercel.app/api/sync/league \
+  -H "Authorization: Bearer $CRON_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{"leagueId": "<rootLeagueIdOrAnySeasonInTheFamily>"}'
+```
+
+Returns 401 without a valid bearer, 400 if `leagueId` is missing, 409 if a sync is already running for that family, or 200 with `{ familyId, seasonsSynced }` on success.
+
+### Reading the `syncJobs` audit log
+
+Every manual / cron / warm-path sync writes a row to `syncJobs`. To inspect:
+
+```bash
+# Open Drizzle Studio against the dev branch and browse the syncJobs table
+npm run db:dev:studio
+
+# Or query directly with psql:
+psql "$DATABASE_URL_DEV" -c \
+  "SELECT id, type, ref, trigger, status, started_at, finished_at, error
+   FROM sync_jobs ORDER BY started_at DESC LIMIT 20;"
+```
+
+Sentry breadcrumbs (issue #152) are the durable record for prod — `syncJobs` is the lock + recent-history view. There is no UI exposing this list deliberately; manual sync stays operator-only.
+
 ## Project Structure
 - `src/app/` - Next.js App Router pages and API routes
 - `src/components/` - React components

@@ -4,8 +4,25 @@ import { ensureLeagueFamily } from "@/services/leagueFamily";
 import { acquireSyncLock, releaseSyncLock } from "@/services/syncLock";
 import { getDb, schema } from "@/db";
 import { eq } from "drizzle-orm";
+import { isAuthorizedCron, isSameOriginRequest } from "@/app/api/cron/_lib/auth";
 
 export async function POST(req: NextRequest) {
+  // /api/sync/league has two legitimate callers:
+  //   1. Operators hitting it via curl with `Authorization: Bearer $CRON_SECRET`
+  //   2. The in-app auto-warm in src/app/(app)/league/[familyId]/page.tsx,
+  //      which is a same-origin browser fetch
+  //
+  // Bearer-only would 401 the in-app caller (browser can't safely send the
+  // server secret). Same-origin alone wouldn't block direct curl from the
+  // public internet. So we accept either — bearer for ops, same-origin
+  // (verified via Origin header against Host) for the browser.
+  if (!isAuthorizedCron(req) && !isSameOriginRequest(req)) {
+    return NextResponse.json(
+      { error: "unauthorized" },
+      { status: 401 }
+    );
+  }
+
   const { leagueId } = await req.json();
   if (!leagueId) {
     return NextResponse.json(
