@@ -8,6 +8,67 @@ import {
 const NFLVERSE_GAMES_URL =
   "https://github.com/nflverse/nfldata/raw/master/data/games.csv";
 
+// In-process memoization of the nflverse games CSV. Multi-family cron
+// runs hit syncSchedule once per family, so without this, the same ~600KB
+// CSV gets re-downloaded N times back-to-back.
+//
+// Cached for 1 hour so a long-warm Vercel instance picks up mid-day
+// nflverse corrections within an hour rather than holding stale data
+// for up to 24h. Stores the in-flight promise so concurrent callers
+// share a single fetch.
+const CSV_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+
+interface CsvCacheEntry {
+  cachedAt: number;
+  promise: Promise<string>;
+}
+
+let csvCacheEntry: CsvCacheEntry | null = null;
+
+// Indirection so tests can inject a fake clock.
+let nowFn: () => number = () => Date.now();
+
+async function fetchGamesCsv(): Promise<string> {
+  const now = nowFn();
+  if (csvCacheEntry && now - csvCacheEntry.cachedAt < CSV_CACHE_TTL_MS) {
+    return csvCacheEntry.promise;
+  }
+
+  const promise = (async () => {
+    const response = await fetch(NFLVERSE_GAMES_URL);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch schedule data: ${response.status}`);
+    }
+    return response.text();
+  })();
+
+  const entry: CsvCacheEntry = { cachedAt: now, promise };
+  csvCacheEntry = entry;
+
+  // On error, evict so a retry can re-fetch instead of replaying the failure
+  promise.catch(() => {
+    if (csvCacheEntry === entry) csvCacheEntry = null;
+  });
+
+  return promise;
+}
+
+/**
+ * Test-only helper. Resets the in-process CSV memoization so each test
+ * starts from a known state.
+ */
+export function __resetScheduleCsvCache(): void {
+  csvCacheEntry = null;
+}
+
+/**
+ * Test-only helper. Injects a fake clock for TTL expiry assertions.
+ * Pass `null` to restore Date.now.
+ */
+export function __setScheduleCsvNow(fn: (() => number) | null): void {
+  nowFn = fn ?? (() => Date.now());
+}
+
 function parseCSVLine(line: string): string[] {
   const result: string[] = [];
   let current = "";
@@ -137,13 +198,9 @@ export async function syncSchedule(options?: {
     options?.seasons ??
     Array.from({ length: currentYear - 1999 + 1 }, (_, i) => 1999 + i);
 
-  // Fetch the full CSV once (contains all seasons)
-  const response = await fetch(NFLVERSE_GAMES_URL);
-  if (!response.ok) {
-    throw new Error(`Failed to fetch schedule data: ${response.status}`);
-  }
-
-  const csv = await response.text();
+  // Fetch the full CSV once per day (contains all seasons). Memoized so
+  // multi-family cron runs share a single download.
+  const csv = await fetchGamesCsv();
   const lines = csv.split("\n");
   if (lines.length < 2) return { total: 0, seasonResults: {} };
 

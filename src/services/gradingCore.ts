@@ -1009,12 +1009,18 @@ export async function loadLeagueOwnerRosters(
 
 export async function loadLeagueScoringConfig(
   leagueId: string,
-): Promise<{ ppr: number; isSuperFlex: boolean }> {
+): Promise<{
+  ppr: number;
+  isSuperFlex: boolean;
+  numTeams: number;
+  numQbs: number;
+}> {
   const db = getDb();
   const [leagueSettings] = await db
     .select({
       scoringSettings: schema.leagues.scoringSettings,
       rosterPositions: schema.leagues.rosterPositions,
+      totalRosters: schema.leagues.totalRosters,
     })
     .from(schema.leagues)
     .where(eq(schema.leagues.id, leagueId))
@@ -1028,8 +1034,10 @@ export async function loadLeagueScoringConfig(
   const rosterPositions =
     (leagueSettings?.rosterPositions as string[]) || [];
   const isSuperFlex = rosterPositions.includes("SUPER_FLEX");
+  const numTeams = leagueSettings?.totalRosters ?? 12;
+  const numQbs = isSuperFlex ? 2 : 1;
 
-  return { ppr, isSuperFlex };
+  return { ppr, isSuperFlex, numTeams, numQbs };
 }
 
 export async function loadFamilyLeagueMap(
@@ -1058,6 +1066,8 @@ export async function loadFamilyLeagueMap(
 export async function loadFantasyCalcSnapshot(
   isSuperFlex: boolean,
   ppr: number,
+  numTeams: number = 12,
+  numQbs: number = isSuperFlex ? 2 : 1,
 ): Promise<Map<string, number>> {
   const db = getDb();
   const snapshotRows = await db
@@ -1070,6 +1080,8 @@ export async function loadFantasyCalcSnapshot(
       and(
         eq(schema.fantasyCalcValues.isSuperFlex, isSuperFlex),
         eq(schema.fantasyCalcValues.ppr, ppr),
+        eq(schema.fantasyCalcValues.numTeams, numTeams),
+        eq(schema.fantasyCalcValues.numQbs, numQbs),
       ),
     );
 
