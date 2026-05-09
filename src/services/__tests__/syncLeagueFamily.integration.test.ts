@@ -315,7 +315,7 @@ async function cleanupTestRows(): Promise<void> {
 }
 
 async function countWhere(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  // eslint-disable-next-line
   table: any,
   whereClause: ReturnType<typeof eq>
 ): Promise<number> {
@@ -350,7 +350,7 @@ describeIntegration("syncLeagueFamily integration (dev DB)", () => {
 
     // Drain neon's WS pool so jest can exit cleanly.
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      // eslint-disable-next-line
       const syncDb = getSyncDb() as any;
       if (typeof syncDb.$client?.end === "function") {
         await syncDb.$client.end();
