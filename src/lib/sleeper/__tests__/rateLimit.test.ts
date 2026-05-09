@@ -24,6 +24,7 @@ import {
   flushSleeperRateGauge,
   getCurrentCallsPerMinute,
   getCurrentUtilizationPct,
+  getTotalSleeperCalls,
   __resetSleeperRateState,
   __getLastFlushAt,
   SLEEPER_LIMIT_PER_MINUTE,
@@ -171,5 +172,18 @@ describe("Sleeper rate-limit gauge", () => {
     expect(() => {
       recordSleeperCall(1_700_000_000_000);
     }).not.toThrow();
+  });
+
+  it("getTotalSleeperCalls is monotonic across the rolling-window prune", () => {
+    const t0 = 1_700_000_000_000;
+    expect(getTotalSleeperCalls()).toBe(0);
+    recordSleeperCall(t0);
+    recordSleeperCall(t0 + 1000);
+    expect(getTotalSleeperCalls()).toBe(2);
+    // Advance well past the rolling window — pruning the window must not
+    // touch the lifetime counter (the counter is what attribution snapshots).
+    recordSleeperCall(t0 + 120_000);
+    expect(getCurrentCallsPerMinute(t0 + 120_000)).toBe(1);
+    expect(getTotalSleeperCalls()).toBe(3);
   });
 });

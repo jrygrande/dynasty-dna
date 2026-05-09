@@ -591,6 +591,61 @@ describe("syncLeagueFamily", () => {
     expect(sleeperMock.getLeague).not.toHaveBeenCalledWith("L_recent");
   });
 
+  it("bumps lastSyncedAt for skipped recently-synced seasons (#177)", async () => {
+    // Three completed seasons all within the 7-day skip window. None should
+    // hit Sleeper, but all three must get their `lastSyncedAt` bumped so the
+    // family-MIN watermark advances on every lazy run.
+    const recentTs = new Date(Date.now() - 60 * 1000);
+    dbState.leagueStatuses = [
+      { id: "L1", status: "complete", lastSyncedAt: recentTs },
+      { id: "L2", status: "complete", lastSyncedAt: recentTs },
+      { id: "L3", status: "complete", lastSyncedAt: recentTs },
+    ];
+
+    await syncLeagueFamily(["L1", "L2", "L3"], undefined, undefined);
+
+    // No Sleeper traffic for any skipped league.
+    expect(sleeperMock.getLeague).not.toHaveBeenCalled();
+
+    // Exactly one batched UPDATE against leagues that bumps lastSyncedAt.
+    const watermarkBumps = updateCalls.filter(
+      (c) => c.table === "leagues" && "lastSyncedAt" in c.set
+    );
+    expect(watermarkBumps).toHaveLength(1);
+    expect(watermarkBumps[0].set.lastSyncedAt).toBeInstanceOf(Date);
+  });
+
+  it("does NOT issue the skip-bump UPDATE when no leagues are skipped", async () => {
+    // All-stale: no skipIds populated -> no bump UPDATE issued.
+    const staleTs = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+    dbState.leagueStatuses = [
+      { id: "L1", status: "complete", lastSyncedAt: staleTs },
+    ];
+
+    sleeperMock.getLeague.mockImplementation(async (id: string) => ({
+      league_id: id,
+      name: id,
+      season: "2024",
+      previous_league_id: null,
+      status: "complete",
+      settings: {},
+      scoring_settings: {},
+      roster_positions: [],
+      total_rosters: 12,
+      draft_id: "D",
+    }));
+
+    await syncLeagueFamily(["L1"], undefined, undefined);
+
+    const watermarkBumps = updateCalls.filter(
+      (c) =>
+        c.table === "leagues" &&
+        "lastSyncedAt" in c.set &&
+        Object.keys(c.set).length === 1
+    );
+    expect(watermarkBumps).toHaveLength(0);
+  });
+
   it("treats unknown leagues as active (sequential path)", async () => {
     dbState.leagueStatuses = []; // no status row -> goes to active branch
 
@@ -648,7 +703,7 @@ describe("syncLeagueFamily", () => {
 
     await expect(
       syncLeagueFamily(["L1"], undefined, "fam_1")
-    ).resolves.toBeUndefined();
+    ).resolves.toEqual(expect.objectContaining({ apiCallsMade: expect.any(Number) }));
   });
 
   it("throws when EVERY attempted season fails", async () => {
@@ -690,7 +745,7 @@ describe("syncLeagueFamily", () => {
 
     await expect(
       syncLeagueFamily(["L1", "L2"], undefined, "fam_1")
-    ).resolves.toBeUndefined();
+    ).resolves.toEqual(expect.objectContaining({ apiCallsMade: expect.any(Number) }));
     expect(calls).toBeGreaterThanOrEqual(2);
   });
 

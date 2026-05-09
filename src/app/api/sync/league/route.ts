@@ -58,19 +58,15 @@ export async function POST(req: NextRequest) {
         .sort((a, b) => Number(a.season) - Number(b.season))
         .map((m) => m.leagueId);
 
-      if (allLeagueIds.length === 0) {
-        // Fallback: sync just the requested league
-        await syncLeagueFamily([leagueId], undefined, familyId, {
-          trigger: "manual",
-        });
-      } else {
-        // Sync all seasons in the family
-        await syncLeagueFamily(allLeagueIds, undefined, familyId, {
-          trigger: "manual",
-        });
-      }
+      // Fallback to the single league if family discovery returned nothing.
+      const idsToSync = allLeagueIds.length === 0 ? [leagueId] : allLeagueIds;
+      const result = await syncLeagueFamily(idsToSync, undefined, familyId, {
+        trigger: "manual",
+      });
 
-      await releaseSyncLock(jobId, "success");
+      await releaseSyncLock(jobId, "success", undefined, {
+        apiCallsMade: result.apiCallsMade,
+      });
 
       return NextResponse.json({
         success: true,

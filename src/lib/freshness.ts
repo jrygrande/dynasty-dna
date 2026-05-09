@@ -276,20 +276,22 @@ export async function ensureLeagueFresh(
   const start = Date.now();
   let outcome: "success" | "failed" = "success";
   let errMsg: string | undefined;
+  let apiCallsMade = 0;
 
   try {
     const leagueIds = await getFamilyLeagueIds(familyId);
-    await withSyncTransaction(
+    const result = await withSyncTransaction(
       `freshness.ensureLeagueFresh(${familyId})`,
       "sync.lazy",
       () =>
         syncLeagueFamily(leagueIds, undefined, familyId, { trigger: "lazy" })
     );
-    await releaseSyncLock(jobId, "success");
+    apiCallsMade = result.apiCallsMade;
+    await releaseSyncLock(jobId, "success", undefined, { apiCallsMade });
   } catch (err) {
     outcome = "failed";
     errMsg = err instanceof Error ? err.message : String(err);
-    await releaseSyncLock(jobId, "failed", errMsg);
+    await releaseSyncLock(jobId, "failed", errMsg, { apiCallsMade });
   } finally {
     recordSyncBreadcrumb({
       source: "league-family",
@@ -297,6 +299,7 @@ export async function ensureLeagueFresh(
       scope: familyId,
       durationMs: Date.now() - start,
       outcome,
+      apiCalls: apiCallsMade,
       error: errMsg,
     });
   }
