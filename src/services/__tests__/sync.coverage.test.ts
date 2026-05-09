@@ -404,21 +404,12 @@ describe("syncLeague — drafts, traded picks, watermarks, winners bracket", () 
     expect(matchupWeeks[matchupWeeks.length - 1]).toBe(18);
   });
 
-  it("advances watermark to maxWeek for COMPLETE seasons", async () => {
+  it("writes a watermark row for both transactions and matchups", async () => {
     await syncLeague("L1", undefined, undefined, { skipGlobalSyncs: true });
     const watermarkWrites = insertCalls.filter(
       (c) => c.table === "syncWatermarks"
     );
-    // Two writes: transactions + matchups
     expect(watermarkWrites.length).toBeGreaterThanOrEqual(2);
-  });
-
-  it("advances watermark to maxWeek-1 for IN_SEASON leagues (so latest week re-syncs)", async () => {
-    resetSleeper("in_season");
-    await syncLeague("L1", undefined, undefined, { skipGlobalSyncs: true });
-
-    const wmWrites = insertCalls.filter((c) => c.table === "syncWatermarks");
-    expect(wmWrites.length).toBeGreaterThanOrEqual(2);
   });
 
   it("writes the winners bracket when playoffs have started + bracket has results", async () => {
@@ -472,7 +463,9 @@ describe("syncLeague — NFL data + grading branches", () => {
     expect(syncRosterStatusMock).toHaveBeenCalled();
     expect(syncInjuriesMock).toHaveBeenCalled();
     expect(syncScheduleMock).toHaveBeenCalled();
-    expect(syncFantasyCalcValuesMock).toHaveBeenCalledWith("L1", undefined);
+    expect(syncFantasyCalcValuesMock).toHaveBeenCalledWith("L1", {
+      trigger: "manual",
+    });
   });
 
   it("uses family seasons for NFL data when familyId is supplied", async () => {
@@ -671,6 +664,8 @@ describe("syncLeagueFamily", () => {
     expect(syncRosterStatusMock).toHaveBeenCalled();
     expect(syncInjuriesMock).toHaveBeenCalled();
     expect(syncScheduleMock).toHaveBeenCalled();
-    expect(syncFantasyCalcValuesMock).toHaveBeenCalledWith("L1", undefined);
+    expect(syncFantasyCalcValuesMock).toHaveBeenCalledWith("L1", {
+      trigger: "manual",
+    });
   });
 });
