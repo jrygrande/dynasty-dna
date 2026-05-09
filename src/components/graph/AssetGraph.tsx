@@ -98,6 +98,48 @@ export function useObstacles() {
  *  always paint on top of the edges that connect them. */
 const NODE_Z = 10;
 
+/** Shared empty Set sentinel — avoids producing a fresh `new Set()` reference
+ *  for the many nodes that have no expanded/chained asset keys. Stable
+ *  identity lets per-node `data` objects compare reference-equal across
+ *  renders, so React Flow's memo'd node component bails out instead of
+ *  re-rendering every visible card on every URL change. */
+const EMPTY_ASSET_KEY_SET: ReadonlySet<string> = new Set();
+
+/** Cache key for a node's `data` object. Each field is reference-compared so
+ *  reuse only requires that no upstream input changed identity — meaning we
+ *  rebuild only the cards whose data actually moved, not all visible cards
+ *  on every render. */
+interface NodeDataInputs {
+  n: GraphNode;
+  isSelected: boolean;
+  expandedAssets: ReadonlySet<string>;
+  chainAssetKeys: ReadonlySet<string>;
+  headerExpanded: boolean;
+  onAssetExpand: ((nodeId: string, assetKey: string) => void) | undefined;
+  onHeaderToggle: ((nodeId: string) => void) | undefined;
+  handleNodeSelect: (nodeId: string) => void;
+}
+
+function sameNodeDataInputs(a: NodeDataInputs, b: NodeDataInputs): boolean {
+  return (
+    a.n === b.n &&
+    a.isSelected === b.isSelected &&
+    a.headerExpanded === b.headerExpanded &&
+    a.onAssetExpand === b.onAssetExpand &&
+    a.onHeaderToggle === b.onHeaderToggle &&
+    a.handleNodeSelect === b.handleNodeSelect &&
+    setsEqual(a.expandedAssets, b.expandedAssets) &&
+    setsEqual(a.chainAssetKeys, b.chainAssetKeys)
+  );
+}
+
+function setsEqual<T>(a: ReadonlySet<T>, b: ReadonlySet<T>): boolean {
+  if (a === b) return true;
+  if (a.size !== b.size) return false;
+  for (const v of a) if (!b.has(v)) return false;
+  return true;
+}
+
 const nodeTypes: NodeTypes = {
   transaction: TransactionNode,
   current_roster: CurrentRosterNode,
@@ -376,10 +418,145 @@ function AssetGraphInner({
     });
   }, [edges, selection, expandedAssetKeys, rosterNodeIds, draftNodeIds, gutterOffsets]);
 
+  // `onSelect` arrives as a prop; wrap so the per-node click closure has a
+  // stable identity tied to it and rebinds only when the parent's `onSelect`
+  // reference changes (rather than being created fresh inside every node's
+  // data object on every render).
+  const handleNodeSelect = useCallback(
+    (nodeId: string) => onSelect({ type: "node", nodeId }),
+    [onSelect],
+  );
+
+  // Per-node `data` cache. Stores both the computed object AND the inputs
+  // that produced it so we can compare current inputs by reference equality
+  // and reuse the prior data object when nothing changed for that node.
+  // Without this, expanding ONE thread invalidates `dataById` wholesale and
+  // every memo'd `TransactionNode` re-renders — wasted work since most cards
+  // didn't actually change. The Set fields use `setsEqual` because
+  // `nodeExpandedAssets` and `chainAssetsByNode` rebuild fresh each render
+  // even when their content is unchanged.
+  const dataCacheRef = useRef<
+    Map<string, { inputs: NodeDataInputs; data: FlowNodeData }>
+  >(new Map());
+
+  // Build node `data` objects WITHOUT depending on `positions`. The position
+  // tween updates `positions` ~60×/sec; if `data` rebuilt on each frame the
+  // memo'd `TransactionNode` would re-render every frame (defeating its
+  // purpose). With this split, `data` references stay stable across tween
+  // frames; only the wrappers' transforms change.
+  const dataById = useMemo<Map<string, FlowNodeData>>(() => {
+    const m = new Map<string, FlowNodeData>();
+    const prevCache = dataCacheRef.current;
+    const nextCache = new Map<string, { inputs: NodeDataInputs; data: FlowNodeData }>();
+
+    for (const n of nodes) {
+      const isSelected = selection?.type === "node" && selection.nodeId === n.id;
+      const expandedAssets = nodeExpandedAssets.get(n.id) ?? EMPTY_ASSET_KEY_SET;
+      const chainAssetKeys = chainAssetsByNode?.get(n.id) ?? EMPTY_ASSET_KEY_SET;
+      const headerExpanded = isHeaderExpanded(n, fullyExpanded);
+
+      const inputs: NodeDataInputs = {
+        n,
+        isSelected,
+        expandedAssets,
+        chainAssetKeys,
+        headerExpanded,
+        onAssetExpand,
+        onHeaderToggle,
+        handleNodeSelect,
+      };
+
+      const prev = prevCache.get(n.id);
+      if (prev && sameNodeDataInputs(prev.inputs, inputs)) {
+        m.set(n.id, prev.data);
+        nextCache.set(n.id, prev);
+        continue;
+      }
+
+      let data: FlowNodeData;
+      if (n.kind === "current_roster") {
+        data = {
+          userId: n.userId,
+          displayName: n.displayName,
+          avatar: n.avatar,
+          selected: isSelected,
+          dimmed: false,
+        };
+      } else {
+        const nameByUser = new Map(n.managers.map((mgr) => [mgr.userId, mgr.displayName]));
+        const transactionAssets: TransactionNodeAsset[] = n.assets.map((a) => {
+          const toName = a.toUserId ? nameByUser.get(a.toUserId) ?? null : null;
+          if (a.kind === "player") {
+            const position = a.playerPosition ?? null;
+            const name = a.playerName ?? a.playerId ?? "Player";
+            return {
+              kind: "player",
+              assetKey: assetKey(a),
+              label: name,
+              position,
+              toUserId: a.toUserId,
+              toName,
+              fromUserId: a.fromUserId,
+            };
+          }
+          const fullLabel = a.pickLabel ?? `${a.pickSeason} R${a.pickRound}`;
+          // pickLabel format from assetGraph.ts: "YYYY RN (ownerName)" — split
+          // so the year/round is primary and the owner suffix renders muted.
+          const parenIdx = fullLabel.indexOf(" (");
+          const label = parenIdx >= 0 ? fullLabel.slice(0, parenIdx) : fullLabel;
+          const ownerLabel = parenIdx >= 0 ? fullLabel.slice(parenIdx + 1) : undefined;
+          return {
+            kind: "pick",
+            assetKey: assetKey(a),
+            label,
+            ownerLabel,
+            toUserId: a.toUserId,
+            toName,
+            fromUserId: a.fromUserId,
+          };
+        });
+
+        data = {
+          txKind: n.txKind,
+          header: buildTransactionHeader(n),
+          managers: n.managers,
+          assets: transactionAssets,
+          expandedAssets,
+          chainAssetKeys,
+          headerExpanded,
+          selected: isSelected,
+          dimmed: false,
+          onAssetClick: onAssetExpand,
+          onHeaderToggle,
+          onSelect: handleNodeSelect,
+        };
+      }
+
+      m.set(n.id, data);
+      nextCache.set(n.id, { inputs, data });
+    }
+
+    dataCacheRef.current = nextCache;
+    return m;
+  }, [
+    nodes,
+    selection,
+    nodeExpandedAssets,
+    onAssetExpand,
+    handleNodeSelect,
+    chainAssetsByNode,
+    fullyExpanded,
+    onHeaderToggle,
+  ]);
+
   const flowNodes = useMemo<Node<FlowNodeData>[]>(() => {
     return nodes.map((n): Node<FlowNodeData> => {
       const pos = positions.get(n.id) ?? { x: 0, y: 0 };
       const isSelected = selection?.type === "node" && selection.nodeId === n.id;
+      const data = dataById.get(n.id);
+      // `dataById` is built from the same `nodes` list above; this should
+      // never miss, but TS doesn't know that.
+      if (!data) return null as unknown as Node<FlowNodeData>;
 
       if (n.kind === "current_roster") {
         return {
@@ -393,52 +570,9 @@ function AssetGraphInner({
           // and only completed after a second interaction.
           style: { width: ROSTER_WIDTH, height: ROSTER_HEIGHT },
           zIndex: NODE_Z,
-          data: {
-            userId: n.userId,
-            displayName: n.displayName,
-            avatar: n.avatar,
-            selected: isSelected,
-            dimmed: false,
-          },
+          data,
         };
       }
-
-      const nameByUser = new Map(n.managers.map((m) => [m.userId, m.displayName]));
-      const transactionAssets: TransactionNodeAsset[] = n.assets.map((a) => {
-        const toName = a.toUserId ? nameByUser.get(a.toUserId) ?? null : null;
-        if (a.kind === "player") {
-          const position = a.playerPosition ?? null;
-          const name = a.playerName ?? a.playerId ?? "Player";
-          return {
-            kind: "player",
-            assetKey: assetKey(a),
-            label: name,
-            position,
-            toUserId: a.toUserId,
-            toName,
-            fromUserId: a.fromUserId,
-          };
-        }
-        const fullLabel = a.pickLabel ?? `${a.pickSeason} R${a.pickRound}`;
-        // pickLabel format from assetGraph.ts: "YYYY RN (ownerName)" — split
-        // so the year/round is primary and the owner suffix renders muted.
-        const parenIdx = fullLabel.indexOf(" (");
-        const label = parenIdx >= 0 ? fullLabel.slice(0, parenIdx) : fullLabel;
-        const ownerLabel = parenIdx >= 0 ? fullLabel.slice(parenIdx + 1) : undefined;
-        return {
-          kind: "pick",
-          assetKey: assetKey(a),
-          label,
-          ownerLabel,
-          toUserId: a.toUserId,
-          toName,
-          fromUserId: a.fromUserId,
-        };
-      });
-
-      const header = buildTransactionHeader(n);
-      const chainAssetKeys = chainAssetsByNode?.get(n.id) ?? new Set<string>();
-      const headerExpanded = isHeaderExpanded(n, fullyExpanded);
 
       return {
         id: n.id,
@@ -449,33 +583,10 @@ function AssetGraphInner({
         // measures them — forcing a layout-estimated height here would
         // misplace handles when the card overshoots its estimate.
         zIndex: NODE_Z,
-        data: {
-          txKind: n.txKind,
-          header,
-          managers: n.managers,
-          assets: transactionAssets,
-          expandedAssets: nodeExpandedAssets.get(n.id) ?? new Set(),
-          chainAssetKeys,
-          headerExpanded,
-          selected: isSelected,
-          dimmed: false,
-          onAssetClick: onAssetExpand,
-          onHeaderToggle,
-          onSelect: (nodeId) => onSelect({ type: "node", nodeId }),
-        },
+        data,
       };
-    });
-  }, [
-    nodes,
-    positions,
-    selection,
-    nodeExpandedAssets,
-    onAssetExpand,
-    onSelect,
-    chainAssetsByNode,
-    fullyExpanded,
-    onHeaderToggle,
-  ]);
+    }).filter((n): n is Node<FlowNodeData> => n !== null);
+  }, [nodes, positions, selection, dataById]);
 
   const onNodeClick = useCallback<NodeMouseHandler>(
     (_, node) => onSelect({ type: "node", nodeId: node.id }),
