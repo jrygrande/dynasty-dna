@@ -135,6 +135,32 @@ Leave the DSN env vars unset. Sync breadcrumbs print to the dev console as `[syn
 - Database errors: Verify DATABASE_URL is set in Vercel env vars
 - API timeouts: Configured for 30s max duration in vercel.json
 
+## Cron jobs
+
+Reference data refreshes run on Vercel Cron and are defined in `vercel.json` under the `crons` block. Every job is gated by `Authorization: Bearer $CRON_SECRET` (`CRON_SECRET` is set in Vercel for production + preview + development, mirrored in `.env.local`).
+
+| Path | Schedule (UTC) | What it does |
+|---|---|---|
+| `/api/cron/sleeper-players` | Daily `0 6 * * *` | `syncPlayers(force=true)` — refresh Sleeper player dictionary. |
+| `/api/cron/fantasycalc` | Daily `0 7 * * *` | Enumerate distinct `(SF, PPR, numTeams, numQbs)` combos via `getDistinctFantasyCalcConfigs()` and refresh each with `force: true`. Per-combo failures are isolated. |
+| `/api/cron/nflverse-current` | Daily `0 8 * * *` | Injuries + roster status + schedule for the current NFL season (from `currentSeason()`), all `force: true` so the watermark fast-path doesn't suppress weekly updates. |
+| `/api/cron/nflverse-historical` | Weekly `0 9 * * 0` (Sunday) | Loops 2002 → currentSeason-1 with `force: false` so the watermark/skip-if-rows-exist guard makes most seasons cheap no-ops. The handler self-gates to the **first Sunday of each month** because Vercel Hobby caps at daily granularity; off-month invocations return 200 with `summary.ranWork=false`. |
+
+All four routes:
+- Return 401 unless the bearer token matches `CRON_SECRET`
+- Wrap their body in `withSyncTransaction(name, op, fn)` so Sentry sees a single span per cron tick
+- Call `recordSyncBreadcrumb({ source, trigger: 'cron', ... })` on entry, success, partial, and failure (no-op when no Sentry DSN is set; falls back to `console.info`)
+- Emit one structured JSON line via `console.log` (e.g. `{"msg":"cron.sleeper-players.complete","durationMs":...}`) so Vercel function logs are searchable
+- Return `{ ok, durationMs, callsMade, summary }` on success, or 5xx with `{ ok: false, error }` on failure
+- Are idempotent — a re-fired tick is safe
+
+### Manual verification
+```bash
+# from your shell, with CRON_SECRET set (matches Vercel env)
+curl -i https://<deploy>/api/cron/sleeper-players                         # → 401
+curl -i -H "Authorization: Bearer $CRON_SECRET" https://<deploy>/api/cron/sleeper-players  # → 200
+```
+
 ## Dependencies Removed
 - Redis/ioredis - Removed for simplified deployment (no caching layer currently)
 

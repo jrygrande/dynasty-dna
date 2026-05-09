@@ -10,5 +10,23 @@
     "src/app/api/**/*.ts": {
       "maxDuration": 30
     }
-  }
+  },
+  "crons": [
+    {
+      "path": "/api/cron/sleeper-players",
+      "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/cron/fantasycalc",
+      "schedule": "0 7 * * *"
+    },
+    {
+      "path": "/api/cron/nflverse-current",
+      "schedule": "0 8 * * *"
+    },
+    {
+      "path": "/api/cron/nflverse-historical",
+      "schedule": "0 9 * * 0"
+    }
+  ]
 }
