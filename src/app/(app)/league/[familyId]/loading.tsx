@@ -1,4 +1,4 @@
-import { DnaHelix } from "@/components/loading/DnaHelix";
+import { DnaHelix3D } from "@/components/loading/DnaHelix3DDynamic";
 
 /**
  * Route-level Suspense fallback for `/league/[familyId]/...` (#177, fix 2).
@@ -20,7 +20,7 @@ export default function LeagueFamilyLoading() {
   return (
     <div className="min-h-[60vh] flex items-center justify-center bg-background">
       <div className="flex flex-col items-center text-center gap-6 px-6">
-        <DnaHelix />
+        <DnaHelix3D />
         <p
           role="status"
           className="font-mono text-sm text-muted-foreground"
