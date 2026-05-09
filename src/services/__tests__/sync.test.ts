@@ -21,6 +21,7 @@ const sleeperMock = {
   getLeagueUsers: jest.fn(),
   getRosters: jest.fn(),
   getDrafts: jest.fn(),
+  getDraft: jest.fn(),
   getDraftPicks: jest.fn(),
   getTradedPicks: jest.fn(),
   getTransactions: jest.fn(),
@@ -154,6 +155,15 @@ function resetSleeperMocks() {
   sleeperMock.getLeagueUsers.mockResolvedValue([]);
   sleeperMock.getRosters.mockResolvedValue([]);
   sleeperMock.getDrafts.mockResolvedValue([]);
+  sleeperMock.getDraft.mockResolvedValue({
+    draft_id: "D1",
+    league_id: "L1",
+    season: "2024",
+    type: "snake",
+    status: "complete",
+    start_time: 0,
+    settings: {},
+  });
   sleeperMock.getDraftPicks.mockResolvedValue([]);
   sleeperMock.getTradedPicks.mockResolvedValue([]);
   sleeperMock.getWinnersBracket.mockResolvedValue([]);

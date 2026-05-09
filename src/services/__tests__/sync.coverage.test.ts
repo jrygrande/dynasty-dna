@@ -18,6 +18,7 @@ const sleeperMock = {
   getLeagueUsers: jest.fn(),
   getRosters: jest.fn(),
   getDrafts: jest.fn(),
+  getDraft: jest.fn(),
   getDraftPicks: jest.fn(),
   getTradedPicks: jest.fn(),
   getTransactions: jest.fn(),
@@ -271,9 +272,18 @@ function resetSleeper(status: "complete" | "in_season" = "complete") {
       status: "complete",
       start_time: 1_700_000_000_000,
       settings: {},
-      slot_to_roster_id: { "1": 1 },
     },
   ]);
+  sleeperMock.getDraft.mockResolvedValue({
+    draft_id: "D1",
+    league_id: "L1",
+    season: "2024",
+    type: "snake",
+    status: "complete",
+    start_time: 1_700_000_000_000,
+    settings: {},
+    slot_to_roster_id: { "1": 1 },
+  });
   sleeperMock.getDraftPicks.mockResolvedValue([
     {
       round: 1,
@@ -369,6 +379,26 @@ describe("syncLeague — drafts, traded picks, watermarks, winners bracket", () 
     expect(pickWrites.length).toBeGreaterThan(0);
   });
 
+  it("fetches /draft/{id} per draft to enrich slot_to_roster_id (#173)", async () => {
+    await syncLeague("L1", undefined, undefined, { skipGlobalSyncs: true });
+    // The list endpoint returns the draft id; the per-draft endpoint
+    // returns slot_to_roster_id. Both must fire on every sync, otherwise
+    // the lineage tracer pick→player remap silently no-ops.
+    expect(sleeperMock.getDrafts).toHaveBeenCalledWith("L1");
+    expect(sleeperMock.getDraft).toHaveBeenCalledWith("D1");
+  });
+
+  it("falls back to the list-endpoint draft when /draft/{id} throws", async () => {
+    sleeperMock.getDraft.mockRejectedValueOnce(new Error("boom"));
+    // Should not throw — partial data lands and the COALESCE upsert
+    // preserves any prior slot_to_roster_id in the DB.
+    await expect(
+      syncLeague("L1", undefined, undefined, { skipGlobalSyncs: true })
+    ).resolves.toBeUndefined();
+    const draftWrites = insertCalls.filter((c) => c.table === "drafts");
+    expect(draftWrites.length).toBeGreaterThan(0);
+  });
+
   it("skips fetching draft picks for non-complete drafts", async () => {
     sleeperMock.getDrafts.mockResolvedValue([
       {
@@ -381,6 +411,15 @@ describe("syncLeague — drafts, traded picks, watermarks, winners bracket", () 
         settings: {},
       },
     ]);
+    sleeperMock.getDraft.mockResolvedValue({
+      draft_id: "D2",
+      league_id: "L1",
+      season: "2024",
+      type: "snake",
+      status: "drafting",
+      start_time: 1,
+      settings: {},
+    });
     await syncLeague("L1", undefined, undefined, { skipGlobalSyncs: true });
     expect(sleeperMock.getDraftPicks).not.toHaveBeenCalled();
   });
