@@ -178,6 +178,44 @@
     }
   }
 
+  /* DNA helix loading animation (#151).
+     The container slowly rotates around its Y axis to suggest the helix's
+     3D twist. Reduced-motion stops rotation; only the base-pair pulse remains.
+     12s linear infinite is intentionally calm — this is a "we're working"
+     surface, not a progress spinner. */
+  .dna-helix-3d {
+    perspective: 800px;
+  }
+  .dna-helix-rotor {
+    transform-style: preserve-3d;
+    animation: dna-helix-rotate 12s linear infinite;
+    will-change: transform;
+  }
+  .dna-helix-pulse {
+    animation: dna-helix-pulse 3.6s ease-in-out infinite;
+  }
+  @keyframes dna-helix-rotate {
+    from {
+      transform: rotateY(0deg);
+    }
+    to {
+      transform: rotateY(360deg);
+    }
+  }
+  @keyframes dna-helix-pulse {
+    0%, 100% {
+      opacity: 0.55;
+    }
+    50% {
+      opacity: 1;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .dna-helix-rotor {
+      animation: none;
+    }
+  }
+
   /* Soft sage shimmer for tip text. Uses background-clip:text so the
      gradient animates across the glyph fills rather than the box. */
   .tip-shimmer {

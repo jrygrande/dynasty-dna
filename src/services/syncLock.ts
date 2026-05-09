@@ -128,6 +128,18 @@ export async function incrementSyncJobApiCalls(
 /**
  * Update the current_stage / stages_completed audit fields. Used by the
  * chunked-stage executor (#151) to record progress as each stage finishes.
+ *
+ * **Concurrent-tick safety.** Two ticks against the same `jobId` can race
+ * (the design intentionally allows multiple visitors to share one chunked
+ * run). To prevent the cursor from regressing — slow tick A reads cursor=3,
+ * fast tick B advances it to 5, then A's late write tries to set 4 —
+ * `stagesCompleted` is updated under a CAS (`coalesce(current, 0) >= new`
+ * inverted to `< new`). Result: cursor only ever advances. Cosmetic but
+ * load-bearing for the loading-screen progress bar; also prevents wasted
+ * Sleeper API spend re-running stages a peer already finished.
+ *
+ * `currentStage` is NOT under CAS — it's a label, not a monotonic counter,
+ * and a slightly-stale label is acceptable.
  */
 export async function updateSyncJobStage(
   jobId: string,
@@ -137,11 +149,22 @@ export async function updateSyncJobStage(
   if (!jobId) return;
   try {
     const db = getDb();
-    const set: Record<string, unknown> = { currentStage };
-    if (stagesCompleted != null) set.stagesCompleted = stagesCompleted;
+    if (stagesCompleted != null) {
+      // CAS: only advance, never regress.
+      await db
+        .update(schema.syncJobs)
+        .set({
+          currentStage,
+          stagesCompleted,
+        })
+        .where(
+          sql`${schema.syncJobs.id} = ${jobId} AND (${schema.syncJobs.stagesCompleted} IS NULL OR ${schema.syncJobs.stagesCompleted} < ${stagesCompleted})`
+        );
+      return;
+    }
     await db
       .update(schema.syncJobs)
-      .set(set)
+      .set({ currentStage })
       .where(eq(schema.syncJobs.id, jobId));
   } catch {
     // Swallow — observability must never break the caller.
