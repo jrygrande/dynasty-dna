@@ -1,0 +1,87 @@
+name: Sync benchmark
+
+# Runs on PRs that touch the sync pipeline. Exercises the real syncLeagueFamily()
+# code path against a dev Neon branch with a synthetic Sleeper mock — see
+# scripts/benchmark-sync.ts and scripts/sync-bench-mock.ts.
+#
+# Failure modes:
+#   - api_calls != baseline (any change in Sleeper request count is meaningful)
+#   - wall_time_ms > baseline * 1.20 (allowed slowdown)
+#
+# Skips itself (with a green status) when the DATABASE_URL_DEV secret is not
+# configured, so forks and first-time setups don't show as failed checks.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "src/services/sync*.ts"
+      - "src/services/sync.ts"
+      - "src/services/__tests__/sync*.ts"
+      - "src/lib/sleeper.ts"
+      - "src/lib/sleeper/**"
+      - "src/lib/concurrency.ts"
+      - "scripts/benchmark-sync.ts"
+      - "scripts/sync-bench-mock.ts"
+      - "scripts/bench-helpers.ts"
+      - "scripts/sync-baseline.json"
+      - ".github/workflows/sync-benchmark.yml"
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check secrets
+        id: secrets
+        env:
+          DATABASE_URL_DEV: ${{ secrets.DATABASE_URL_DEV }}
+        run: |
+          if [ -z "$DATABASE_URL_DEV" ]; then
+            echo "DATABASE_URL_DEV secret is not configured — skipping benchmark."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.secrets.outputs.skip != 'true'
+
+      - uses: actions/setup-node@v4
+        if: steps.secrets.outputs.skip != 'true'
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        if: steps.secrets.outputs.skip != 'true'
+        run: npm ci
+
+      - name: Apply schema to dev branch
+        if: steps.secrets.outputs.skip != 'true'
+        env:
+          # drizzle-kit reads DATABASE_URL directly. We use the same dev URL
+          # for both — the dev-host guard in scripts/reset-db.ts isn't invoked
+          # here (we run drizzle push, not the destructive reset).
+          DATABASE_URL: ${{ secrets.DATABASE_URL_DEV }}
+        run: npx drizzle-kit push --force
+
+      - name: Run benchmark (best-of-3, check mode)
+        if: steps.secrets.outputs.skip != 'true'
+        env:
+          # Off-Vercel resolution path: getDb() will pick DATABASE_URL_DEV.
+          DATABASE_URL_DEV: ${{ secrets.DATABASE_URL_DEV }}
+          NEON_DEV_HOST_ALLOWLIST: ${{ secrets.NEON_DEV_HOST_ALLOWLIST }}
+          # Per-run prefix prevents collisions when multiple PR workflows hit
+          # the shared dev branch simultaneously. Each row the bench writes is
+          # keyed by leagueId, so distinct prefixes never overlap.
+          BENCH_ID_PREFIX: bench-${{ github.run_id }}-${{ github.run_attempt }}
+        run: npm run bench:sync -- --runs=3 --check --json | tee bench-output.json
+
+      - name: Upload benchmark output
+        if: steps.secrets.outputs.skip != 'true' && always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sync-benchmark-output
+          path: bench-output.json
+          if-no-files-found: ignore
