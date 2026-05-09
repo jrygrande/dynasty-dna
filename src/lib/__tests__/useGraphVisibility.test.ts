@@ -215,3 +215,49 @@ describe("useGraphVisibility — auto-expand on visible drafts", () => {
     expect(visibleEdgeIds).toEqual(["e1", "e2", "p1"]);
   });
 });
+
+describe("useGraphVisibility — node identity stability", () => {
+  it("preserves node references across recomputes so per-node caches can reuse data", () => {
+    // The AssetGraph per-node `data` cache compares input.n by reference
+    // equality. If `computeVisibility` clones nodes on every call, the cache
+    // misses for every node every time the user expands an asset, and every
+    // visible card re-renders. This test pins the contract.
+    const trade1 = pickTrade("trade1");
+    const draftNode = draft("draft1", "playerX");
+    const trade2 = pickTrade("trade2");
+    const roster = rosterAnchor("roster1");
+
+    const graph = {
+      nodes: [trade1, draftNode, trade2, roster] as GraphNode[],
+      edges: [
+        pickEdge("p1", "trade1", "draft1"),
+        playerEdge("e1", "draft1", "trade2", "playerX"),
+        playerEdge("e2", "trade2", "roster1", "playerX", true),
+      ] as GraphEdge[],
+      stats: NO_STATS,
+    };
+
+    const before = computeVisibility(graph, {
+      seed: ["trade2", "roster1"],
+      expanded: new Set(),
+      removed: new Set(),
+      seedAssetKey: "player:playerX",
+    });
+
+    // Simulate the user expanding an asset: a new `expanded` Set arrives,
+    // forcing the memo to recompute. The graph topology hasn't changed, so
+    // every visible node should be the SAME object as before.
+    const after = computeVisibility(graph, {
+      seed: ["trade2", "roster1"],
+      expanded: new Set(["draft1~player:playerX"]),
+      removed: new Set(),
+      seedAssetKey: "player:playerX",
+    });
+
+    const beforeById = new Map(before.visibleNodes.map((n) => [n.id, n]));
+    for (const after_n of after.visibleNodes) {
+      const before_n = beforeById.get(after_n.id);
+      expect(before_n === after_n).toBe(true);
+    }
+  });
+});
