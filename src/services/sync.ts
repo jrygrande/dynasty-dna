@@ -576,7 +576,13 @@ async function runSyncLeague(
 function getMaxWeek(status: string): number {
   if (status === "complete") return 18;
   if (status === "in_season") return 18;
-  return 0;
+  // Offseason (pre_draft/drafting): Sleeper files offseason trades under
+  // leg 1 of the new-season league, so week 1 must still be fetched —
+  // returning 0 here silently dropped every offseason trade, which erased
+  // recently traded players from the lineage tracer. The non-complete
+  // watermark rule above (maxWeek - 1 = 0) keeps week 1 re-fetched on
+  // every offseason sync.
+  return 1;
 }
 
 const COMPLETED_STALENESS_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
