@@ -34,6 +34,7 @@ interface DbCall {
   table: string;
   rowCount: number;
   op: "insert-update" | "insert-nothing" | "update";
+  vals?: unknown;
 }
 
 const insertCalls: DbCall[] = [];
@@ -53,12 +54,13 @@ const dbState = {
 
 const fakeDb = {
   insert: (table: { __tableName?: string }) => ({
-    values: () => ({
+    values: (vals: unknown) => ({
       onConflictDoUpdate: () => {
         insertCalls.push({
           table: table.__tableName ?? "?",
           rowCount: 0,
           op: "insert-update",
+          vals,
         });
         return Promise.resolve();
       },
@@ -67,6 +69,7 @@ const fakeDb = {
           table: table.__tableName ?? "?",
           rowCount: 0,
           op: "insert-nothing",
+          vals,
         });
         return Promise.resolve();
       },
@@ -449,6 +452,63 @@ describe("syncLeague — drafts, traded picks, watermarks, winners bracket", () 
       (c) => c.table === "syncWatermarks"
     );
     expect(watermarkWrites.length).toBeGreaterThanOrEqual(2);
+  });
+
+  // Offseason leagues (pre_draft/drafting) must still fetch week 1 —
+  // Sleeper files offseason trades under leg 1 of the new-season league.
+  // getMaxWeek previously returned 0 for these statuses, so offseason
+  // trades never landed in the DB and recently traded players vanished
+  // from the lineage tracer (their only open tenure was silently
+  // truncated because rosters ARE synced in the offseason).
+  it.each(["pre_draft", "drafting"])(
+    "fetches week-1 transactions for offseason (%s) leagues",
+    async (status) => {
+      sleeperMock.getLeague.mockResolvedValue({
+        league_id: "L1",
+        name: "Test League",
+        season: "2026",
+        previous_league_id: "L0",
+        status,
+        settings: { playoff_week_start: 15 },
+        scoring_settings: { rec: 1 },
+        roster_positions: ["QB", "RB", "WR", "TE", "FLEX"],
+        total_rosters: 12,
+        draft_id: "D1",
+      });
+
+      await syncLeague("L1", undefined, undefined, { skipGlobalSyncs: true });
+
+      expect(sleeperMock.getTransactions).toHaveBeenCalledTimes(1);
+      expect(sleeperMock.getTransactions).toHaveBeenCalledWith("L1", 1);
+      // The completed trade from week 1 lands in the transactions table.
+      const txWrites = insertCalls.filter((c) => c.table === "transactions");
+      expect(txWrites.some((c) => c.rowCount > 0)).toBe(true);
+    }
+  );
+
+  it("keeps the offseason transactions watermark at 0 so week 1 is re-fetched every sync", async () => {
+    sleeperMock.getLeague.mockResolvedValue({
+      league_id: "L1",
+      name: "Test League",
+      season: "2026",
+      previous_league_id: "L0",
+      status: "pre_draft",
+      settings: {},
+      scoring_settings: {},
+      roster_positions: [],
+      total_rosters: 12,
+      draft_id: "D1",
+    });
+
+    await syncLeague("L1", undefined, undefined, { skipGlobalSyncs: true });
+
+    const txWatermark = insertCalls.find(
+      (c) =>
+        c.table === "syncWatermarks" &&
+        (c.vals as { dataType?: string })?.dataType === "transactions"
+    );
+    expect(txWatermark).toBeDefined();
+    expect((txWatermark!.vals as { lastWeek: number }).lastWeek).toBe(0);
   });
 
   it("writes the winners bracket when playoffs have started + bracket has results", async () => {

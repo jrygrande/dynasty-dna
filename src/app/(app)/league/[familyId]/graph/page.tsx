@@ -129,6 +129,12 @@ export default function GraphPage() {
   const [response, setResponse] = useState<GraphResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Set when a seed param (seedPlayerId/seedPickKey/seedTransactionId)
+  // resolves to nothing in the loaded graph — e.g. a player whose only
+  // tenure isn't in the synced data yet. The param is still cleared from
+  // the URL, but this keeps the empty state from looking like a silent
+  // failure.
+  const [seedMiss, setSeedMiss] = useState<"player" | "pick" | "transaction" | null>(null);
   const analyticsFiredRef = useRef(false);
 
   useEffect(() => {
@@ -193,6 +199,7 @@ export default function GraphPage() {
     const playerEdges = response.edges
       .filter((e) => e.assetKind === "player" && e.playerId === seedPlayerId);
     if (playerEdges.length === 0) {
+      setSeedMiss("player");
       updateUrl({ seedPlayerId: null });
       return;
     }
@@ -225,6 +232,7 @@ export default function GraphPage() {
     const nodeId = `tx:${seedTransactionId}`;
     const exists = response.nodes.some((n) => n.id === nodeId);
     if (!exists) {
+      setSeedMiss("transaction");
       updateUrl({ seedTransactionId: null });
       return;
     }
@@ -241,6 +249,7 @@ export default function GraphPage() {
       (e) => e.assetKind === "pick" && edgeAssetKey(e) === targetAssetKey,
     );
     if (pickEdges.length === 0) {
+      setSeedMiss("pick");
       updateUrl({ seedPickKey: null });
       return;
     }
@@ -308,6 +317,7 @@ export default function GraphPage() {
 
   const handlePickerSelect = useCallback(
     (focus: GraphFocus) => {
+      setSeedMiss(null);
       if (focus.kind === "player") {
         updateUrl({
           seedPlayerId: focus.playerId,
@@ -335,6 +345,7 @@ export default function GraphPage() {
   );
 
   const handleReset = useCallback(() => {
+    setSeedMiss(null);
     updateUrl({
       seed: null,
       seedPlayerId: null,
@@ -432,6 +443,11 @@ export default function GraphPage() {
         <Subheader title={subheaderTitle} rightSlot={subheaderRightSlot} />
         <RotateForCanvasHint />
         <SmallScreenHint />
+        {!hasSeed && seedMiss && (
+          <div className="mx-4 mt-3">
+            <SeedMissNotice kind={seedMiss} />
+          </div>
+        )}
         <MobileTimeline
           familyId={familyId}
           response={response}
@@ -487,7 +503,10 @@ export default function GraphPage() {
             )}
             {!hasSeed && response && !error && (
               <div className="flex items-center justify-center h-full">
-                <AssetPicker familyId={familyId} onPick={handlePickerSelect} />
+                <div className="flex flex-col items-center gap-4">
+                  {seedMiss && <SeedMissNotice kind={seedMiss} />}
+                  <AssetPicker familyId={familyId} onPick={handlePickerSelect} />
+                </div>
               </div>
             )}
             {hasSeed && visibleGraph && !error && (
@@ -523,6 +542,18 @@ export default function GraphPage() {
         </div>
       </div>
     </>
+  );
+}
+
+function SeedMissNotice({ kind }: { kind: "player" | "pick" | "transaction" }) {
+  return (
+    <div
+      role="status"
+      className="max-w-md rounded-md border border-grade-c/25 bg-grade-c/8 px-3 py-2 text-xs text-grade-c"
+    >
+      No lineage data found for that {kind} yet — a recent move may not have
+      synced. Check back shortly, or pick another asset below.
+    </div>
   );
 }
 
