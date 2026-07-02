@@ -205,7 +205,7 @@ export default function DesignSystemPage() {
                 <CardTitle>Status pills</CardTitle>
                 <CardDescription>
                   Shipped / in progress / planned / exploring. Used on
-                  roadmap + experiments.
+                  roadmap + evals.
                 </CardDescription>
               </CardHeader>
               <CardContent className="flex flex-wrap gap-2">

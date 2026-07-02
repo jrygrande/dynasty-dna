@@ -81,8 +81,8 @@ export default function LandingPage() {
             <BuildCard
               href="/experiments"
               icon={<FlaskConical className="h-5 w-5 text-primary" />}
-              title="Experiments"
-              description="Algorithm variants tested against real data to find what actually works."
+              title="Evals"
+              description="Every grading-algorithm change is replayed against years of real league history before it ships — hypothesis, verdict, and decision."
             />
           </div>
         </div>

@@ -1,122 +1,47 @@
 /**
- * Lightweight feature flags with experiment support.
+ * Minimal feature flags: static on/off gates for features in development.
  *
- * Each flag has a hypothesis and metrics — making experimentation
- * thinking visible in the codebase itself. Active experiments are
- * surfaced on the public /roadmap page.
+ * This is deliberately NOT an experimentation system. Dynasty DNA doesn't
+ * have the traffic for meaningful A/B tests — algorithm decisions are made
+ * with offline evals (see /experiments and scripts/experiments/), and
+ * feature launches are gated by explicit promotion criteria (see
+ * docs/experiments/asset-graph-browser.md for the pattern).
  */
 
-export type FlagStatus = "enabled" | "disabled" | "experiment";
+export type FlagStatus = "enabled" | "disabled";
 
 export interface FeatureFlag {
   id: string;
   title: string;
   description: string;
   status: FlagStatus;
-  /** For experiments: percentage of users who see the treatment (0-100) */
-  rolloutPercent?: number;
-  /** What we believe will happen */
-  hypothesis?: string;
-  /** How we'll measure success */
-  metrics?: string[];
-  /** Link to the GitHub Issue for this experiment */
-  issueUrl?: string;
 }
 
 /**
- * CONVENTION: Callers pass the OBJECT KEY of the FLAGS map (e.g., "ASSET_GRAPH_BROWSER"),
- * NOT the `flag.id` field (e.g., "asset-graph-browser"). `isEnabled()` looks up by
- * object key. Callers using flag.id will silently get `false` back.
- *
- * Use the `FlagKey` type to keep calls type-safe.
+ * CONVENTION: Callers pass the OBJECT KEY of the FLAGS map (e.g.,
+ * "ASSET_GRAPH_BROWSER"), not the `flag.id` field. The `FlagKey` type
+ * keeps calls type-safe.
  */
 export const FLAGS = {
-  TRADE_COUNTERFACTUAL: {
-    id: "trade-counterfactual",
-    title: "Trade Counterfactual Analysis",
-    description: "Show 'what if you hadn't made this trade' scenarios on trade detail pages",
-    status: "experiment",
-    rolloutPercent: 50,
-    hypothesis:
-      "Counterfactual analysis makes trade grades more actionable — managers who see what would have happened will engage more deeply with trade history",
-    metrics: [
-      "Click-through rate on trade detail pages",
-      "Time spent on trade analysis views",
-    ],
-  },
   MANAGER_DNA_PROFILE: {
     id: "manager-dna-profile",
     title: "Manager DNA Profile",
     description: "Manager Process Score (MPS) combining draft, trade, waiver, and lineup grades",
     status: "disabled",
-    hypothesis:
-      "A single composite score increases engagement with individual analytics features by giving managers a 'headline number' to improve",
-    metrics: [
-      "Weekly return rate to manager profile",
-      "Cross-feature navigation (lineup -> trades -> drafts)",
-    ],
   },
-  /**
-   * Operational metric definitions (for the experiment):
-   * - "Multi-hop trade chain": a transaction with ≥3 asset legs (adds.length + draftPicks.length ≥ 3).
-   * - "Share rate": graph_link_copied / graph_view_opened, computed per session.
-   *
-   * Promotion criteria (disabled → experiment → enabled) live at docs/experiments/asset-graph-browser.md.
-   */
   ASSET_GRAPH_BROWSER: {
     id: "asset-graph-browser",
     title: "Lineage Tracer",
     description: "Interactive visualization of how players and picks flow between managers",
     status: "enabled",
-    hypothesis:
-      "Visualizing the network of trades as a graph will surface non-obvious patterns that managers find more insightful than a transaction log",
-    metrics: [
-      "Discovery of multi-hop trade chains",
-      "Share rate of graph visualizations",
-    ],
   },
 } satisfies Record<string, FeatureFlag>;
 
 export type FlagKey = keyof typeof FLAGS;
 
-/**
- * Deterministic hash for consistent user bucketing.
- * Same user always gets the same variant for a given flag.
- */
-function simpleHash(str: string): number {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    const char = str.charCodeAt(i);
-    hash = (hash << 5) - hash + char;
-    hash |= 0; // Convert to 32-bit integer
-  }
-  return Math.abs(hash);
-}
-
-/**
- * Check if a feature flag is enabled for a given user.
- *
- * - "enabled" flags are always on
- * - "disabled" flags are always off
- * - "experiment" flags use deterministic bucketing based on userId
- */
-export function isEnabled(flagId: string, userId?: string): boolean {
-  const flag = (FLAGS as Record<string, FeatureFlag>)[flagId];
-  if (!flag) return false;
-  if (flag.status === "enabled") return true;
-  if (flag.status === "disabled") return false;
-
-  if (flag.status === "experiment" && flag.rolloutPercent && userId) {
-    const hash = simpleHash(userId + flag.id);
-    return hash % 100 < flag.rolloutPercent;
-  }
-
-  return false;
-}
-
-/** Get all flags with experiment status (for the public /roadmap page) */
-export function getActiveExperiments(): FeatureFlag[] {
-  return Object.values(FLAGS).filter((f) => f.status === "experiment");
+/** Check whether a feature flag is enabled. */
+export function isEnabled(flagKey: FlagKey): boolean {
+  return FLAGS[flagKey].status === "enabled";
 }
 
 /** Get all flags (for debugging / admin views) */

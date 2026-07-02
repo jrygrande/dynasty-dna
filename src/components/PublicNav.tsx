@@ -19,7 +19,7 @@ const navLinks: Array<{ href: string; label: string; soon?: boolean }> = [
   { href: "/trade-finder", label: "Trade Finder", soon: true },
   { href: "/roadmap", label: "Roadmap" },
   { href: "/changelog", label: "Changelog" },
-  { href: "/experiments", label: "Experiments" },
+  { href: "/experiments", label: "Evals" },
 ];
 
 type LeagueMenuItem = {
