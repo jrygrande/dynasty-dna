@@ -123,12 +123,14 @@ const OUTCOME_LABELS: Record<EvalOutcome, string> = {
   shipped: "Shipped",
   "kept-baseline": "Kept baseline",
   rejected: "Rejected — not shipped",
+  "follow-up": "Follow-up open",
 };
 
 const OUTCOME_STYLES: Record<EvalOutcome, string> = {
   shipped: "bg-grade-a/8 text-grade-a border-grade-a/25",
   "kept-baseline": "bg-grade-b/8 text-grade-b border-grade-b/25",
   rejected: "bg-muted text-muted-foreground border-border",
+  "follow-up": "bg-grade-c/8 text-grade-c border-grade-c/25",
 };
 
 function DecisionBlock({ note }: { note: EvalNote }) {
@@ -144,9 +146,21 @@ function DecisionBlock({ note }: { note: EvalNote }) {
           {OUTCOME_LABELS[note.outcome]}
         </span>
         <p className="text-sm leading-relaxed">{note.decision}</p>
-        {note.shippedRef && (
-          <p className="text-xs font-mono text-muted-foreground">{note.shippedRef}</p>
-        )}
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+          {note.shippedRef && (
+            <p className="text-xs font-mono text-muted-foreground">{note.shippedRef}</p>
+          )}
+          {note.issueUrl && (
+            <a
+              href={note.issueUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-primary hover:underline"
+            >
+              Tracked in #{note.issueUrl.split("/").pop()}
+            </a>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -494,20 +508,13 @@ export default function EvalsPage() {
         <div className="mb-8">
           <h1 className="font-serif text-4xl font-medium tracking-tight">Evals</h1>
           <p className="text-muted-foreground mt-3 text-sm leading-relaxed max-w-2xl">
-            Every change to the grading engine earns its way into production
-            through an offline eval: a pre-registered hypothesis, a replay
-            against years of real league history, and a decision. The goal is
-            a Manager Process Score (MPS) that actually predicts league
-            success — measured as correlation with Manager Outcome Score
-            (MOS), the ground-truth composite of wins, starter points, and
-            playoff results.
-          </p>
-          <p className="text-muted-foreground mt-3 text-sm leading-relaxed max-w-2xl">
-            Fantasy history is a rare luxury: complete data with known
-            outcomes. Instead of guessing how an algorithm change will
-            perform, every variant is replayed against years of real seasons
-            and scored on how well it predicts what actually happened —
-            before it touches a single grade in production.
+            Every change to the grading engine ships through an offline eval:
+            a pre-registered hypothesis and acceptance criteria, a replay
+            against the full transaction history of every ingested league,
+            and a recorded decision. The target is a Manager Process Score
+            (MPS) that predicts real league success, measured as correlation
+            with Manager Outcome Score (MOS) — the composite of wins, starter
+            points, and playoff results.
           </p>
         </div>
 

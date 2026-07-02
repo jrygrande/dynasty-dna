@@ -12,7 +12,7 @@
  * production code changes, update the entry.
  */
 
-export type EvalOutcome = "shipped" | "kept-baseline" | "rejected";
+export type EvalOutcome = "shipped" | "kept-baseline" | "rejected" | "follow-up";
 
 export interface EvalNote {
   /** Display order on the page (ascending) */
@@ -26,6 +26,8 @@ export interface EvalNote {
   outcome: EvalOutcome;
   /** Where the decision lives in production code */
   shippedRef?: string;
+  /** GitHub issue tracking a follow-up eval, when outcome is "follow-up" */
+  issueUrl?: string;
 }
 
 export const EVAL_NOTES: Record<string, EvalNote> = {
@@ -35,9 +37,10 @@ export const EVAL_NOTES: Record<string, EvalNote> = {
     question:
       "How should we score a player's production — points above a positional replacement level (PAR), or an exponential decay on positional rank? Rank decay treats WR13 and WR30 as meaningfully different even when their per-game output is nearly identical.",
     decision:
-      "Shipped. PAR replaced rank decay as the production scorer across draft, trade, and waiver grading; rank-based scoring survives only as a legacy fallback.",
-    outcome: "shipped",
+      "Follow-up open. PAR is in production, but this run's criterion failed — a redesigned eval (roster-outcome correlation, small-sample fix) either passes or PAR reverts to rank decay.",
+    outcome: "follow-up",
     shippedRef: "src/services/gradingCore.ts · playerSeasonalPAR()",
+    issueUrl: "https://github.com/jrygrande/dynasty-dna/issues/188",
   },
   "blend-sensitivity": {
     order: 2,
@@ -45,9 +48,10 @@ export const EVAL_NOTES: Record<string, EvalNote> = {
     question:
       "Grades blend market value with realized production over time. Should one universal ramp curve govern all transaction types, or do trades, drafts, and waivers each deserve their own? A rookie pick shouldn't be judged on production after 8 weeks; a waiver add should.",
     decision:
-      "Shipped. Each pillar got its own blend profile — waivers ramp to production fastest, drafts slowest.",
-    outcome: "shipped",
+      "Follow-up open. Per-pillar curves are in production, but the trade curve failed its calibration check — a slower ramp won one horizon bucket outright, so the follow-up tunes the curve until it beats the universal ramp or reverts the trade pillar.",
+    outcome: "follow-up",
     shippedRef: "src/services/algorithmConfig.ts · DEFAULT_CONFIG.blendProfiles",
+    issueUrl: "https://github.com/jrygrande/dynasty-dna/issues/189",
   },
   "production-layer-ablation": {
     order: 3,
@@ -76,9 +80,10 @@ export const EVAL_NOTES: Record<string, EvalNote> = {
     question:
       "Manager Outcome Score is the ground truth every other eval correlates against, so its weights have to be defensible. Do the baseline weights (40% starter points, 30% win rate, 20% playoff, 10% championship) discriminate between managers and stay stable season over season?",
     decision:
-      "Kept the baseline. No alternative weight vector beat 40/30/20/10 on both distribution entropy and cross-season stability.",
-    outcome: "kept-baseline",
+      "Follow-up open. Baseline kept for now — two different vectors each edged it on a single metric by small margins, so the original criterion can't name one winner. The follow-up reruns with a composite criterion and confidence intervals.",
+    outcome: "follow-up",
     shippedRef: "src/services/outcomeScore.ts · DEFAULT_WEIGHTS",
+    issueUrl: "https://github.com/jrygrande/dynasty-dna/issues/190",
   },
   "quality-x-quantity-blend": {
     order: 6,
