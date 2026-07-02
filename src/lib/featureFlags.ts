@@ -1,10 +1,9 @@
 /**
  * Minimal feature flags: static on/off gates for features in development.
  *
- * This is deliberately NOT an experimentation system. Dynasty DNA doesn't
- * have the traffic for meaningful A/B tests — algorithm decisions are made
- * with offline evals (see /experiments and scripts/experiments/), and
- * feature launches are gated by explicit promotion criteria (see
+ * This is deliberately NOT an experimentation system. Algorithm decisions
+ * are made with offline evals (see /experiments and scripts/experiments/),
+ * and feature launches are gated by explicit promotion criteria (see
  * docs/experiments/asset-graph-browser.md for the pattern).
  */
 

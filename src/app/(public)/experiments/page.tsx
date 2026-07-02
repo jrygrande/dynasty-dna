@@ -503,12 +503,11 @@ export default function EvalsPage() {
             playoff results.
           </p>
           <p className="text-muted-foreground mt-3 text-sm leading-relaxed max-w-2xl">
-            Why evals instead of A/B tests? Dynasty DNA doesn&apos;t have the
-            traffic to detect behavioral effects, and pretending otherwise
-            would produce noise dressed up as rigor. What it does have is
-            complete historical data with known outcomes — so every algorithm
-            variant can be replayed against the past and scored on how well
-            it predicts what really happened.
+            Fantasy history is a rare luxury: complete data with known
+            outcomes. Instead of guessing how an algorithm change will
+            perform, every variant is replayed against years of real seasons
+            and scored on how well it predicts what actually happened —
+            before it touches a single grade in production.
           </p>
         </div>
 
