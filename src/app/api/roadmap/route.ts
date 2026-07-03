@@ -58,7 +58,7 @@ function parseIssue(issue: {
   return {
     id: issue.id,
     number: issue.number,
-    title: issue.title.replace(/^\[(Feature|Experiment|Bug)\]\s*/i, ""),
+    title: issue.title.replace(/^\[(Feature|Experiment|Eval|Bug)\]\s*/i, ""),
     body: issue.body,
     html_url: issue.html_url,
     status,

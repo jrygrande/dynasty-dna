@@ -1,70 +1,65 @@
-name: Experiment Proposal
-description: Propose an A/B test or feature experiment with a structured hypothesis
-title: "[Experiment] "
+name: Eval Proposal
+description: Propose an offline eval — a grading-algorithm change tested against historical league data
+title: "[Eval] "
 labels: ["type:experiment", "roadmap"]
 body:
   - type: markdown
     attributes:
       value: |
-        Experiments help us make data-informed decisions. Define what you're testing,
-        what you expect to happen, and how you'll measure it.
+        Evals are how algorithm changes earn their way into production. Define the
+        hypothesis and acceptance criteria BEFORE running anything — the decision
+        rule is pre-registered, not fitted to the results.
 
   - type: textarea
     id: hypothesis
     attributes:
       label: Hypothesis
-      description: "What do you believe will happen? Use the format: If we [change], then [outcome] because [rationale]."
-      placeholder: "If we show counterfactual trade analysis, then managers will engage more with trade history because understanding 'what could have been' creates stronger emotional connection to the data."
+      description: "What do you believe will happen? Use the format: If we [change the algorithm], then [metric improves] because [rationale]."
+      placeholder: "If we score production as points-above-replacement instead of rank decay, then correlation with actual PPG improves because rank gaps in the positional mid-tier are arbitrary."
     validations:
       required: true
 
   - type: textarea
-    id: control
+    id: baseline
     attributes:
-      label: Control (Current Behavior)
-      description: What does the user experience today?
+      label: Baseline (Current Algorithm)
+      description: What does the production algorithm do today?
     validations:
       required: true
 
   - type: textarea
-    id: treatment
+    id: variants
     attributes:
-      label: Treatment (New Behavior)
-      description: What will the user experience in the experiment variant?
+      label: Variant(s)
+      description: What alternative(s) will the eval compare against the baseline?
     validations:
       required: true
 
   - type: textarea
-    id: metrics
+    id: method
     attributes:
-      label: Primary & Secondary Metrics
-      description: What will you measure to determine success?
+      label: Method & Data
+      description: What historical data is replayed, and what is measured?
       placeholder: |
-        Primary: Click-through rate on trade detail pages
-        Secondary: Time spent on trade analysis, return visit rate
-    validations:
-      required: true
-
-  - type: input
-    id: rollout
-    attributes:
-      label: Rollout Percentage
-      description: What % of users should see the treatment?
-      placeholder: "50"
-    validations:
-      required: true
-
-  - type: input
-    id: duration
-    attributes:
-      label: Experiment Duration
-      description: How long should the experiment run before evaluation?
-      placeholder: "2 weeks"
+        Replay all completed league-family seasons. Measure Spearman correlation
+        of each variant's manager scores against Manager Outcome Score (MOS),
+        plus grade-distribution entropy as a secondary check.
     validations:
       required: true
 
   - type: textarea
-    id: guardrails
+    id: acceptance
     attributes:
-      label: Guardrails
-      description: What negative outcomes would cause you to stop the experiment early?
+      label: Acceptance Criteria
+      description: The decision rule, written before the run. What result would confirm the hypothesis? What would reject it?
+      placeholder: "Variant beats baseline MOS correlation in ≥2 of 3 pillars; otherwise keep baseline."
+    validations:
+      required: true
+
+  - type: textarea
+    id: decision
+    attributes:
+      label: Decision This Informs
+      description: What ships if confirmed? What happens if rejected? (Every verdict should have a consequence.)
+    validations:
+      required: true

@@ -4,9 +4,6 @@ import { useEffect, useMemo, useState } from "react";
 import { ArrowRight } from "lucide-react";
 import { RoadmapCard } from "@/components/RoadmapCard";
 import type { RoadmapIssue } from "@/app/api/roadmap/route";
-import { type FeatureFlag, getActiveExperiments } from "@/lib/featureFlags";
-
-const experiments = getActiveExperiments();
 
 type FilterTab = "now" | "next" | "later" | "shipped" | "all";
 
@@ -60,38 +57,6 @@ function groupByPhase(
       name: PHASE_NAMES[phase] || "Other",
       items,
     }));
-}
-
-function ExperimentCard({ flag }: { flag: FeatureFlag }) {
-  return (
-    <div className="border border-dashed border-chart-4/40 rounded-lg p-4 bg-chart-4/5">
-      <div className="flex items-start justify-between gap-3 mb-2">
-        <h3 className="text-sm font-semibold">{flag.title}</h3>
-        <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-chart-4/15 text-chart-4 whitespace-nowrap">
-          {flag.rolloutPercent}% rollout
-        </span>
-      </div>
-      <p className="text-xs text-muted-foreground mb-2">{flag.description}</p>
-      {flag.hypothesis && (
-        <p className="text-xs text-muted-foreground mb-2">
-          <span className="font-medium text-foreground/70">Hypothesis:</span>{" "}
-          {flag.hypothesis}
-        </p>
-      )}
-      {flag.metrics && flag.metrics.length > 0 && (
-        <div className="flex flex-wrap gap-x-3 gap-y-1">
-          <span className="text-[11px] font-medium text-muted-foreground">
-            Measuring:
-          </span>
-          {flag.metrics.map((m, i) => (
-            <span key={i} className="text-[11px] text-muted-foreground">
-              {m}
-            </span>
-          ))}
-        </div>
-      )}
-    </div>
-  );
 }
 
 export default function RoadmapPage() {
@@ -226,23 +191,6 @@ export default function RoadmapPage() {
               .
             </p>
           </div>
-        )}
-
-        {/* Active Experiments section */}
-        {experiments.length > 0 && (
-          <section className="mt-12">
-            <div className="flex items-center gap-3 mb-4">
-              <h2 className="text-lg font-semibold">Active Experiments</h2>
-              <span className="text-xs text-muted-foreground">
-                Testing hypotheses with real users
-              </span>
-            </div>
-            <div className="space-y-3">
-              {experiments.map((flag) => (
-                <ExperimentCard key={flag.id} flag={flag} />
-              ))}
-            </div>
-          </section>
         )}
 
         {/* Footer */}

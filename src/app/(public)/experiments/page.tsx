@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo } from "react";
 import { formatDate } from "@/lib/utils";
+import { EVAL_NOTES, type EvalNote, type EvalOutcome } from "./evalNotes";
 
 // ============================================================
 // Types
@@ -110,6 +111,57 @@ function VerdictBlock({ verdict, reason }: { verdict: string | null; reason: str
       {reason && (
         <p className={`mt-1.5 text-sm ${style.text} opacity-80`}>{reason}</p>
       )}
+    </div>
+  );
+}
+
+// ============================================================
+// Decision block — what happened in production as a result
+// ============================================================
+
+const OUTCOME_LABELS: Record<EvalOutcome, string> = {
+  shipped: "Shipped",
+  "kept-baseline": "Kept baseline",
+  rejected: "Rejected — not shipped",
+  "follow-up": "Follow-up open",
+};
+
+const OUTCOME_STYLES: Record<EvalOutcome, string> = {
+  shipped: "bg-grade-a/8 text-grade-a border-grade-a/25",
+  "kept-baseline": "bg-grade-b/8 text-grade-b border-grade-b/25",
+  rejected: "bg-muted text-muted-foreground border-border",
+  "follow-up": "bg-grade-c/8 text-grade-c border-grade-c/25",
+};
+
+function DecisionBlock({ note }: { note: EvalNote }) {
+  return (
+    <div>
+      <h4 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-2">
+        Decision
+      </h4>
+      <div className="rounded-lg border border-border p-4 space-y-2">
+        <span
+          className={`inline-block px-2 py-0.5 rounded-full border text-[11px] font-mono uppercase tracking-wide ${OUTCOME_STYLES[note.outcome]}`}
+        >
+          {OUTCOME_LABELS[note.outcome]}
+        </span>
+        <p className="text-sm leading-relaxed">{note.decision}</p>
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+          {note.shippedRef && (
+            <p className="text-xs font-mono text-muted-foreground">{note.shippedRef}</p>
+          )}
+          {note.issueUrl && (
+            <a
+              href={note.issueUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-primary hover:underline"
+            >
+              Tracked in #{note.issueUrl.split("/").pop()}
+            </a>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -256,16 +308,25 @@ function ScorecardSection({ scorecard }: { scorecard: Scorecard }) {
 }
 
 // ============================================================
-// Experiment card
+// Eval card
 // ============================================================
 
-function ExperimentCard({ run }: { run: ExperimentRun }) {
+function EvalCard({ run, note }: { run: ExperimentRun; note?: EvalNote }) {
   const [showDetails, setShowDetails] = useState(false);
   const [showRawJson, setShowRawJson] = useState(false);
 
   return (
     <div className="border rounded-lg bg-card">
       <div className="p-5 space-y-4">
+        {note && (
+          <div>
+            <h4 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-1">
+              The Question
+            </h4>
+            <p className="text-sm leading-relaxed">{note.question}</p>
+          </div>
+        )}
+
         {run.hypothesis && (
           <div>
             <h4 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-1">
@@ -278,7 +339,10 @@ function ExperimentCard({ run }: { run: ExperimentRun }) {
         {run.acceptanceCriteria && (
           <div>
             <h4 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-1">
-              Acceptance Criteria
+              Acceptance Criteria{" "}
+              <span className="normal-case tracking-normal font-normal">
+                (set before the run)
+              </span>
             </h4>
             <p className="text-sm leading-relaxed text-muted-foreground">
               {run.acceptanceCriteria}
@@ -287,6 +351,8 @@ function ExperimentCard({ run }: { run: ExperimentRun }) {
         )}
 
         <VerdictBlock verdict={run.verdict} reason={run.verdictReason} />
+
+        {note && <DecisionBlock note={note} />}
 
         {run.scorecard && run.scorecard.primaryMetrics.length > 0 && (
           <ScorecardSection scorecard={run.scorecard} />
@@ -356,10 +422,51 @@ function ExperimentCard({ run }: { run: ExperimentRun }) {
 }
 
 // ============================================================
+// How it works
+// ============================================================
+
+const PIPELINE_STEPS: { label: string; detail: string }[] = [
+  {
+    label: "Pre-register",
+    detail: "Hypothesis and acceptance criteria are committed before the eval runs — no moving the goalposts after seeing the numbers.",
+  },
+  {
+    label: "Replay history",
+    detail: "The candidate algorithm is scored against complete league history. Every run is persisted with its config and git hash.",
+  },
+  {
+    label: "Score the verdict",
+    detail: "The result is judged against the pre-registered criteria: confirmed, rejected, or inconclusive.",
+  },
+  {
+    label: "Decide & ship",
+    detail: "Winners are promoted into the production algorithm config; losers are rejected and documented. Every verdict has a consequence.",
+  },
+];
+
+function HowItWorks() {
+  return (
+    <div className="mb-10 grid gap-3 sm:grid-cols-2">
+      {PIPELINE_STEPS.map((step, i) => (
+        <div key={step.label} className="border rounded-lg p-4 bg-card">
+          <div className="flex items-center gap-2 mb-1.5">
+            <span className="font-mono text-xs text-primary">{i + 1}</span>
+            <h3 className="text-sm font-semibold">{step.label}</h3>
+          </div>
+          <p className="text-xs text-muted-foreground leading-relaxed">
+            {step.detail}
+          </p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ============================================================
 // Page
 // ============================================================
 
-export default function ExperimentsPage() {
+export default function EvalsPage() {
   const [runs, setRuns] = useState<ExperimentRun[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -371,12 +478,13 @@ export default function ExperimentsPage() {
         setRuns(data.runs || []);
         if (data.error) setError(data.error);
       })
-      .catch(() => setError("Failed to load experiments."))
+      .catch(() => setError("Failed to load evals."))
       .finally(() => setLoading(false));
   }, []);
 
-  // Group by experiment name, show only the most recent run per experiment
-  const { experiments, runCounts } = useMemo(() => {
+  // Group by eval name, show only the most recent run per eval,
+  // ordered by the editorial sequence in EVAL_NOTES (unknown names last).
+  const { evals, runCounts } = useMemo(() => {
     const latestByName = new Map<string, ExperimentRun>();
     const counts = new Map<string, number>();
     for (const run of runs) {
@@ -386,27 +494,35 @@ export default function ExperimentsPage() {
         latestByName.set(run.name, run);
       }
     }
-    return {
-      experiments: Array.from(latestByName.values()).sort((a, b) => a.name.localeCompare(b.name)),
-      runCounts: counts,
-    };
+    const ordered = Array.from(latestByName.values()).sort((a, b) => {
+      const orderA = EVAL_NOTES[a.name]?.order ?? Number.MAX_SAFE_INTEGER;
+      const orderB = EVAL_NOTES[b.name]?.order ?? Number.MAX_SAFE_INTEGER;
+      return orderA !== orderB ? orderA - orderB : a.name.localeCompare(b.name);
+    });
+    return { evals: ordered, runCounts: counts };
   }, [runs]);
 
   return (
     <div className="min-h-screen bg-background">
       <main className="container mx-auto px-6 py-8 max-w-3xl">
-        <div className="mb-10">
-          <h1 className="font-serif text-4xl font-medium tracking-tight">Experiments</h1>
-          <p className="text-muted-foreground mt-2 text-sm leading-relaxed max-w-2xl">
-            Experiments tune Manager Process Score (MPS) — our composite
-            grading algorithm — to be predictive of actual fantasy league
-            success, as measured by Manager Outcome Score (MOS).
+        <div className="mb-8">
+          <h1 className="font-serif text-4xl font-medium tracking-tight">Evals</h1>
+          <p className="text-muted-foreground mt-3 text-sm leading-relaxed max-w-2xl">
+            Every change to the grading engine ships through an offline eval:
+            a pre-registered hypothesis and acceptance criteria, a replay
+            against the full transaction history of every ingested league,
+            and a recorded decision. The target is a Manager Process Score
+            (MPS) that predicts real league success, measured as correlation
+            with Manager Outcome Score (MOS) — the composite of wins, starter
+            points, and playoff results.
           </p>
         </div>
 
+        <HowItWorks />
+
         {loading && (
           <div className="text-center py-12 text-muted-foreground">
-            Loading experiments...
+            Loading evals...
           </div>
         )}
 
@@ -416,30 +532,56 @@ export default function ExperimentsPage() {
           </div>
         )}
 
-        {!loading && experiments.length === 0 && !error && (
+        {!loading && evals.length === 0 && !error && (
           <div className="text-center py-12">
-            <p className="text-muted-foreground">No experiments have been run yet.</p>
+            <p className="text-muted-foreground">No evals have been run yet.</p>
           </div>
         )}
 
         <div className="space-y-8">
-          {experiments.map((run) => {
+          {evals.map((run) => {
+            const note = EVAL_NOTES[run.name];
             const totalRuns = runCounts.get(run.name) ?? 1;
             return (
               <div key={run.name}>
                 <div className="flex items-baseline gap-2 mb-3">
-                  <h2 className="text-lg font-semibold">{formatName(run.name)}</h2>
+                  <h2 className="text-lg font-semibold">
+                    {note?.title ?? formatName(run.name)}
+                  </h2>
                   {totalRuns > 1 && (
                     <span className="text-xs text-muted-foreground">
                       (latest of {totalRuns} runs)
                     </span>
                   )}
                 </div>
-                <ExperimentCard run={run} />
+                <EvalCard run={run} note={note} />
               </div>
             );
           })}
         </div>
+
+        {!loading && evals.length > 0 && (
+          <footer className="mt-12 pt-6 border-t space-y-2">
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              <span className="font-medium text-foreground/70">Method notes:</span>{" "}
+              predictiveness is measured with Spearman rank correlation against
+              MOS. Samples are league-seasons, not users — small by design, so
+              lifts are treated as directional evidence and weighed alongside
+              manual review of extreme cases, not read as significance tests.
+            </p>
+            <p className="text-xs text-muted-foreground">
+              The eval harness, per-eval scripts, and full methodology are open source:{" "}
+              <a
+                href="https://github.com/jrygrande/dynasty-dna/tree/main/scripts/experiments"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-primary hover:underline"
+              >
+                scripts/experiments on GitHub
+              </a>
+            </p>
+          </footer>
+        )}
       </main>
     </div>
   );
